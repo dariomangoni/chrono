@@ -69,6 +69,10 @@ if(ENABLE_MODULE_MKL)
 		add_subdirectory(mkl)
 	endif()
 endif()
+
+if(ENABLE_MODULE_MUMPS)
+	add_subdirectory(mumps)
+endif()
 	
 #if(ENABLE_MODULE_MPI)
 #	add_subdirectory(mpi)
