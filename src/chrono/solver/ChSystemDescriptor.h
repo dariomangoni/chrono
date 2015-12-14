@@ -131,7 +131,10 @@ class ChApi ChSystemDescriptor {
     /// in 'l' global vector (see GetOffset() in ChConstraint).
     virtual int CountActiveConstraints();
 
-    /// Updates counts of scalar variables and scalar constraints,
+	/// Test function that takes into account the possibility that some rows of Cq are skipped
+	virtual int CountActiveConstraints(bool only_bilaterals, bool skip_contacts_uv);
+
+	/// Updates counts of scalar variables and scalar constraints,
     /// if you added/removed some item or if you switched some active state,
     /// otherwise CountActiveVariables() and CountActiveConstraints() might fail.
     virtual void UpdateCountsAndOffsets();
@@ -356,10 +359,11 @@ class ChApi ChSystemDescriptor {
                                      bool only_bilaterals = false,
                                      bool skip_contacts_uv = false);
 
-    /// Create and return the assembled system matrix and RHS vector.
-    virtual void ConvertToMatrixForm(ChSparseMatrix* Z,  ///< [out] assembled system matrix
-                                     ChMatrix<>* rhs     ///< [out] assembled RHS vector
-                                     );
+	virtual void ConvertToMatrixForm(ChSparseMatrix* Z,
+									 ChMatrix<>* rhs,
+									 bool only_bilaterals = false,
+									 bool skip_contacts_uv = false);
+
 
     /// Saves to disk the LAST used matrices of the problem.
     /// If assembled == true,
