@@ -108,16 +108,17 @@ int ChSystemDescriptor::CountActiveConstraints(bool only_bilaterals, bool skip_c
 
 	// Count bilateral and other constraints.. (if wanted, bilaterals only)
 
-	n_c = 0;
+	n_c = CountActiveConstraints();
+	int n_c_mod = 0;
 	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
 		if (vconstraints[ic]->IsActive())
 			if (!((vconstraints[ic]->GetMode() == CONSTRAINT_FRIC) && only_bilaterals))
 				if (!((dynamic_cast<ChLcpConstraintTwoTuplesFrictionTall*>(vconstraints[ic])) && skip_contacts_uv)) {
-					n_c++;
+					n_c_mod++;
 				}
 	}
 
-	return n_c;
+	return n_c_mod;
 }
 
 void ChSystemDescriptor::UpdateCountsAndOffsets() {
