@@ -362,7 +362,8 @@ class ChApi ChSystemDescriptor {
 	virtual void ConvertToMatrixForm(ChSparseMatrix* Z,
 									 ChMatrix<>* rhs,
 									 bool only_bilaterals = false,
-									 bool skip_contacts_uv = false);
+									 bool skip_contacts_uv = false,
+									 int format = 0);
 
 
     /// Saves to disk the LAST used matrices of the problem.
