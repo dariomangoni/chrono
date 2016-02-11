@@ -33,13 +33,13 @@
 // ------------------------------------------------
 ///////////////////////////////////////////////////
 
-#include <mkl.h>
-#include "chrono_mkl/ChApiMkl.h"
+
+#include "chrono_mumps/ChApiMumps.h"
 //#include "core/ChMatrixDynamic.h"
-#include "chrono_mkl/ChCSR3Matrix.h"
+#include "chrono_mumps/ChCOOMatrix.h"
 #include "lcp/ChLcpSystemDescriptor.h"
 #include "lcp/ChLcpSolver.h"
-#include "ChMklEngine.h"
+#include "chrono_mumps/ChMumpsEngine.h"
 
 // Interior point methdon based on Numerical Optimization by Nocedal, Wright
 // minimize 0.5*xT*G*x + xT*x while Ax>=b (16.54 pag.480)
@@ -85,7 +85,7 @@
 namespace chrono
 {
 
-	class ChApiMkl ChInteriorPoint : public ChLcpSolver
+	class ChApiMumps ChInteriorPoint : public ChLcpSolver
 	{
 	public:
 		enum KKT_SOLUTION_METHOD
@@ -151,14 +151,13 @@ namespace chrono
 
 
 		// problem matrices and vectors
-		ChMatrixDynamic<double> rhs;
-		ChMatrixDynamic<double> sol;
-		ChCSR3Matrix BigMat;
-		ChCSR3Matrix SmallMat;
-		ChCSR3Matrix E; // compliance matrix
+		ChMatrixDynamic<double> rhs_sol;
+		ChCOOMatrix BigMat;
+		ChCOOMatrix SmallMat;
+		ChCOOMatrix E; // compliance matrix
 		
 		// MKL engine
-		ChMklEngine mkl_engine;
+		ChMumpsEngine mumps_engine;
 
 		// temporary vectors
 		ChMatrixDynamic<double> vectn; // temporary variable that has always size (n,1)

@@ -34,9 +34,7 @@
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/assets/ChTexture.h"
 #include "chrono_irrlicht/ChIrrApp.h"
-#include "chrono_mkl/ChLcpMklSolver.h"
-#include <chrono_mkl/ChInteriorPoint.h>
-#include <chrono_matlab/ChLcpMatlabSolver.h>
+#include <chrono_mumps/ChInteriorPoint.h>
 
 // Use the namespace of Chrono
 

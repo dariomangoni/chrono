@@ -138,12 +138,14 @@ SET(ChronoEngine_MUMPS_HEADERS
   ChSolverMumps.h
   ChMumpsEngine.h
   ChCOOMatrix.h
+  ChInteriorPoint.h
 )
 
 SET(ChronoEngine_MUMPS_SOURCES
   ChSolverMumps.cpp
   ChMumpsEngine.cpp
   ChCOOMatrix.cpp
+  ChInteriorPoint.cpp
 )
 
 SOURCE_GROUP("Headers" FILES ${ChronoEngine_MUMPS_HEADERS})
