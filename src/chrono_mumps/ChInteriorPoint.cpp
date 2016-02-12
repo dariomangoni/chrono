@@ -31,7 +31,7 @@ namespace chrono
 		{
 			for (size_t col_sel = 0; col_sel < mat.GetColumns(); col_sel++)
 			{
-				ofile << mat.GetElement(row_sel, col_sel) << " , ";
+				ofile << mat.GetElement(row_sel, col_sel);
 			}
 
 			ofile << std::endl;
@@ -171,9 +171,8 @@ namespace chrono
 
 		if (ADD_COMPLIANCE && m>0)
 		{
-			//sysd.ConvertToMatrixForm(nullptr, nullptr, &E, nullptr, nullptr, nullptr, false, SKIP_CONTACTS_UV);
-			//E *= -1;
-			std::cout << "Compliance not implemented with MUMPS yet" << std::endl;
+			sysd.ConvertToMatrixForm(nullptr, nullptr, &E, nullptr, nullptr, nullptr, false, SKIP_CONTACTS_UV);
+			E *= -1;
 		}
 
 		starting_point_Nocedal(n_old, m_old);
@@ -502,59 +501,18 @@ namespace chrono
 					rhs_sol.SetElement(row_sel + n, 0, -rp(row_sel, 0) - y(row_sel, 0));
 			}
 
-
+			ExportArrayToFile(rhs_sol, "dump/rhs.txt");
 
 			// Solve the KKT system
 			mumps_engine.SetProblem(BigMat, rhs_sol);
-			printf("Mumps says: %d\n", mumps_engine.MumpsCall());
+			mumps_engine.MumpsCall();
+			mumps_engine.PrintINFOG();
+			BigMat.ExportToFile("dump/COO.txt", true);
+			//BigMat.ImportFromFile("COO.txt", true);
+			//BigMat.ExportToFile("COO.txt", true);
 
-			//if (!sol.is_valid())
-			//{
-			//	double perturb = -1e-18;
-			//	
-			//	double* vect_address;
-			//	vect_address = BigMat.GetValuesAddress();
-			//	for (size_t sel = 0; sel< BigMat.GetColIndexLength(); sel++)
-			//	{
-			//		if (!is_valid(vect_address[sel]))
-			//			vect_address[sel] = perturb;
-			//	}
-			//	
-			//	vect_address = rhs_sol.GetAddress();
-			//	for (size_t sel = 0; sel < rhs_sol.GetColumns()*rhs_sol.GetRows(); sel++)
-			//	{
-			//		if (!is_valid(vect_address[sel]))
-			//			vect_address[sel] = perturb;
-			//	}
+			ExportArrayToFile(rhs_sol, "dump/sol.txt");
 
-			//	mumps_engine.SetProblem(BigMat, rhs_sol, sol);
-			//	mumps_engine.PardisoCall(13, 0);
-			//}
-
-			//if (verbose)
-			//{
-			//	// TODO: used for testing; delete
-			//	res.Reset(BigMat.GetRows(), 1);
-			//	mumps_engine.GetResidual(res);
-			//	res_norm = mumps_engine.GetResidualNorm(res);
-			//	if (res_norm > 1e3)
-			//	{
-			//		std::cout << "KKT solve res norm: " << res_norm << std::endl;
-
-			//		ChMklEngine mkl_test; // TODO: the program crashes if we use the same solver of IP!!!!
-			//		mkl_test.SetProblem(BigMat, rhs_sol, sol);
-			//		mkl_test.PardisoCall(13, 1);
-
-			//		res.Reset(BigMat.GetRows(), 1);
-			//		mkl_test.GetResidual(res);
-			//		res_norm = mkl_test.GetResidualNorm(res);
-			//		std::cout << "KKT solve res norm 2nd: " << res_norm << std::endl;
-			//		DumpProblem();
-			//		DumpIPStatus();
-			//		system("pause");
-			//	}
-			//}
-			
 
 			// Extract 'Dx' and 'Dlam' from 'sol'
 			for (size_t row_sel = 0; row_sel < n; row_sel++)
@@ -567,9 +525,8 @@ namespace chrono
 			Dy += rp;
 			if (ADD_COMPLIANCE)
 			{
-				//E.MatMultiply(Dlam, vectm);
-				//Dy += vectm;
-				std::cout << "Compliance not implemented in MUMPS yet" << std::endl;
+				E.MatMultiply(Dlam, vectm);
+				Dy += vectm;
 			}
 				
 
@@ -999,6 +956,7 @@ namespace chrono
 		mu(0)
 	{
 		mumps_engine.Initialize();
+		mumps_engine.SetICNTL(11, 2);
 		PrintHistory(true);
 	}
 
