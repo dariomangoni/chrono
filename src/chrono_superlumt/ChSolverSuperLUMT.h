@@ -44,24 +44,36 @@ public:
 	/// Enable/disable locking the sparsity pattern (default: false).
 	/// If on_off is set to true, then the sparsity pattern of the problem matrix is assumed
 	/// to be unchanged from call to call.
-	void SetSparsityPatternLock(bool val) { m_lock = val; }
+    void SetSparsityPatternLock(bool val)
+    {
+        m_lock = val;
+        m_mat.SetSparsityPatternLock(m_lock);
+    }
 
-	/// Reset timers for internal phases in Solve and Setup.
-	void ResetTimers() {
-		m_timer_setup_assembly.reset();
-		m_timer_setup_superlumt.reset();
-		m_timer_solve_assembly.reset();
-		m_timer_solve_superlumt.reset();
-	}
+    /// Call an update of the sparsiy pattern on the underlying matrix.
+    /// It is used to inform the solver (and the underlying matrices) that the sparsity pattern is changed.
+    /// It is suggested to call this function just after the construction of the solver.
+    void ForceSparsityPatternUpdate()
+    {
+        m_mat.ForceSparsityPatternUpdate();
+    }
 
-	/// Get cumulative time for assembly operations in Solve phase.
-	double GetTimeSolveAssembly() const { return m_timer_solve_assembly(); }
-	/// Get cumulative time for Pardiso calls in Solve phase.
-	double GetTimeSolveSuperLUMT() const { return m_timer_solve_superlumt(); }
-	/// Get cumulative time for assembly operations in Setup phase.
-	double GetTimeSetupAssembly() const { return m_timer_setup_assembly(); }
-	/// Get cumulative time for Pardiso calls in Setup phase.
-	double GetTimeSetupSuperLUMT() const { return m_timer_setup_superlumt(); }
+    /// Reset timers for internal phases in Solve and Setup.
+    void ResetTimers() {
+        m_timer_setup_assembly.reset();
+        m_timer_setup_solvercall.reset();
+        m_timer_solve_assembly.reset();
+        m_timer_solve_solvercall.reset();
+    }
+
+    /// Get cumulative time for assembly operations in Solve phase.
+    double GetTimeSolve_Assembly() const { return m_timer_solve_assembly(); }
+    /// Get cumulative time for Pardiso calls in Solve phase.
+    double GetTimeSolve_SolverCall() const { return m_timer_solve_solvercall(); }
+    /// Get cumulative time for assembly operations in Setup phase.
+    double GetTimeSetup_Assembly() const { return m_timer_setup_assembly(); }
+    /// Get cumulative time for Pardiso calls in Setup phase.
+    double GetTimeSetup_SolverCall() const { return m_timer_setup_solvercall(); }
 
 	/// Indicate whether or not the Solve() phase requires an up-to-date problem matrix.
 	/// As typical of direct solvers, the Pardiso solver only requires the matrix for its Setup() phase.
@@ -79,10 +91,10 @@ public:
 		m_timer_solve_assembly.stop();
 
 		// Solve the system
-		m_timer_solve_superlumt.start();
-		m_engine.SuperLUMTCall(phase_t::SOLVE, verbose);
-		m_timer_solve_superlumt.stop();
-		m_solver_call++;
+		m_timer_solve_solvercall.start();
+		m_engine.SuperLUMTCall(ChSuperLUMTEngine::phase_t::SOLVE, verbose);
+		m_timer_solve_solvercall.stop();
+        m_solve_call++;
 
 
 		// Scatter solution vector to the system descriptor.
@@ -93,9 +105,9 @@ public:
 		if (verbose)
 		{
 			double res_norm = m_engine.GetResidualNorm();
-			GetLog() << " SUPERLU_MT solve call " << m_solver_call << "  |residual| = " << res_norm << "\n";
+			GetLog() << " SUPERLU_MT solve call " << m_setup_call << "  |residual| = " << res_norm << "\n";
 			if (m_engine.GetRCOND() != -1)
-				GetLog() << " Matrix RCOND " << m_solver_call << "\n";
+				GetLog() << " Matrix RCOND " << m_setup_call << "\n";
 		}
 
 		return 0.0f;
@@ -107,11 +119,11 @@ public:
 	virtual bool Setup(ChSystemDescriptor& sysd) override {
 		m_timer_setup_assembly.start();
 
-		// Set the lock on the matrix sparsity pattern (if enabled).
-		m_mat.SetSparsityPatternLock(m_lock);
+        // Let the matrix acquire the information about ChSystem
+        m_mat.BindToChSystemDescriptor(&sysd);
 
 		// Calculate problem size at first call.
-		if (m_solver_call == 0)
+		if (m_setup_call == 0)
 		{
 			m_n = sysd.CountActiveVariables() + sysd.CountActiveConstraints();
 		}
@@ -123,7 +135,7 @@ public:
 		{
 			m_mat.Reset(m_n, m_n, m_nnz);
 		}
-		else if (m_solver_call == 0)
+		else if (m_setup_call == 0)
 		{
 			m_mat.Reset(m_n, m_n, static_cast<int>(m_n * (m_n * SPM_DEF_FULLNESS)));
 		}
@@ -140,9 +152,9 @@ public:
 
 		// Performs factorization (LU decomposition)
 		m_engine.SetMatrix(m_mat);
-		m_timer_setup_superlumt.start();
-		m_engine.SuperLUMTCall(phase_t::ANALYSIS_NUMFACTORIZATION, verbose);
-		m_timer_setup_superlumt.stop();
+		m_timer_setup_solvercall.start();
+		m_engine.SuperLUMTCall(ChSuperLUMTEngine::phase_t::ANALYSIS_NUMFACTORIZATION, verbose);
+		m_timer_setup_solvercall.stop();
 
 
 		return true;
@@ -174,16 +186,17 @@ private:
 	ChMatrixDynamic<double> m_sol;      ///< solution vector
     int m_n = 0;                      ///< problem size
     int m_nnz = 0;                      ///< user-supplied estimate of NNZ
-    int m_solver_call = 0;              ///< counter for calls to Solve
+    int m_setup_call = 0;              ///< counter for calls to Setup
+    int m_solve_call = 0;              ///< counter for calls to Solve
 
     bool m_lock = false;                ///< is the matrix sparsity pattern locked?
 
 	ChSuperLUMTEngine m_engine;
 
     ChTimer<> m_timer_setup_assembly;  ///< timer for matrix assembly
-    ChTimer<> m_timer_setup_superlumt;   ///< timer for factorization
+    ChTimer<> m_timer_setup_solvercall;   ///< timer for factorization
     ChTimer<> m_timer_solve_assembly;  ///< timer for RHS assembly
-    ChTimer<> m_timer_solve_superlumt;   ///< timer for solution
+    ChTimer<> m_timer_solve_solvercall;   ///< timer for solution
 
 
 };
