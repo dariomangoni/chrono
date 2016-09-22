@@ -19,6 +19,8 @@
 #ifndef CH_RIGIDTIRE_H
 #define CH_RIGIDTIRE_H
 
+#include <vector>
+
 #include "chrono/physics/ChBody.h"
 #include "chrono/geometry/ChTriangleMeshConnected.h"
 #include "chrono/assets/ChCylinderShape.h"
@@ -74,6 +76,9 @@ class CH_VEHICLE_API ChRigidTire : public ChTire {
                          double sweep_sphere_radius = 0  ///< [in] radius of sweeping sphere
                          );
 
+    /// Check whether or not this tire uses a contact mesh.
+    bool UseContactMesh() const { return m_use_contact_mesh; }
+
     /// Get the tire width.
     virtual double GetWidth() const = 0;
 
@@ -98,6 +103,27 @@ class CH_VEHICLE_API ChRigidTire : public ChTire {
 
     /// Remove visualization assets for the rigid tire subsystem.
     virtual void RemoveVisualizationAssets() override;
+
+    /// Return the number of vertices in the contact mesh.
+    unsigned int GetNumVertices() const;
+
+    /// Return the number of faces in the contact mesh.
+    unsigned int GetNumTriangles() const;
+
+    /// Get the contact mesh connectivity.
+    const std::vector<ChVector<int>>& GetMeshConnectivity() const;
+
+    /// Get the contact mesh vertices (in local frame).
+    const std::vector<ChVector<>>& GetMeshVertices() const;
+
+    /// Get the contact mesh vertex normals (in local frame).
+    const std::vector<ChVector<>>& GetMeshNormals() const;
+
+    /// Get the current state of the collision mesh.
+    /// Mesh vertex positions and velocities are returned in the absolute frame.
+    void GetMeshVertexStates(std::vector<ChVector<>>& pos,  ///< mesh vertex positions (expressed in absolute frame)
+                             std::vector<ChVector<>>& vel   ///< mesh vertex velocities (expressed in absolute frame)
+                             ) const;
 
   private:
     bool m_use_contact_mesh;         ///< flag indicating use of a contact mesh

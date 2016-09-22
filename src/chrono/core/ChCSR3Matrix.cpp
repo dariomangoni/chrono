@@ -15,7 +15,7 @@
 #include <algorithm>
 #include "chrono/core/ChCSR3Matrix.h"
 #include "chrono/core/ChMapMatrix.h"
-#include <solver/ChSystemDescriptor.h>
+#include "chrono/solver/ChSystemDescriptor.h"
 
 
 namespace chrono{
@@ -149,22 +149,21 @@ namespace chrono{
 		insert(trail_i, lead_sel);
 		initialized_element[trail_i] = true;
 		trailIndex[trail_i] = trail_sel;
-		return values[trail_i];
-
-	}
+        return values[trail_i];
+    }
 
 	/// The function assures that the matrix will have \a nrows rows and \a ncols columns.
 	/// The \a nonzeros_hint value is just a hint!
 	/// The Reset() function can automatically load the sparsity pattern from a ChSystemDescriptor.
 	/// In order to correctly do so, the following must apply:
-	/// - #sysd must be a non-null pointer to ChSystemDescriptor
+	/// - #m_sysd must be a non-null pointer to ChSystemDescriptor
 	/// - the #update_sparsity_pattern_flag must be set (it will be switched off after this call)
 	/// - the sparsity pattern lock #m_lock must be set
 	/// If this not hold then the matrix can be _fully_ reset, or _partially_ reset (mantaining the sparsity pattern).
 	/// For _partial_ reset the following must apply:
-	/// - \p nrows and \p ncols must not differ from the current ones
-	/// - \p nonzeros_hint must not be provided (or must equal 0)
-	/// - \p #m_lock must be set
+	/// - \a nrows and \a ncols must not differ from the current ones
+	/// - \a nonzeros_hint must not be provided (or must equal 0)
+	/// - #m_lock must be set
 	/// otherwise a _full_ reset will occur.
 	void ChCSR3Matrix::Reset(int nrows, int ncols, int nonzeros_hint)
 	{
@@ -174,9 +173,9 @@ namespace chrono{
 		auto lead_dim_new = row_major_format ? nrows : ncols;
 		auto trail_dim_new = row_major_format ? ncols : nrows;
 
-		if (update_sparsity_pattern && sysd && m_lock)
+		if (m_update_sparsity_pattern && m_sysd && m_lock)
 		{
-			update_sparsity_pattern = false;
+			m_update_sparsity_pattern = false;
 			loadSparsityPattern();
 		}
 		else
@@ -246,7 +245,6 @@ namespace chrono{
 		return trail_i_dest!= trail_i;
 	}
 
-	/// The same as Compress(), but also removes elements below \p pruning_threshold.
 	void ChCSR3Matrix::Trim()
 	{
 		trailIndex.resize(leadIndex[*leading_dimension]);
@@ -260,7 +258,6 @@ namespace chrono{
 	}
 
 
-	/// The same as Compress(), but also removes elements below \p pruning_threshold.
 	void ChCSR3Matrix::Prune(double pruning_threshold)
 	{
 		int trail_i_dest = 0;
@@ -413,12 +410,12 @@ namespace chrono{
 	//}
 
 	/// Acquire information about the sparsity pattern of the elements that _will_ be put into this matrix.
-	/// The information is provided by #sysd.
+	/// The information is provided by #m_sysd.
 	void ChCSR3Matrix::loadSparsityPattern()
 	{
 		// get the sparsity pattern with the 'sparsity_learner'
 		sparsity_learner.Reset(m_num_rows, m_num_cols);
-		sysd->ConvertToMatrixForm(&sparsity_learner, nullptr);
+		m_sysd->ConvertToMatrixForm(&sparsity_learner, nullptr);
 
 		auto& row_lists = sparsity_learner.GetSparsityPattern();
 		*leading_dimension = sparsity_learner.isRowMajor() ? sparsity_learner.GetNumRows() : sparsity_learner.GetNumColumns();
@@ -430,7 +427,7 @@ namespace chrono{
 		leadIndex[0] = 0;
 		for (auto lead_sel = 0; lead_sel<*leading_dimension; ++lead_sel )
 		{
-			leadIndex[lead_sel + 1] = leadIndex[lead_sel] + row_lists[lead_sel].size();
+			leadIndex[lead_sel + 1] = leadIndex[lead_sel] + static_cast<int>(row_lists[lead_sel].size());
 			std::copy(row_lists[lead_sel].begin(), row_lists[lead_sel].end(), trailIndex.begin() + leadIndex[lead_sel]);
 		}
 
@@ -542,12 +539,12 @@ namespace chrono{
 			// meanwhile we give some space also to all the other rows
 			// so trail_sel WILL CHANGE
 
-			size_t desired_trailIndex_length = GetTrailingIndexLength()*1.2;
+			auto desired_trailIndex_length = static_cast<int>(std::max(GetTrailingIndexLength()*1.2, GetTrailingIndexLength()+1.0));
 			auto capacity_expansion_factor = 1.5;
 
 			if (desired_trailIndex_length>=trailIndex.capacity())
 			{
-				auto new_capacity = std::max(static_cast<size_t>(trailIndex.capacity() * capacity_expansion_factor), desired_trailIndex_length);
+				auto new_capacity = std::max(static_cast<int>(trailIndex.capacity() * capacity_expansion_factor), desired_trailIndex_length);
 				index_vector_t trailIndex_new;
 				values_vector_t values_new;
 				std::vector<bool> initialized_element_new;

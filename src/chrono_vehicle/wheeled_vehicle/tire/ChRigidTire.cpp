@@ -167,5 +167,42 @@ TireForce ChRigidTire::GetTireForce(bool cosim) const {
     return tire_force;
 }
 
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+unsigned int ChRigidTire::GetNumVertices() const {
+    assert(m_use_contact_mesh);
+    return m_trimesh->getCoordsVertices().size();
+}
+
+unsigned int ChRigidTire::GetNumTriangles() const {
+    assert(m_use_contact_mesh);
+    return m_trimesh->getIndicesVertexes().size();
+}
+
+const std::vector<ChVector<int>>& ChRigidTire::GetMeshConnectivity() const {
+    assert(m_use_contact_mesh);
+    return m_trimesh->getIndicesVertexes();
+}
+
+const std::vector<ChVector<>>& ChRigidTire::GetMeshVertices() const {
+    assert(m_use_contact_mesh);
+    return m_trimesh->getCoordsVertices();
+}
+
+const std::vector<ChVector<>>& ChRigidTire::GetMeshNormals() const {
+    assert(m_use_contact_mesh);
+    return m_trimesh->getCoordsNormals();
+}
+
+void ChRigidTire::GetMeshVertexStates(std::vector<ChVector<>>& pos, std::vector<ChVector<>>& vel) const {
+    assert(m_use_contact_mesh);
+    auto vertices = m_trimesh->getCoordsVertices();
+
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        pos.push_back(m_wheel->TransformPointLocalToParent(vertices[i]));
+        vel.push_back(m_wheel->PointSpeedLocalToParent(vertices[i]));
+    }
+}
+
 }  // end namespace vehicle
 }  // end namespace chrono

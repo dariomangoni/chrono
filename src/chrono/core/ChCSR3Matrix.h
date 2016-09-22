@@ -25,9 +25,6 @@
 #include <future>
 
 namespace chrono {
-	class ChSystemDescriptor;
-	class ChMapMatrix;
-
 
 	/** \class ChSparsityPatternLearner
 	\brief A dummy matrix that gets only sparsity pattern infos.
@@ -78,10 +75,10 @@ namespace chrono {
 
 		std::vector<std::list<int>>& GetSparsityPattern()
 		{
-			for (auto& list : row_lists)
+			for (auto list_iter = row_lists.begin(); list_iter!= row_lists.end(); ++list_iter)
 			{
-				list.sort();
-				list.unique();
+                list_iter->sort();
+                list_iter->unique();
 			}
 			return row_lists;
 		}
@@ -90,8 +87,8 @@ namespace chrono {
 
 		int GetNNZ() const override {
 			int nnz_temp = 0;
-			for each (auto list in row_lists)
-				nnz_temp += list.size();
+            for (auto list_iter = row_lists.begin(); list_iter != row_lists.end(); ++list_iter)
+				nnz_temp += static_cast<int>(list_iter->size());
 
 			const_cast<ChSparsityPatternLearner*>(this)->m_nnz = nnz_temp;
 			return nnz_temp;
@@ -129,9 +126,7 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
     int max_shifts = std::numeric_limits<int>::max();
 
 	// Sparsity pattern learning variables
-	ChSystemDescriptor* sysd = nullptr;
 	ChSparsityPatternLearner sparsity_learner;
-	bool update_sparsity_pattern = true;
 
     // CSR matrix arrays typedefs
 #ifdef ALIGNED_ALLOCATORS
@@ -186,15 +181,17 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
     bool Resize(int nrows, int ncols, int nonzeros_hint = 0) override {
         Reset(nrows, ncols, nonzeros_hint);
         return true;
-    }
+    };
 
     /// Get the number of non-zero elements in this matrix.
-    int GetNNZ() const override { return trailIndex.size(); }
+    int GetNNZ() const override { return GetTrailingIndexLength(); }
 
-    /// Return the row index array in the CSR representation of this matrix.
+    /// Return the row index array in the CSR representation of this matrix if in row major format.
+	/// Return the column index array if in col major format.
 	int* GetCSR_LeadingIndexArray() const override;
 
-    /// Return the column index array in the CSR representation of this matrix.
+    /// Return the column index array in the CSR representation of this matrix if in row major format.
+	/// Return the row index array if in col major format.
 	int* GetCSR_TrailingIndexArray() const override;
 
     /// Return the array of matrix values in the CSR representation of this matrix.
@@ -207,30 +204,27 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
 	/// The underlying vectors are not resized (see Trim() for this), nor moved. 
     void Trim();
 
+    /// The same as Compress(), but also removes elements below \p pruning_threshold.
     void Prune(double pruning_threshold = 0);
 
 	/// Get the length of the trailing-index array (e.g. column index if row major, row index if column major)
 	int GetTrailingIndexLength() const { return leadIndex[*leading_dimension]; }
 
 	/// Get the capacity of the trailing-index array (e.g. column index if row major, row index if column major)
-    int GetTrailingIndexCapacity() const { return trailIndex.capacity(); }
+    int GetTrailingIndexCapacity() const { return static_cast<int>(trailIndex.capacity()); }
 
+    /// Advanced use. While setting new elements in the matrix, SetMaxShifts() tells how far the internal algorithm
+    /// should look for not-initialized elements.
     void SetMaxShifts(int max_shifts_new = std::numeric_limits<int>::max()) { max_shifts = max_shifts_new; }
+
+    /// Check if the matrix is compressed i.e. the matrix elements are stored contiguously in the arrays.
     bool IsCompressed() const { return isCompressed; }
 
-    // Testing functions
     int VerifyMatrix() const;
 
     // Import/Export functions
 	void ImportFromDatFile(std::string filepath = "", bool row_major_format_on = true);
     void ExportToDatFile(std::string filepath = "", int precision = 6) const;
-	void BindToChSystemDescriptor(ChSystemDescriptor* sysd_in) override { sysd = sysd_in; }
-
-	/// Force the update of the sparsity pattern.
-	/// Be aware that the sparsity pattern will actually be updated only if:
-	/// - #sysd is a valid non-null pointer to ChSystemDescriptor
-	/// - the sparsity pattern lock is set (i.e. #m_lock is set). See ChSparseMatrix::SetSparsityPatternLock()
-	void ForceSparsityPatternUpdate() { update_sparsity_pattern = true; }
 
 	// Profiling
 	ChTimer<> timer_insert;
