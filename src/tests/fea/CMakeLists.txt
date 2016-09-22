@@ -20,7 +20,12 @@ endif()
 
 if(ENABLE_MODULE_SUPERLUMT)
     include_directories(${CH_SUPERLUMT_INCLUDES})
-    list(APPEND LIBS "ChronoEngine_SuperLUMT")
+    list(APPEND LIBS "ChronoEngine_superlumt")
+endif()
+
+if(ENABLE_MODULE_MUMPS)
+    include_directories(${CH_MUMPS_INCLUDES})
+    list(APPEND LIBS "ChronoEngine_mumps")
 endif()
 
 if(ENABLE_MODULE_IRRLICHT)
