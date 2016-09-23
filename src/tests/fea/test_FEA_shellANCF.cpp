@@ -63,21 +63,21 @@ double step_size = 1e-3;  // integration step size
 int num_steps = 20;       // number of integration steps
 int skip_steps = 0;       // initial number of steps excluded from timing
 
-int numDiv_x = 50;  // mesh divisions in X direction
-int numDiv_y = 50;  // mesh divisions in Y direction
+int numDiv_x = 100;  // mesh divisions in X direction
+int numDiv_y = 100;  // mesh divisions in Y direction
 int numDiv_z = 1;   // mesh divisions in Z direction
 
 std::string out_dir = "../TEST_SHELL_ANCF";  // name of output directory
 bool output = true;                         // generate output file?
 bool verbose = true;                        // verbose output?
 
-// -----------------------------------------------------------------------------
+                                            // -----------------------------------------------------------------------------
 
 void RunModel(solver_type solver,              // use MKL solver (if available)
               bool use_adaptiveStep,     // allow step size reduction
               bool use_modifiedNewton,   // use modified Newton method
               const std::string& suffix  // output filename suffix
-              ) {
+) {
 
     cout << endl;
     cout << "===================================================================" << endl;
@@ -117,7 +117,7 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
     double plate_lenght_x = 1.0;
     double plate_lenght_y = 1.0;
     double plate_lenght_z = 0.04;  // small thickness
-    // Specification of the mesh
+                                   // Specification of the mesh
     int N_x = numDiv_x + 1;
     int N_y = numDiv_y + 1;
     int N_z = numDiv_z + 1;
@@ -125,7 +125,7 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
     int TotalNumElements = numDiv_x * numDiv_y;
     //(1+1) is the number of nodes in the z direction
     int TotalNumNodes = (numDiv_x + 1) * (numDiv_y + 1);  // Or *(numDiv_z+1) for multilayer
-    // Element dimensions (uniform grid)
+                                                          // Element dimensions (uniform grid)
     double dx = plate_lenght_x / numDiv_x;
     double dy = plate_lenght_y / numDiv_y;
     double dz = plate_lenght_z / numDiv_z;
@@ -162,10 +162,10 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
     // Create the elements
     for (int i = 0; i < TotalNumElements; i++) {
         // Definition of nodes forming an element
-        int node0 = (i / (numDiv_x)) * (N_x) + i % numDiv_x;
-        int node1 = (i / (numDiv_x)) * (N_x) + i % numDiv_x + 1;
-        int node2 = (i / (numDiv_x)) * (N_x) + i % numDiv_x + 1 + N_x;
-        int node3 = (i / (numDiv_x)) * (N_x) + i % numDiv_x + N_x;
+        int node0 = (i / (numDiv_x)) * (N_x)+i % numDiv_x;
+        int node1 = (i / (numDiv_x)) * (N_x)+i % numDiv_x + 1;
+        int node2 = (i / (numDiv_x)) * (N_x)+i % numDiv_x + 1 + N_x;
+        int node3 = (i / (numDiv_x)) * (N_x)+i % numDiv_x + N_x;
 
         // Create the element and set its nodes.
         auto element = std::make_shared<ChElementShellANCF>();
@@ -178,10 +178,10 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
         element->SetDimensions(dx, dy);
         // Single layer
         element->AddLayer(dz, 0 * CH_C_DEG_TO_RAD, mat);  // Thickness: dy;  Ply angle: 0.
-        // Set other element properties
+                                                          // Set other element properties
         element->SetAlphaDamp(0.0);   // Structural damping for this
         element->SetGravityOn(true);  // element calculates its own gravitational load
-        // Add element to mesh
+                                      // Add element to mesh
         my_mesh->AddElement(element);
     }
 
@@ -209,13 +209,13 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
 #endif
 
 #ifdef CHRONO_MUMPS
-    ChSolverMumps<>* mumps_solver_stab = nullptr;
-    ChSolverMumps<>* mumps_solver_speed = nullptr;
+    ChSolverMumps* mumps_solver_stab = nullptr;
+    ChSolverMumps* mumps_solver_speed = nullptr;
 #endif
 
 
     // Set up solver
-    switch(solver)
+    switch (solver)
     {
     case solver_type::MINRES:
     {
@@ -225,7 +225,7 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
         my_system.SetMaxItersSolverSpeed(100);
         my_system.SetTolForce(1e-10);
     }
-        break;
+    break;
     case solver_type::MKL:
 #ifdef CHRONO_MKL
         mkl_solver_stab = new ChSolverMKL<>;
@@ -251,20 +251,16 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
         superlumt_solver_speed->SetSparsityPatternLock(true);
         superlumt_solver_stab->SetSparsityPatternLock(true);
         superlumt_solver_speed->SetVerbose(verbose);
+        superlumt_solver_speed->ForceSparsityPatternUpdate();
 #endif
         break;
     case solver_type::MUMPS:
 #ifdef CHRONO_MUMPS
-        mumps_solver_stab = new ChSolverMumps<>;
-        mumps_solver_speed = new ChSolverMumps<>;
-        ////mkl_solver_stab = new ChSolverMKL<ChMapMatrix>;
-        ////mkl_solver_speed = new ChSolverMKL<ChMapMatrix>;
+        mumps_solver_stab = new ChSolverMumps;
+        mumps_solver_speed = new ChSolverMumps;
         my_system.ChangeSolverStab(mumps_solver_stab);
         my_system.ChangeSolverSpeed(mumps_solver_speed);
-        mumps_solver_speed->SetSparsityPatternLock(true);
-        mumps_solver_stab->SetSparsityPatternLock(true);
         mumps_solver_speed->SetVerbose(verbose);
-       mumpsl_solver_speed->ForceSparsityPatternUpdate();
 #endif
         break;
     default:
@@ -337,7 +333,7 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
 
         my_system.DoStepDynamics(step_size);
 
-        if (istep==3 && (solver == solver_type::MKL || solver == solver_type::SUPERLUMT))
+        if (istep == 3 && (solver == solver_type::MKL || solver == solver_type::SUPERLUMT))
         {
 #ifdef CHRONO_MKL
             mkl_solver_speed->SetSparsityPatternLock(true);
@@ -420,24 +416,24 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
             cout << "setup: " << my_system.GetTimerSetup();
 #ifdef CHRONO_MKL
             if (solver == solver_type::MKL) {
-                cout << "  assembly: " << mkl_solver_speed->GetTimeSetup_Assembly();
-                cout << "  pardiso: " << mkl_solver_speed->GetTimeSetup_SolverCall();
+                cout << "  [assembly: " << mkl_solver_speed->GetTimeSetup_Assembly();
+                cout << "  pardiso: " << mkl_solver_speed->GetTimeSetup_SolverCall() <<"]";
             }
 #endif
 #ifdef CHRONO_SUPERLUMT
             if (solver == solver_type::SUPERLUMT) {
-                cout << "  assembly: " << superlumt_solver_speed->GetTimeSetup_Assembly();
-                cout << "  superlu_mt: " << superlumt_solver_speed->GetTimeSetup_SolverCall();
-            }
-#endif
-#ifdef CHRONO_MUMPS
-            if (solver == solver_type::MUMPS) {
-                cout << "  assembly: " << mumps_solver_speed->GetTimeSetup_Assembly();
-                cout << "  mumps: " << mumps_solver_speed->GetTimeSetup_SolverCall();
+                cout << "  [assembly: " << superlumt_solver_speed->GetTimeSetup_Assembly();
+                cout << "  superlu_mt: " << superlumt_solver_speed->GetTimeSetup_SolverCall() << "]";
             }
 #endif
             cout << endl;
             cout << "solve: " << my_system.GetTimerSolver() << "  ";
+#ifdef CHRONO_MUMPS
+            if (solver == solver_type::MUMPS) {
+                cout << "  [assembly: " << mumps_solver_speed->GetTimeSolve_Assembly();
+                cout << "  mumps: " << mumps_solver_speed->GetTimeSolve_SolverCall() << "]";
+            }
+#endif
             cout << endl << endl;
         }
 
@@ -461,16 +457,22 @@ void RunModel(solver_type solver,              // use MKL solver (if available)
     cout << "  Setup:    " << time_setup << "\t (" << (time_setup / time_total) * 100 << "%)" << endl;
     if (solver == solver_type::MKL || solver == solver_type::SUPERLUMT || solver == solver_type::MUMPS) {
         cout << "    Assembly: " << time_setup_assembly << "\t (" << (time_setup_assembly / time_setup) * 100
-             << "% setup)" << endl;
+            << "% setup)" << endl;
         cout << "    SolverCall:  " << time_setup_solvercall << "\t (" << (time_setup_solvercall / time_setup) * 100
-             << "% setup)" << endl;
+            << "% setup)" << endl;
     }
     cout << "  Solve:    " << time_solve << "\t (" << (time_solve / time_total) * 100 << "%)" << endl;
     if (solver == solver_type::MKL || solver == solver_type::SUPERLUMT || solver == solver_type::MUMPS) {
         cout << "    Assembly: " << time_solve_assembly << "\t (" << (time_solve_assembly / time_solve) * 100
-             << "% solve)" << endl;
+            << "% solve)" << endl;
         cout << "    SolverCall:  " << time_solve_solvercall << "\t (" << (time_solve_solvercall / time_solve) * 100
-             << "% solve)" << endl;
+            << "% solve)" << endl;
+    }
+    if (solver == solver_type::MKL || solver == solver_type::SUPERLUMT || solver == solver_type::MUMPS) {
+        cout << "  [TOT Assembly: " << time_setup_assembly+time_solve_assembly << "\t (" << ((time_setup_assembly + time_solve_assembly) / time_total) * 100
+            << "% total)]" << endl;
+        cout << "  [TOT SolverCall:  " << time_setup_solvercall + time_solve_solvercall << "\t (" << ((time_setup_solvercall + time_solve_solvercall) / time_total) * 100
+            << "% total)]" << endl;
     }
     cout << "  Forces:   " << time_force << "\t (" << (time_force / time_total) * 100 << "%)" << endl;
     cout << "  Jacobian: " << time_jacobian << "\t (" << (time_jacobian / time_total) * 100 << "%)" << endl;
@@ -519,12 +521,12 @@ int main(int argc, char* argv[]) {
 #endif
 
 #ifdef CHRONO_MUMPS
-    RunModel(solver_type::MUMPS, true, false, "MUMPS_adaptive_full");     // MKL, adaptive step, full Newton
-    RunModel(solver_type::MUMPS, true, true, "MUMPS_adaptive_modified");  // MKL, adaptive step, modified Newton
+    RunModel(solver_type::MUMPS, true, false, "MUMPS_adaptive_full");     // MUMPS, adaptive step, full Newton
+    RunModel(solver_type::MUMPS, true, true, "MUMPS_adaptive_modified");  // MUMPS, adaptive step, modified Newton
 #endif
 
     RunModel(solver_type::MINRES, true, false, "MINRES_adaptive_full");     // MINRES, adaptive step, full Newton
     RunModel(solver_type::MINRES, true, true, "MINRES_adaptive_modified");  // MINRES, adaptive step, modified Newton
 
-     return 0;
+    return 0;
 }
