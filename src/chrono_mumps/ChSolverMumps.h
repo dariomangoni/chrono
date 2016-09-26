@@ -71,10 +71,10 @@ namespace chrono {
        /// Get cumulative time for Pardiso calls in Setup phase.
        double GetTimeSetup_SolverCall() const { return m_timer_setup_solvercall(); }
 
-       //bool Setup(ChSystemDescriptor& sysd) override;
+       bool Setup(ChSystemDescriptor& sysd) override;
 
        /// Solve using MUMPS
-       virtual double Solve(ChSystemDescriptor& sysd) override;  ///< system description with constraints and variables
+       double Solve(ChSystemDescriptor& sysd) override;  ///< system description with constraints and variables
 
        bool SolveRequiresMatrix() const override { return false; };
 

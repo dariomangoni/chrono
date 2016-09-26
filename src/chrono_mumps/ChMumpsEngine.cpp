@@ -1,14 +1,36 @@
 ﻿#include "ChMumpsEngine.h"
-#include <algorithm>
 #include <bitset>
 #include <mpi.h>
 
 namespace chrono
 {
-	
-	ChMumpsEngine::~ChMumpsEngine()
+    ChMumpsEngine::ChMumpsEngine(mumps_SYM symmetry, int mumps_mpi_comm, int activate_this_node)
+    {
+        ierr = MPI_Init(nullptr, nullptr);
+        ierr = MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+
+        /* Initialize a MUMPS instance. Use MPI_COMM_WORLD */
+        mumps_id.job = INIT;
+        mumps_id.par = activate_this_node;
+        mumps_id.sym = symmetry;
+        mumps_id.comm_fortran = mumps_mpi_comm;
+
+        dmumps_c(&mumps_id);
+
+        /* Output messages */
+        mumps_id.ICNTL(1) = 6; // Error
+        mumps_id.ICNTL(2) = 0; // Diagnostic and warnings
+        mumps_id.ICNTL(3) = 0; // Global information
+        mumps_id.ICNTL(4) = 1; // Error, warning and diagnostic control	
+
+                               /* Matrix control */
+        mumps_id.ICNTL(5) = 0; // COO Matrix format selection
+        mumps_id.ICNTL(18) = 0; // Matrix centralized on the host
+    }
+
+    ChMumpsEngine::~ChMumpsEngine()
 	{	
-		mumps_id.job = JOB_END;
+		mumps_id.job = END;
 		dmumps_c(&mumps_id); /* Terminate instance */
 		ierr = MPI_Finalize();
 	}	
@@ -22,13 +44,9 @@ namespace chrono
 
     void ChMumpsEngine::SetMatrix(const ChCOOMatrix& Z)
     {
-        //Z.Trim();
-        n = Z.GetNumRows();
-        nz = Z.GetNNZ();
-
         /* Define the problem on the host */
-        mumps_id.n = n;
-        mumps_id.nz = nz;
+        mumps_id.n = Z.GetNumRows();
+        mumps_id.nz = Z.GetNNZ();
         mumps_id.irn = Z.GetRowIndexAddress();
         mumps_id.jcn = Z.GetColIndexAddress();
         mumps_id.a = Z.GetValuesAddress();
@@ -42,33 +60,9 @@ namespace chrono
     void ChMumpsEngine::SetRhsVector(double* b)
     {
         mumps_id.rhs = b;
-    }
-
-    void ChMumpsEngine::Initialize()
-	{
-		ierr = MPI_Init(nullptr, nullptr);
-		ierr = MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-
-		/* Initialize a MUMPS instance. Use MPI_COMM_WORLD */
-		mumps_id.job = JOB_INIT;
-		mumps_id.par = 1;
-		mumps_id.sym = 0;
-		mumps_id.comm_fortran = USE_COMM_WORLD;
-		
-		dmumps_c(&mumps_id);
-
-		/* Output messages */
-		mumps_id.ICNTL(1) = 6; // Error
-		mumps_id.ICNTL(2) = 0; // Diagnostic and warnings
-		mumps_id.ICNTL(3) = 0; // Global information
-		mumps_id.ICNTL(4) = 1; // Error, warning and diagnostic control	
-
-		/* Matrix control */
-		mumps_id.ICNTL(5) = 0; // COO Matrix format selection
-		mumps_id.ICNTL(18) = 0; // Matrix centralized on the host
-	}	
+    }	
 	
-	int ChMumpsEngine::MumpsCall(int job_call)
+	int ChMumpsEngine::MumpsCall(mumps_JOB job_call)
 	{	
 		/* Call the MUMPS package. */
 		mumps_id.job = job_call;

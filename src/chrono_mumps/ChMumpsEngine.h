@@ -34,8 +34,6 @@
 #include "chrono_mumps/ChCOOMatrix.h"
 
 #include <dmumps_c.h>
-#define JOB_INIT -1
-#define JOB_END -2
 #define USE_COMM_WORLD -987654
 
 /* macro s.t. indices match documentation */
@@ -54,7 +52,26 @@ namespace chrono
 	class ChApiMumps ChMumpsEngine
 	{
 	public:
-		ChMumpsEngine(){};
+        enum mumps_SYM
+        {
+            UNSYMMETRIC = 0,
+            SYMMETRIC_POSDEF = 1,
+            SYMMETRIC_GENERAL = 2
+        };
+
+        enum mumps_JOB
+        {
+            INIT = -1,
+            END = -2,
+            ANALYZE = 1,
+            FACTORIZE = 2,
+            SOLVE = 3,
+            ANALYZE_FACTORIZE = 4,
+            FACTORIZE_SOLVE = 5,
+            COMPLETE = 6
+        };
+
+	    explicit ChMumpsEngine(mumps_SYM symmetry = UNSYMMETRIC, int mumps_mpi_comm = -987654, int activate_this_node = 1);
 		virtual ~ChMumpsEngine();
 
 		void SetProblem(const ChCOOMatrix& Z, const ChMatrix<>& rhs);
@@ -65,9 +82,7 @@ namespace chrono
         void SetRhsVector(const ChMatrix<>& b);
         void SetRhsVector(double* b);
 
-
-		void Initialize();
-		int MumpsCall(int job_call = 6);
+        int MumpsCall(mumps_JOB job_call);
  
 		void PrintINFOG();
 
@@ -81,8 +96,6 @@ namespace chrono
 
 	private:
 		DMUMPS_STRUC_C mumps_id;
-		int n = 0;
-		int nz = 0;
 		int myid = 0;
 		int ierr = 0;
 	};
