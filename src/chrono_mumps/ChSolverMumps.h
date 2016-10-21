@@ -61,6 +61,23 @@ namespace chrono {
            m_timer_solve_assembly.reset();
            m_timer_solve_solvercall.reset();
        }
+       
+       /// Enable/disable locking the sparsity pattern (default: false).
+       /// If \a val is set to true, then the sparsity pattern of the problem matrix is assumed
+       /// to be unchanged from call to call.
+       void SetSparsityPatternLock(bool val)
+       {
+           m_lock = val;
+           m_mat.SetSparsityPatternLock(m_lock);
+       }
+
+       /// Call an update of the sparsiy pattern on the underlying matrix.
+       /// It is used to inform the solver (and the underlying matrices) that the sparsity pattern is changed.
+       /// It is suggested to call this function just after the construction of the solver.
+       void ForceSparsityPatternUpdate(bool val = true)
+       {
+           m_force_sparsity_pattern_update = val;
+       }
 
        /// Get cumulative time for assembly operations in Solve phase.
        double GetTimeSolve_Assembly() const { return m_timer_solve_assembly(); }

@@ -8,7 +8,7 @@ using namespace chrono;
 int main()
 {
 	int n = 3;
-	ChCOOMatrix mat(n,n);
+	ChCOOMatrix mat(n,n, true);
 	ChMatrixDynamic<double> rhs(n,1);
 	ChMumpsEngine mumps_engine;
  
@@ -20,9 +20,11 @@ int main()
 	mat.SetElement(1, 1, 2.7);
 	mat.SetElement(2, 2, 3.9);
  
-	mumps_engine.Initialize();
+    mat.Compress();
 	mumps_engine.SetProblem(mat, rhs);
-	printf("Mumps says: %d\n",mumps_engine.MumpsCall());
+    auto return_value = mumps_engine.MumpsCall(ChMumpsEngine::mumps_JOB::COMPLETE);
+    mumps_engine.PrintINFOG();
+    printf("Mumps says: %d\n", return_value);
 
 
 	for (int i = 0; i < n; i++)

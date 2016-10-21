@@ -47,9 +47,9 @@ namespace chrono
         /* Define the problem on the host */
         mumps_id.n = Z.GetNumRows();
         mumps_id.nz = Z.GetNNZ();
-        mumps_id.irn = Z.GetRowIndexAddress();
-        mumps_id.jcn = Z.GetColIndexAddress();
-        mumps_id.a = Z.GetValuesAddress();
+        mumps_id.irn = Z.GetCOO_RowIndexAddress();
+        mumps_id.jcn = Z.GetCOO_ColIndexAddress();
+        mumps_id.a = Z.GetCOO_ValuesAddress();
     }
 
     void ChMumpsEngine::SetRhsVector(const ChMatrix<>& b)
