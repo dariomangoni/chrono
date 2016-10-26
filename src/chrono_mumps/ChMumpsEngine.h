@@ -38,6 +38,7 @@
 
 /* macro s.t. indices match documentation */
 #define ICNTL(I) icntl[(I)-1]
+#define CNTL(I) cntl[(I)-1]
 #define INFO(I) info[(I)-1]
 #define INFOG(I) infog[(I)-1]
 #define RINFO(I) rinfo[(I)-1]
@@ -86,11 +87,20 @@ namespace chrono
  
 		void PrintINFOG();
 
+        void SetNullPivotDetection(bool val, double threshold = 0)
+        {
+            mumps_id.ICNTL(24) = val; // activates null pivot detection
+            mumps_id.ICNTL(25) = 0; // tries to compute one of the many solutions of AX = B
+            mumps_id.CNTL(5) = 1e20; // fixation value
+            mumps_id.CNTL(3) = threshold; // pivot threshold
+        }
+
 		int GetICNTL(int parnum){ return mumps_id.ICNTL(parnum); }
 		void SetICNTL(int parnum, int parvalue){ mumps_id.ICNTL(parnum) = parvalue; }
 
 		int GetINFO(int parnum){ return mumps_id.INFO(parnum); }
 		int GetINFOG(int parnum){ return mumps_id.INFOG(parnum); }
+
 		double GetRINFO(int parnum){ return mumps_id.RINFO(parnum); }
 		double GetRINFOG(int parnum){ return mumps_id.RINFOG(parnum); }
 

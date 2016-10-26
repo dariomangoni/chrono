@@ -56,9 +56,11 @@ namespace chrono
         m_setup_call++;
 
         if (verbose) {
-            GetLog() << " Mumps setup n = " << m_dim << "  nnz = " << m_mat.GetNNZ() << "\n";
-            GetLog() << "  assembly: " << m_timer_setup_assembly.GetTimeSecondsIntermediate() << "s" <<
-                        "  solver_call: " << m_timer_setup_solvercall.GetTimeSecondsIntermediate() << "\n";
+            GetLog() << " Mumps Setup call: " << m_setup_call << "; n = " << m_dim << "  nnz = " << m_mat.GetNNZ() << "\n";
+            if (m_null_pivot_detection && m_engine.GetINFOG(28)!=0)
+                GetLog() << "  Encountered " << m_engine.GetINFOG(28) << " null pivots\n";
+            GetLog() << "  Assembly: " << m_timer_setup_assembly.GetTimeSecondsIntermediate() << "s" <<
+                        "  Factorization: " << m_timer_setup_solvercall.GetTimeSecondsIntermediate() << "\n";
         }
 
         if (mumps_message != 0) {
@@ -72,18 +74,34 @@ namespace chrono
     double ChSolverMumps::Solve(ChSystemDescriptor& sysd) ///< system description with constraints and variables
 	{
         m_timer_solve_assembly.start();
-		sysd.ConvertToMatrixForm(nullptr, &m_rhs);
+		sysd.ConvertToMatrixForm(nullptr, &m_rhs_sol);
+        if (verbose)
+            m_rhs_bkp = m_rhs_sol;
         m_timer_solve_assembly.stop();
 
+        
+
         m_timer_solve_solvercall.start();
-		m_engine.SetRhsVector(m_rhs);
+		m_engine.SetRhsVector(m_rhs_sol);
 		m_engine.MumpsCall(ChMumpsEngine::mumps_JOB::SOLVE);
         m_timer_solve_solvercall.stop();
 
         m_solve_call++;
-		printf("\nCall: %d\n", m_solve_call);
 
-		sysd.FromVectorToUnknowns(m_rhs);
+        if (verbose) {
+            GetLog() << " Mumps Solve call: " << m_solve_call << "\n";
+            GetLog() << "   Assembly: " << m_timer_solve_assembly.GetTimeSecondsIntermediate() << "s" <<
+                        "   Solve: " << m_timer_solve_solvercall.GetTimeSecondsIntermediate() << "\n";
+
+            ChMatrixDynamic<double> res;
+            m_mat.Multiply(m_rhs_sol, res);
+            res -= m_rhs_bkp;
+            auto res_norm = res.NormTwo();
+
+            GetLog() << "  |residual| = " << res_norm << "\n\n";
+        }
+
+		sysd.FromVectorToUnknowns(m_rhs_sol);
 
 		return 0.0;
 	}
