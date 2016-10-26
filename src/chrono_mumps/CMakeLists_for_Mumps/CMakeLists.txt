@@ -1,10 +1,12 @@
-# MUMPS 5.0 CMake file
+# MUMPS 5.0.2 CMake file
 # - all UPPER case "libraries" compile .obj files without linking
-# WARNING: Some native build systems may not like targets that have only object files, so consider adding at least one real source file to any target that references $<TARGET_OBJECTS:objlib>
+# WARNING: Some native build systems may not like targets that have only object files,
+# so consider adding at least one real source file to any target that references $<TARGET_OBJECTS:objlib>
 
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
 PROJECT(Mumps C Fortran)
+SET(VERSION 5.0.2)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
@@ -25,6 +27,8 @@ MESSAGE(STATUS "Arithmetic set to '${ARITHMETIC}'. Added '${ARITH_PREFIX}' prefi
 
 
 OPTION(BUILD_EXAMPLES "Build MUMPS examples" ON)
+OPTION(ENABLE_OPENMP "Enable OpenMP multithreading." ON)
+
 
 IF(CMAKE_SIZEOF_VOID_P MATCHES 4)
     SET(TARGET_SYSTEM "32")
@@ -38,8 +42,16 @@ MESSAGE(STATUS "Building ${TARGET_SYSTEM}bit target")
 # -O2 optimization flags are already set by generator
 SET(GENERIC_COMPILER_FLAGS_FORTRAN #aka OPTF
 			"-MD -Dintel_ -DALLOW_NON_INIT -fpp")
+			
 SET(GENERIC_COMPILER_FLAGS_C #aka OPTC
 			"-MD")
+
+find_package(OpenMP)
+if (ENABLE_OPENMP AND OPENMP_FOUND)
+	SET(GENERIC_COMPILER_FLAGS_FORTRAN "${GENERIC_COMPILER_FLAGS_FORTRAN} ${OpenMP_Fortran_FLAGS}")
+	SET(GENERIC_COMPILER_FLAGS_C "${GENERIC_COMPILER_FLAGS_C} ${OpenMP_C_FLAGS}")
+endif()
+
 
 SET(COMPILER_DEFS_C #aka CDEFS
 			"Add_")
@@ -75,27 +87,9 @@ ENDIF()
 
 #################### BLAS library ##########################
 UNSET(BLAS_FOUND)
-find_package(BLAS)
+find_package(BLAS REQUIRED)
 if (BLAS_FOUND)
 	SET(BLAS_INCLUDE_DIRS ${BLAS_INCLUDE_DIR})
-ELSE()
-	SET(BLAS_INCLUDE_DIRS #aka nothing
-				"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/include"
-				"C:/Program Files (x86)/Intel/Composer XE 2015/compiler/include")
-
-	IF (TARGET_SYSTEM MATCHES "32")
-		SET(BLAS_LIBRARIES #aka LIBBLAS
-					"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/lib/ia32/mkl_intel_c.lib"
-					"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/lib/ia32/mkl_intel_thread.lib"
-					"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/lib/ia32/mkl_core.lib"
-					"C:/Program Files (x86)/Intel/Composer XE 2015/compiler/lib/ia32/libiomp5md.lib")
-	ELSEIF (TARGET_SYSTEM MATCHES "64")
-		SET(BLAS_LIBRARIES #aka LIBBLAS
-					"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/lib/intel64/mkl_intel_lp64.lib"
-					"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/lib/intel64/mkl_intel_thread.lib"
-					"C:/Program Files (x86)/Intel/Composer XE 2015/mkl/lib/intel64/mkl_core.lib"
-					"C:/Program Files (x86)/Intel/Composer XE 2015/compiler/lib/intel64/libiomp5md.lib")
-	ENDIF ()
 ENDIF()
 
 #######################################################
@@ -212,7 +206,6 @@ SET(MUMPS_HEADERS # TODO never used. Actually they are only used by the external
 
 SET (MUMPS_COMMON_SRC_FORTRAN
         src/ana_omp_m.F
-		src/tools_common.F
 		src/tools_common_mod.F
         src/mumps_static_mapping.F
         src/mumps_sol_es.F
@@ -227,20 +220,22 @@ SET (MUMPS_COMMON_SRC_FORTRAN
         src/front_data_mgt_m.F
         src/fac_maprow_data_m.F
         src/fac_descband_data_m.F
-        src/fac_ibct_data_m.F)
+        src/fac_ibct_data_m.F
+	)
 		
 SET (MUMPS_COMMON_OTHER_SRC_FORTRAN
         src/ana_orderings.F
-        src/ana_AMDMF.F
+		src/ana_AMDMF.F
         src/bcast_errors.F
         src/estim_flops.F
-        src/mumps_type_size.F
-        src/mumps_type2_blocking.F
-        src/mumps_version.F
-        src/tools_common.F
-		src/tools_common_mod.F
-		src/mumps_print_defined.F)
-		
+        src/mumps_type_size.F 
+        src/mumps_type2_blocking.F 
+        src/mumps_version.F 
+        src/tools_common.F 
+        src/mumps_print_defined.F 
+		src/ana_set_ordering.F
+	)
+
 SET (MUMPS_COMMON_OTHER_SRC_C
 		src/mumps_c.c
         src/mumps_common.c
@@ -250,7 +245,8 @@ SET (MUMPS_COMMON_OTHER_SRC_C
         src/mumps_io_basic.c
         src/mumps_io_thread.c
         src/mumps_io_err.c
-        src/mumps_numa.c)
+        src/mumps_numa.c
+	)
 		
 SET (MUMPS_COMMON_OTHER_HEAD
 		src/mumps_common.h
@@ -261,7 +257,8 @@ SET (MUMPS_COMMON_OTHER_HEAD
 		src/mumps_io_thread.h
 		src/mumps_orderings.h
 		src/mumps_size.h
-		src/mumps_tags.h)
+		src/mumps_tags.h
+	)
 		
 
 
@@ -338,7 +335,8 @@ SET(${ARITH_PREFIX}MUMPS_SRC
 		src/${ARITH_PREFIX}fac_front_LDLT_type1.F
 		src/${ARITH_PREFIX}fac_front_LDLT_type2.F
 		src/${ARITH_PREFIX}fac_front_aux.F
-		src/${ARITH_PREFIX}fac_front_type2_aux.F)
+		src/${ARITH_PREFIX}fac_front_type2_aux.F
+	)
 			
 SET(${ARITH_PREFIX}MUMPS_OTHER_SRC
 		src/${ARITH_PREFIX}ini_driver.F
@@ -403,7 +401,8 @@ SET(${ARITH_PREFIX}MUMPS_OTHER_SRC
 		src/${ARITH_PREFIX}sol_root_parallel.F
 		src/${ARITH_PREFIX}tools.F
 		src/${ARITH_PREFIX}type3_root.F
-		src/${ARITH_PREFIX}mumps_restart.F)
+		src/${ARITH_PREFIX}mumps_restart.F
+	)
 			
 # Arithmetic-specific MUMPS object files
 ADD_LIBRARY(MUMPS_SPECIFIC_OBJ_FORTRAN OBJECT
