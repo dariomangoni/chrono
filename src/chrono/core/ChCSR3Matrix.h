@@ -219,6 +219,10 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
 	void ImportFromDatFile(std::string filepath = "", bool row_major_format_on = true);
     void ExportToDatFile(std::string filepath = "", int precision = 6) const;
 
+    // Math operations
+    void Multiply(const ChMatrix<>& mat_in, ChMatrix<>& mat_out) const;
+    const ChCSR3Matrix* MultiplyVect(double* vect_in, double* vect_out) const; ///< compatibility with Spectra/Eigen libraries
+
 };
 
 	/// @} chrono

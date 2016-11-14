@@ -251,6 +251,7 @@ add_subdirectory(chrono_opengl)
 #add_subdirectory(chrono_ogre)
 add_subdirectory(chrono_vehicle)
 add_subdirectory(chrono_fsi)
+add_subdirectory(chrono_modelreduction)
 
 # Add directories for model libraries
 add_subdirectory(chrono_models)
@@ -317,6 +318,12 @@ if(ENABLE_MODULE_MKL)
   set(CHRONO_MKL "#define CHRONO_MKL")
 else()
   set(CHRONO_MKL "#undef CHRONO_MKL")
+endif()
+
+if(ENABLE_MODULE_MODELREDUCTION)
+  set(CHRONO_MODELREDUCTION "#define CHRONO_MODELREDUCTION")
+else()
+  set(CHRONO_MODELREDUCTION "#undef CHRONO_MODELREDUCTION")
 endif()
 
 if(ENABLE_MODULE_PARALLEL)

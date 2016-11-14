@@ -369,18 +369,43 @@ namespace chrono{
 		ia_file.close();
 	}
 
-	//TODO: work in progress
-	//void ChCSR3Matrix::LoadFromMapMatrix(ChMapMatrix& map_mat)
-	//{
-	//	map_mat.ConvertToCSR(leadIndex, trailIndex, values);
-	//	*leading_dimension = leadIndex.size()-1;
-	//	*trailing_dimension = *leading_dimension;
-	//	auto nnz = leadIndex[*leading_dimension];
-	//	initialized_element.assign(nnz, true);
-	//	isCompressed = true;
-	//}
+    void ChCSR3Matrix::Multiply(const ChMatrix<>& mat_in, ChMatrix<>& mat_out) const
+    {
+        assert(this->isCompressed);
+        assert(mat_in.GetRows() == this->GetNumColumns());
+        assert(row_major_format); //TODO
 
-	/// Acquire information about the sparsity pattern of the elements that _will_ be put into this matrix.
+        mat_out.Resize(GetNumRows(), mat_in.GetColumns());
+        for (auto col_out_sel = 0; col_out_sel<mat_in.GetColumns(); ++col_out_sel)
+        {
+            for (auto lead_sel = 0; lead_sel<*leading_dimension; ++lead_sel)
+            {
+                for (auto trail_sel = leadIndex[lead_sel]; trail_sel<leadIndex[lead_sel + 1]; ++trail_sel)
+                {
+                    mat_out(lead_sel, col_out_sel) += values[trail_sel] * mat_in(trailIndex[trail_sel], col_out_sel);
+                }
+            }
+        }
+
+
+        
+    }
+
+    const ChCSR3Matrix* ChCSR3Matrix::MultiplyVect(double* vect_in, double* vect_out) const
+    {
+        for (auto lead_sel = 0; lead_sel<*leading_dimension; ++lead_sel)
+        {
+            vect_out[lead_sel] = 0;
+            for (auto trail_sel = leadIndex[lead_sel]; trail_sel<leadIndex[lead_sel + 1]; ++trail_sel)
+            {
+                vect_out[lead_sel] += values[trail_sel] * vect_in[trailIndex[trail_sel]];
+            }
+        }
+
+        return this;
+    }
+
+    /// Acquire information about the sparsity pattern of the elements that _will_ be put into this matrix.
 	/// The information is provided by #m_sysd.
 	void ChCSR3Matrix::LoadSparsityPattern(ChSparsityPatternLearner& sparsity_learner)
 	{
