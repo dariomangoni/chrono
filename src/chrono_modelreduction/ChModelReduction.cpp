@@ -3,7 +3,11 @@
 #include <iostream>
 #include "ChModelReduction.h"
 #include <core/ChCSR3Matrix.h>
+#include <GenEigsSolver.h>
 using namespace Spectra;
+
+
+
 
 
 int model_reduction_test()
@@ -70,26 +74,7 @@ int model_reduction_test2()
 }
 
 
-// M = diag(1, 2, ..., 10)
-class ChCSR3MatrixREDUCTION
-{
-private:
-    //std::shared_ptr<chrono::ChCSR3Matrix> m_mat;
-    chrono::ChCSR3Matrix* m_mat;
 
-public:
-    ChCSR3MatrixREDUCTION(chrono::ChCSR3Matrix& mat_source) : m_mat(&mat_source) {}
-    ~ChCSR3MatrixREDUCTION(){}
-
-    int rows() const { return m_mat->GetNumRows(); }
-    int cols() const { return m_mat->GetNumColumns(); }
-
-    // y_out = M * x_in
-    void perform_op(double *x_in, double *y_out)
-    {
-        m_mat = const_cast<chrono::ChCSR3Matrix*>(m_mat->MultiplyVect(x_in, y_out));
-    }
-};
 
 int model_reduction_usermultiplication()
 {
@@ -129,6 +114,8 @@ int model_reduction_usermultiplication()
     return 0;
 }
 
+
+
 int model_reduction_onlyeigen()
 {
     const int n = 5;
@@ -166,3 +153,176 @@ int model_reduction_onlyeigen()
 
     return 0;
 }
+
+ // -------------------------------------------------------------------------
+
+#include <Eigen/Core>
+#include <Eigen/SparseCore>
+#include <iostream>
+#include <random> // Requires C++ 11
+
+#include <SymGEigsSolver.h>
+#include <MatOp/DenseSymMatProd.h>
+#include <MatOp/DenseCholesky.h>
+#include <MatOp/SparseSymMatProd.h>
+#include <MatOp/SparseCholesky.h>
+
+using namespace Spectra;
+    
+#define CATCH_CONFIG_MAIN
+#include "../test/catch.hpp"
+
+typedef Eigen::MatrixXd Matrix;
+typedef Eigen::VectorXd Vector;
+typedef Eigen::SparseMatrix<double> SpMatrix;
+
+// Traits to obtain operation type from matrix type
+template <typename MatType>
+struct OpTypeTrait
+{
+    typedef DenseSymMatProd<double> OpType;
+};
+
+template <>
+struct OpTypeTrait<SpMatrix>
+{
+    typedef SparseSymMatProd<double> OpType;
+};
+
+template <typename MatType>
+struct BOpTypeTrait
+{
+    typedef DenseCholesky<double> OpType;
+};
+
+template <>
+struct BOpTypeTrait<SpMatrix>
+{
+    typedef SparseCholesky<double> OpType;
+};
+
+
+
+// Generate data for testing
+void gen_dense_data(int n, Matrix& A, Matrix& B)
+{
+    Matrix M = Eigen::MatrixXd::Random(n, n);
+    A = M + M.transpose();
+    B = M.transpose() * M;
+    // To make sure B is positive definite
+    B.diagonal() += Eigen::VectorXd::Random(n).cwiseAbs();
+}
+
+
+int model_reduction_generalized()
+{
+
+    //TEST_CASE("Generalized eigensolver of symmetric real matrix [10x10]", "[geigs_sym]")
+    
+    std::srand(123);
+    bool allow_fail = true;
+    const SELECT_EIGENVALUE SelectionRule = LARGEST_ALGE;
+
+    Matrix A, B;
+    gen_dense_data(10, A, B);
+    int k = 3;
+    int m = 6;
+
+    typedef typename OpTypeTrait<Matrix>::OpType OpType;
+    typedef typename BOpTypeTrait<Matrix>::OpType BOpType;
+    OpType op(A);
+    BOpType Bop(B);
+    SymGEigsSolver<double, SelectionRule, OpType, BOpType, GEIGS_CHOLESKY> eigs(&op, &Bop, k, m);
+    eigs.init();
+    int nconv = eigs.compute(100); // maxit = 100 to reduce running time for failed cases
+    int niter = eigs.num_iterations();
+    int nops = eigs.num_operations();
+
+    if (allow_fail)
+    {
+        if (eigs.info() != SUCCESSFUL)
+        {
+            std::cout << "FAILED on this test";
+            std::cout << "nconv = " << nconv << std::endl;
+            std::cout << "niter = " << niter << std::endl;
+            std::cout << "nops  = " << nops << std::endl;
+            return 1;
+        }
+    }
+    else {
+        std::cout << "nconv = " << nconv;
+        std::cout << "niter = " << niter;
+        std::cout << "nops  = " << nops;
+        assert(eigs.info() == SUCCESSFUL);
+    }
+
+    Vector evals = eigs.eigenvalues();
+    Matrix evecs = eigs.eigenvectors();
+
+    Matrix resid = A.template selfadjointView<Eigen::Lower>() * evecs -
+        B.template selfadjointView<Eigen::Lower>() * evecs * evals.asDiagonal();
+    const double err = resid.array().abs().maxCoeff();
+
+    std::cout << "||AU - BUD||_inf = " << err;
+    assert(err == Approx(0.0));
+
+
+    return 0;
+}
+
+
+// ------------------------------------------
+#include <Eigen/Core>
+#include <Eigen/SparseCore>
+#include <Eigen/Eigenvalues>
+#include <SymGEigsSolver.h>
+#include <MatOp/DenseSymMatProd.h>
+#include <MatOp/SparseCholesky.h>
+#include <iostream>
+using namespace Spectra;
+int model_reduction_generalized2()
+{
+    // We are going to solve the generalized eigenvalue problem A * x = lambda * B * x
+    const int n = 100;
+    // Define the A matrix
+    Eigen::MatrixXd M = Eigen::MatrixXd::Random(n, n);
+    Eigen::MatrixXd A = M + M.transpose();
+    // Define the B matrix, a band matrix with 2 on the diagonal and 1 on the subdiagonals
+    Eigen::SparseMatrix<double> B(n, n);
+    B.reserve(Eigen::VectorXi::Constant(n, 3));
+    for (int i = 0; i < n; i++)
+    {
+        B.insert(i, i) = 2.0;
+        if (i > 0)
+            B.insert(i - 1, i) = 1.0;
+        if (i < n - 1)
+            B.insert(i + 1, i) = 1.0;
+    }
+    // Construct matrix operation object using the wrapper classes
+    DenseSymMatProd<double> op(A);
+    SparseCholesky<double>  Bop(B);
+    // Construct generalized eigen solver object, requesting the largest three generalized eigenvalues
+    SymGEigsSolver<double, LARGEST_ALGE, DenseSymMatProd<double>, SparseCholesky<double>, GEIGS_CHOLESKY>
+        geigs(&op, &Bop, 3, 6);
+    // Initialize and compute
+    geigs.init();
+    int nconv = geigs.compute();
+    // Retrieve results
+    Eigen::VectorXd evalues;
+    Eigen::MatrixXd evecs;
+    if (geigs.info() == SUCCESSFUL)
+    {
+        evalues = geigs.eigenvalues();
+        evecs = geigs.eigenvectors();
+    }
+    std::cout << "Generalized eigenvalues found:\n" << evalues << std::endl;
+    std::cout << "Generalized eigenvectors found:\n" << evecs.topRows(10) << std::endl;
+
+    // Verify results using the generalized eigen solver in Eigen
+    Eigen::MatrixXd Bdense = B;
+    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> es(A, Bdense);
+    std::cout << "Generalized eigenvalues:\n" << es.eigenvalues().tail(3) << std::endl;
+    std::cout << "Generalized eigenvectors:\n" << es.eigenvectors().rightCols(3).topRows(10) << std::endl;
+    return 0;
+}
+
