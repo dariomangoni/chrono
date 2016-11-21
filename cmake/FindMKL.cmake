@@ -54,6 +54,7 @@ else()
     message(FATAL_ERROR "Unsupported 'void *' size (${SIZEOF_VOID_P})")
 endif()
 
+
 # Versions should be listed is decreasing order of preference
 set(_MKL_TEST_VERSIONS ${MKL_ADDITIONAL_VERSIONS}
     "2011" "2013" "2015"
@@ -115,6 +116,7 @@ elseif(UNIX AND NOT APPLE)
 	list(APPEND _MKL_ROOT_SEARCH_DIRS "/opt/intel/compilers_and_libraries/linux/mkl") # default for ParallelStudioXE2016 and later (root permissions)
 	list(APPEND _MKL_ROOT_SEARCH_DIRS "$ENV{HOME}/intel/compilers_and_libraries/linux/mkl") # default for ParallelStudioXE2016 and later (no root permissions)
 endif()
+
 
 
 if (MKL_FIND_DEBUG)
@@ -326,9 +328,9 @@ if (MKL_FIND_DEBUG)
     if (MKL_FOUND)
         if (NOT MKL_FIND_QUIETLY OR MKL_FIND_DEBUG)
             message(STATUS
-                "Intel(R) MKL was found:\n"
-                "  MKL_INCLUDE_DIRS: ${MKL_INCLUDE_DIRS}\n"
-                "  MKL_LIBRARY_DIRS: ${MKL_LIBRARY_DIRS}\n"
+                "Intel(R) MKL was found:/n"
+                "  MKL_INCLUDE_DIRS: ${MKL_INCLUDE_DIRS}/n"
+                "  MKL_LIBRARY_DIRS: ${MKL_LIBRARY_DIRS}/n"
                 "  MKL_LIBRARIES: ${MKL_LIBRARIES}"
             )
         endif()
