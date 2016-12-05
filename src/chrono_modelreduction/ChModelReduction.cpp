@@ -1,12 +1,22 @@
-#include <Eigen/Core>
+
 #include <SymEigsSolver.h>  // Also includes <MatOp/DenseSymMatProd.h>
 #include <iostream>
 #include "ChModelReduction.h"
-#include <core/ChCSR3Matrix.h>
 #include <GenEigsSolver.h>
+
+
+#include <Eigen/Core>
+#include <Eigen/SparseCore>
+#include <iostream>
+#include <random> // Requires C++ 11
+
+#include <SymGEigsSolver.h>
+#include <MatOp/DenseSymMatProd.h>
+#include <MatOp/DenseCholesky.h>
+#include <MatOp/SparseSymMatProd.h>
+#include <MatOp/SparseCholesky.h>
+#include "core/ChCSR3Matrix.h"
 using namespace Spectra;
-
-
 
 
 
@@ -154,18 +164,8 @@ int model_reduction_onlyeigen()
     return 0;
 }
 
- // -------------------------------------------------------------------------
+// // -------------------------------------------------------------------------
 
-#include <Eigen/Core>
-#include <Eigen/SparseCore>
-#include <iostream>
-#include <random> // Requires C++ 11
-
-#include <SymGEigsSolver.h>
-#include <MatOp/DenseSymMatProd.h>
-#include <MatOp/DenseCholesky.h>
-#include <MatOp/SparseSymMatProd.h>
-#include <MatOp/SparseCholesky.h>
 
 using namespace Spectra;
     
@@ -318,11 +318,11 @@ int model_reduction_generalized2()
     std::cout << "Generalized eigenvalues found:\n" << evalues << std::endl;
     std::cout << "Generalized eigenvectors found:\n" << evecs.topRows(10) << std::endl;
 
-    // Verify results using the generalized eigen solver in Eigen
-    Eigen::MatrixXd Bdense = B;
-    Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> es(A, Bdense);
-    std::cout << "Generalized eigenvalues:\n" << es.eigenvalues().tail(3) << std::endl;
-    std::cout << "Generalized eigenvectors:\n" << es.eigenvectors().rightCols(3).topRows(10) << std::endl;
-    return 0;
+    //// Verify results using the generalized eigen solver in Eigen
+    //Eigen::MatrixXd Bdense = B;
+    //Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> es(A, Bdense);
+    //std::cout << "Generalized eigenvalues:\n" << es.eigenvalues().tail(3) << std::endl;
+    //std::cout << "Generalized eigenvectors:\n" << es.eigenvectors().rightCols(3).topRows(10) << std::endl;
+    //return 0;
 }
 

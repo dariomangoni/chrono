@@ -1,5 +1,5 @@
 #include "chrono_modelreduction/ChModelReduction.h"
-
+//
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 #include <Eigen/Eigenvalues>
@@ -9,7 +9,7 @@
 #include <iostream>
 #include <MatOp/SparseSymMatProd.h>
 using namespace Spectra;
-
+//
 
 int model_reduction_generalized_useroperation()
 {
@@ -128,8 +128,8 @@ int test_eigen()
 
     //// Verify results using the generalized eigen solver in Eigen
     //Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::SparseMatrix<double>> es(mymatA_wrap, mymatB_wrap);
-    Eigen::GeneralizedEigenSolver<Eigen::SparseMatrix<double>> es(mymatA_wrap, mymatB_wrap, true);
-    std::cout << "Generalized eigenvalues:\n" << es.eigenvalues().tail(3) << std::endl;
+    //Eigen::GeneralizedEigenSolver<Eigen::SparseMatrix<double>> es(mymatA_wrap, mymatB_wrap, true);
+    //std::cout << "Generalized eigenvalues:\n" << es.eigenvalues().tail(3) << std::endl;
     //std::cout << "Generalized eigenvectors:\n" << es.eigenvectors().rightCols(3).topRows(10) << std::endl;
     return 0;
 }
