@@ -196,17 +196,28 @@ namespace chrono{
 
 		int trail_i_dest = 0;
 		int trail_i = 0;
-		for (auto lead_i = 0; lead_i<*leading_dimension; ++lead_i)
+        bool all_zeros_row = true;
+		for (auto lead_i = 0; lead_i<*leading_dimension; ++lead_i) // loop over leading array
 		{
-			for (; trail_i<leadIndex[lead_i+1]; ++trail_i)
+            all_zeros_row = true;
+			for (; trail_i<leadIndex[lead_i+1]; ++trail_i) // loop over trailing array
 			{
 				if (initialized_element[trail_i])
 				{
 					values[trail_i_dest] = values[trail_i];
 					trailIndex[trail_i_dest] = trailIndex[trail_i];
 					++trail_i_dest;
+                    all_zeros_row = false;
 				}
 			}
+
+            if (all_zeros_row) // avoid to delete rows that have all zero values
+            {
+                values[trail_i_dest] = 0;
+                trailIndex[trail_i_dest] = static_cast<int>(std::ceil(GetNumRows()/2));
+                ++trail_i_dest;
+            }
+
 			leadIndex[lead_i + 1] = trail_i_dest;
 		}
 
