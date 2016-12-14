@@ -1,0 +1,274 @@
+//
+// PROJECT CHRONO - http://projectchrono.org
+//
+// Copyright (c) 2013 Project Chrono
+// All rights reserved.
+//
+// Use of this source code is governed by a BSD-style license that can be 
+// found in the LICENSE file at the top level of the distribution
+// and at http://projectchrono.org/license-chrono.txt.
+//
+
+//
+//   Demo code about 
+//
+//     - FEA for 3D beams
+
+
+
+// Include some headers used by this tutorial...
+
+#include "chrono/physics/ChSystem.h"
+#include "chrono/physics/ChLinkMate.h"
+#include "chrono/physics/ChBodyEasy.h"
+#include "chrono/timestepper/ChTimestepper.h"
+#include "chrono/solver/ChSolverPMINRES.h"
+#include "chrono/solver/ChSolverMINRES.h"
+
+#include "chrono_fea/ChElementBeamEuler.h"
+#include "chrono_fea/ChBuilderBeam.h"
+#include "chrono_fea/ChMesh.h"
+#include "chrono_fea/ChVisualizationFEAmesh.h"
+#include "chrono_fea/ChLinkPointFrame.h"
+#include "chrono_fea/ChLinkDirFrame.h"
+
+#include "chrono_irrlicht/ChIrrApp.h"
+#include "core/ChCSR3Matrix.h"
+#include "chrono_modelreduction/ChSolverMR.h"
+#include "chrono_modelreduction/ChEigenAnalysis.h"
+
+//#include "chrono_matlab/ChMatlabEngine.h"
+//#include "chrono_matlab/ChSolverMatlab.h"
+
+// Remember to use the namespace 'chrono' because all classes 
+// of Chrono::Engine belong to this namespace and its children...
+
+using namespace chrono;
+using namespace chrono::fea;
+using namespace chrono::irrlicht;
+
+using namespace irr;
+
+
+
+int main(int argc, char* argv[])
+{
+    // Create a Chrono::Engine physical system
+    ChSystem my_system;
+
+
+    // Create the Irrlicht visualization (open the Irrlicht device, 
+    // bind a simple user interface, etc. etc.)
+    ChIrrApp application(&my_system, L"Beam modes", core::dimension2d<u32>(800, 600), false, true);
+
+    // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
+    application.AddTypicalLogo();
+    application.AddTypicalSky();
+    application.AddTypicalLights();
+    application.AddTypicalCamera(core::vector3df(-0.1f, 0.2f, -0.2f));
+
+
+
+    // Create a mesh, that is a container for groups
+    // of elements and their referenced nodes.
+    auto my_mesh = std::make_shared<ChMesh>();
+
+
+    // Create a section, i.e. thickness and material properties
+    // for beams. This will be shared among some beams.
+
+    auto msection = std::make_shared<ChBeamSectionAdvanced>();
+
+    double beam_wy = 0.012;
+    double beam_wz = 0.025;
+    msection->SetAsRectangularSection(beam_wy, beam_wz);
+    msection->SetYoungModulus(0.01e9);
+    msection->SetGshearModulus(0.01e9 * 0.3);
+    msection->SetBeamRaleyghDamping(0.000);
+    msection->SetDensity(7500);
+    //msection->SetCentroid(0,0.02); 
+    //msection->SetShearCenter(0,0.1); 
+    //msection->SetSectionRotation(45*CH_C_RAD_TO_DEG);
+
+    //
+    // Add some EULER-BERNOULLI BEAMS (the fast way!)
+    //
+
+    double beam_L = 0.2;
+
+    // Shortcut!
+    // This ChBuilderBeam helper object is very useful because it will 
+    // subdivide 'beams' into sequences of finite elements of beam type, ex.
+    // one 'beam' could be made of 5 FEM elements of ChElementBeamEuler class.
+    // If new nodes are needed, it will create them for you.
+    ChBuilderBeam builder;
+
+    // Now, simply use BuildBeam to create a beam from a point to another: 
+    builder.BuildBeam(my_mesh,		// the mesh where to put the created nodes and elements 
+                      msection,		// the ChBeamSectionAdvanced to use for the ChElementBeamEuler elements
+                      5,				// the number of ChElementBeamEuler to create
+                      ChVector<>(0, 0, -0.1),		// the 'A' point in space (beginning of beam)
+                      ChVector<>(beam_L, 0, -0.1),	// the 'B' point in space (end of beam)
+                      ChVector<>(0, 1, 0));			// the 'Y' up direction of the section for the beam
+
+                                                    // After having used BuildBeam(), you can retrieve the nodes used for the beam,
+                                                    // For example say you want to fix the A end and apply a force to the B end:
+    builder.GetLastBeamNodes().back()->SetFixed(true);
+    builder.GetLastBeamNodes().front()->SetForce(ChVector<>(0, -1, 0));
+
+    //// Again, use BuildBeam for creating another beam, this time
+    //// it uses one node (the last node created by the last beam) and one point:
+    //builder.BuildBeam(my_mesh,
+    //                  msection,
+    //                  5,
+    //                  builder.GetLastBeamNodes().front(), // the 'A' node in space (beginning of beam)
+    //                  ChVector<>(0.2, 0.1, -0.1),	// the 'B' point in space (end of beam)
+    //                  ChVector<>(0, 1, 0));			// the 'Y' up direction of the section for the beam
+
+
+
+
+
+    //
+    // Final touches..
+    // 
+
+
+    // We do not want gravity effect on FEA elements in this demo
+    my_mesh->SetAutomaticGravity(false);
+
+    // Remember to add the mesh to the system!
+    my_system.Add(my_mesh);
+
+
+
+
+    // ==Asset== attach a visualization of the FEM mesh.
+    // This will automatically update a triangle mesh (a ChTriangleMeshShape
+    // asset that is internally managed) by setting  proper
+    // coordinates and vertex colours as in the FEM elements.
+    // Such triangle mesh can be rendered by Irrlicht or POVray or whatever
+    // postprocessor that can handle a coloured ChTriangleMeshShape).
+    // Do not forget AddAsset() at the end!
+
+
+    /*
+    auto mvisualizebeamA = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
+    mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    mvisualizebeamA->SetSmoothFaces(true);
+    my_mesh->AddAsset(mvisualizebeamA);
+    */
+
+    auto mvisualizebeamA = std::make_shared<ChVisualizationFEAmesh>(*my_mesh.get());
+    mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_BEAM_MZ);
+    mvisualizebeamA->SetColorscaleMinMax(-0.4, 0.4);
+    mvisualizebeamA->SetSmoothFaces(true);
+    mvisualizebeamA->SetWireframe(false);
+    my_mesh->AddAsset(mvisualizebeamA);
+
+    auto mvisualizebeamC = std::make_shared<ChVisualizationFEAmesh>(*my_mesh.get());
+    mvisualizebeamC->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_CSYS);
+    mvisualizebeamC->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NONE);
+    mvisualizebeamC->SetSymbolsThickness(0.006);
+    mvisualizebeamC->SetSymbolsScale(0.01);
+    mvisualizebeamC->SetZbufferHide(false);
+    my_mesh->AddAsset(mvisualizebeamC);
+
+
+    // ==IMPORTANT!== Use this function for adding a ChIrrNodeAsset to all items
+    // in the system. These ChIrrNodeAsset assets are 'proxies' to the Irrlicht meshes.
+    // If you need a finer control on which item really needs a visualization proxy in 
+    // Irrlicht, just use application.AssetBind(myitem); on a per-item basis.
+
+    application.AssetBindAll();
+
+    // ==IMPORTANT!== Use this function for 'converting' into Irrlicht meshes the assets
+    // that you added to the bodies into 3D shapes, they can be visualized by Irrlicht!
+
+    application.AssetUpdateAll();
+
+    // Mark completion of system construction
+    my_system.SetupInitial();
+
+
+    // 
+    // THE SOFT-REAL-TIME CYCLE
+    //
+    my_system.SetSolverType(ChSystem::SOLVER_MINRES);
+    my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
+    my_system.SetMaxItersSolverSpeed(460);
+    my_system.SetMaxItersSolverStab(460);
+    my_system.SetTolForce(1e-13);
+    auto msolver = static_cast<ChSolverMINRES*>(my_system.GetSolverSpeed());
+    msolver->SetVerbose(false);
+    msolver->SetDiagonalPreconditioning(true);
+
+
+    // Change type of integrator: 
+    my_system.SetIntegrationType(chrono::ChSystem::INT_HHT);
+
+    // if later you want to change integrator settings:
+    if (auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(my_system.GetTimestepper())) {
+        mystepper->SetAlpha(-0.2);
+        mystepper->SetMaxiters(6);
+        mystepper->SetAbsTolerances(1e-12);
+        mystepper->SetVerbose(true);
+        mystepper->SetStepControl(false);
+    }
+
+    my_system.SetIntegrationType(chrono::ChSystem::INT_EULER_IMPLICIT_LINEARIZED);
+
+    application.SetTimestep(0.001);
+
+
+
+    GetLog() << "\n\n\n===========EIGENPROBLEM======== \n\n\n";
+
+    application.DoStep();
+
+    //ChCSR3Matrix matK, matM;
+    //my_system.GetStiffnessMatrix(&matK);
+    //my_system.GetMassMatrix(&matM);
+
+    //matK.Compress();
+    //matM.Compress();
+
+    //matK.VerifyMatrix();
+    //matM.VerifyMatrix();
+
+    //matK.ExportToDatFile("C:/K", 6);
+    //matM.ExportToDatFile("C:/M", 6);
+
+    //ChMatrixDynamic<double> eig_val;
+    //ChMatrixDynamic<double> eig_vect;
+
+    //ChSymGEigsSolver eig_solver(matK, matM, eig_val, eig_vect);
+    //eig_solver.compute(3);
+
+    //GetLog() << eig_val << "\n";
+    //GetLog() << eig_vect << "\n";
+
+    ChEigenAnalysis eig_analysis(my_system);
+    eig_analysis.EigenAnalysis(3);
+    eig_analysis.UpdateEigenMode(2);
+
+
+    application.SetTryRealtime(true);
+    while (application.GetDevice()->run())
+    {
+        application.BeginScene();
+
+        application.DrawAll();
+
+        application.DoStep();
+
+        eig_analysis.UpdateEigenMode(1, 1e-2);
+
+        application.EndScene();
+    }
+
+
+    return 0;
+}
+
+

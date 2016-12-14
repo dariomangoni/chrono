@@ -3,6 +3,7 @@
 
 SET(TESTS
   test_MR_system_reduction
+  test_MR_beam_reduction
 )
 
 INCLUDE_DIRECTORIES(${CH_MODELREDUCTION_INCLUDES})

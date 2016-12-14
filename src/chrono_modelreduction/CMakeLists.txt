@@ -80,11 +80,13 @@ SET(CH_MODELREDUCTION_INCLUDES "${CH_MODELREDUCTION_INCLUDES}" PARENT_SCOPE)
 SET(ChronoEngine_ModelReduction_HEADERS
     ChApiModelReduction.h
     ChModelReduction.h
-    ChModelReductionEigenExtension.h
+	# ChSolverMR.h
+	ChEigenAnalysis.h
 )
 
 SET(ChronoEngine_ModelReduction_SOURCES
     ChModelReduction.cpp
+	# ChSolverMR.cpp
 )
 
 SOURCE_GROUP("" FILES ${ChronoEngine_ModelReduction_HEADERS} ${ChronoEngine_ModelReduction_SOURCES})
