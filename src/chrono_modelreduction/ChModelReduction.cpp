@@ -5,7 +5,7 @@
 
 namespace chrono
 {
-    int chrono::ChSymGEigsSolver::compute(int requested_eigval)
+    int chrono::ChSymGEigsSolver::compute(int requested_eigval) const
     {
         int dim = matA.GetNumRows();
         assert(dim > 0 && "Matrix dimensions are not valid");
