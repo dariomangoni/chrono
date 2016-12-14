@@ -34,7 +34,6 @@
 
 #include "chrono_irrlicht/ChIrrApp.h"
 #include "core/ChCSR3Matrix.h"
-#include "chrono_modelreduction/ChSolverMR.h"
 #include "chrono_modelreduction/ChEigenAnalysis.h"
 
 //#include "chrono_matlab/ChMatlabEngine.h"
@@ -218,7 +217,7 @@ int main(int argc, char* argv[])
 
     my_system.SetIntegrationType(chrono::ChSystem::INT_EULER_IMPLICIT_LINEARIZED);
 
-    application.SetTimestep(0.001);
+    application.SetTimestep(0.01);
 
 
 
@@ -226,49 +225,25 @@ int main(int argc, char* argv[])
 
     application.DoStep();
 
-    //ChCSR3Matrix matK, matM;
-    //my_system.GetStiffnessMatrix(&matK);
-    //my_system.GetMassMatrix(&matM);
-
-    //matK.Compress();
-    //matM.Compress();
-
-    //matK.VerifyMatrix();
-    //matM.VerifyMatrix();
-
-    //matK.ExportToDatFile("C:/K", 6);
-    //matM.ExportToDatFile("C:/M", 6);
-
-    //ChMatrixDynamic<double> eig_val;
-    //ChMatrixDynamic<double> eig_vect;
-
-    //ChSymGEigsSolver eig_solver(matK, matM, eig_val, eig_vect);
-    //eig_solver.compute(3);
-
-    //GetLog() << eig_val << "\n";
-    //GetLog() << eig_vect << "\n";
-
     ChEigenAnalysis eig_analysis(my_system);
-    eig_analysis.EigenAnalysis(3);
-    eig_analysis.UpdateEigenMode(2);
+    eig_analysis.EigenAnalysis();
+    eig_analysis.ActivateModalAnalysisGUI(application);
 
 
-    application.SetTryRealtime(true);
     while (application.GetDevice()->run())
     {
         application.BeginScene();
 
         application.DrawAll();
 
-        application.DoStep();
+        //application.DoStep();
 
-        eig_analysis.UpdateEigenMode(1, 1e-2);
+        eig_analysis.UpdateEigenMode();
 
         application.EndScene();
     }
 
 
-    return 0;
 }
 
 
