@@ -35,6 +35,7 @@
 #include "chrono_irrlicht/ChIrrApp.h"
 #include "core/ChCSR3Matrix.h"
 #include "chrono_modelreduction/ChEigenAnalysis.h"
+#include <typeinfo>
 
 //#include "chrono_matlab/ChMatlabEngine.h"
 //#include "chrono_matlab/ChSolverMatlab.h"
@@ -95,14 +96,8 @@ int main(int argc, char* argv[])
 
     double beam_L = 0.2;
 
-    // Shortcut!
-    // This ChBuilderBeam helper object is very useful because it will 
-    // subdivide 'beams' into sequences of finite elements of beam type, ex.
-    // one 'beam' could be made of 5 FEM elements of ChElementBeamEuler class.
-    // If new nodes are needed, it will create them for you.
     ChBuilderBeam builder;
 
-    // Now, simply use BuildBeam to create a beam from a point to another: 
     builder.BuildBeam(my_mesh,		// the mesh where to put the created nodes and elements 
                       msection,		// the ChBeamSectionAdvanced to use for the ChElementBeamEuler elements
                       5,				// the number of ChElementBeamEuler to create
@@ -114,19 +109,6 @@ int main(int argc, char* argv[])
                                                     // For example say you want to fix the A end and apply a force to the B end:
     builder.GetLastBeamNodes().back()->SetFixed(true);
     builder.GetLastBeamNodes().front()->SetForce(ChVector<>(0, -1, 0));
-
-    //// Again, use BuildBeam for creating another beam, this time
-    //// it uses one node (the last node created by the last beam) and one point:
-    //builder.BuildBeam(my_mesh,
-    //                  msection,
-    //                  5,
-    //                  builder.GetLastBeamNodes().front(), // the 'A' node in space (beginning of beam)
-    //                  ChVector<>(0.2, 0.1, -0.1),	// the 'B' point in space (end of beam)
-    //                  ChVector<>(0, 1, 0));			// the 'Y' up direction of the section for the beam
-
-
-
-
 
     //
     // Final touches..
@@ -202,43 +184,34 @@ int main(int argc, char* argv[])
     msolver->SetVerbose(false);
     msolver->SetDiagonalPreconditioning(true);
 
-
-    // Change type of integrator: 
-    my_system.SetIntegrationType(chrono::ChSystem::INT_HHT);
-
-    // if later you want to change integrator settings:
-    if (auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(my_system.GetTimestepper())) {
-        mystepper->SetAlpha(-0.2);
-        mystepper->SetMaxiters(6);
-        mystepper->SetAbsTolerances(1e-12);
-        mystepper->SetVerbose(true);
-        mystepper->SetStepControl(false);
-    }
-
-    my_system.SetIntegrationType(chrono::ChSystem::INT_EULER_IMPLICIT_LINEARIZED);
-
     application.SetTimestep(0.01);
 
 
 
-    GetLog() << "\n\n\n===========EIGENPROBLEM======== \n\n\n";
+    GetLog() << "\n\n===========EIGENPROBLEM======== \n";
 
     application.DoStep();
 
-    ChEigenAnalysis eig_analysis(my_system);
+    ChEigenAnalysis eig_analysis(application);
     eig_analysis.EigenAnalysis();
-    eig_analysis.ActivateModalAnalysisGUI(application);
+
+    std::function<void()> simadvance_fun = std::bind(&ChEigenAnalysis::UpdateEigenMode, &eig_analysis, 1);
+    //std::function<void()> render_fun = std::bind(&ChIrrApp::DrawAll, application);
+    std::function<void(double)> render_fun = [&application](double dummy) { application.DrawAll(); };
+    std::function<void()> pre_sim_fun = std::bind(&ChIrrApp::BeginScene, &application, true, true, irr::video::SColor(255, 0, 0, 0));
+
+    //std::function<void(double)> render_fun = [&application, &eig_analysis](double ratio) { eig_analysis.UpdateEigenMode(ratio); application.DrawAll(); };
+    ChRealtimeDualStepTimer drealtime = { application, simadvance_fun, render_fun };
+    drealtime.SetPreAdvanceSimulationFunction(pre_sim_fun);
 
 
     while (application.GetDevice()->run())
     {
-        application.BeginScene();
 
-        application.DrawAll();
+        //application.DrawAll();
 
-        //application.DoStep();
-
-        eig_analysis.UpdateEigenMode();
+        //eig_analysis.UpdateEigenMode();
+        drealtime.DoRealtimeStep();
 
         application.EndScene();
     }
