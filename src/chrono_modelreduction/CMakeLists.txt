@@ -102,8 +102,20 @@ ADD_LIBRARY(ChronoEngine_modelreduction SHARED
 SET_TARGET_PROPERTIES(ChronoEngine_modelreduction PROPERTIES
                       COMPILE_DEFINITIONS "CH_API_COMPILE_MODELREDUCTION")
 
+IF (ENABLE_MODULE_IRRLICHT)
+	SET(ADDITIONAL_LIBS ChronoEngine_irrlicht)
+ENDIF()
+
+if(ENABLE_MODULE_IRRLICHT)
+    include_directories(${CH_IRRLICHTINC})
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${CH_IRRLICHT_CXX_FLAGS}")
+    list(APPEND ADDITIONAL_LIBS "ChronoEngine_irrlicht")
+    list(APPEND ADDITIONAL_LIBS "${CH_IRRLICHTLIB}")
+endif()
+
 TARGET_LINK_LIBRARIES(ChronoEngine_modelreduction
                       ChronoEngine
+					  ${ADDITIONAL_LIBS}
 					  )
 
 INSTALL(TARGETS ChronoEngine_modelreduction
