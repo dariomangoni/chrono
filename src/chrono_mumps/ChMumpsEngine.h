@@ -19,11 +19,11 @@
 //
 //   ChMumpsEngine.h
 //
-//   Use this header if you want to exploit Intel®
+//   Use this header if you want to exploit
 //	 MUMPS Library from Chrono::Engine programs.
 //
 //   HEADER file for CHRONO,
-//  Multibody dynamics engine
+//   Multibody dynamics engine
 //
 // ------------------------------------------------
 //             www.deltaknowledge.com
@@ -34,6 +34,9 @@
 #include "chrono_mumps/ChCOOMatrix.h"
 
 #include <dmumps_c.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #define USE_COMM_WORLD -987654
 
 /* macro s.t. indices match documentation */
@@ -95,6 +98,9 @@ namespace chrono
             mumps_id.CNTL(3) = threshold; // pivot threshold
         }
 
+        double GetCNTL(int parnum) { return mumps_id.CNTL(parnum); }
+        void SetCNTL(int parnum, int parvalue) { mumps_id.CNTL(parnum) = parvalue; }
+
 		int GetICNTL(int parnum){ return mumps_id.ICNTL(parnum); }
 		void SetICNTL(int parnum, int parvalue){ mumps_id.ICNTL(parnum) = parvalue; }
 
@@ -103,6 +109,40 @@ namespace chrono
 
 		double GetRINFO(int parnum){ return mumps_id.RINFO(parnum); }
 		double GetRINFOG(int parnum){ return mumps_id.RINFOG(parnum); }
+
+        DMUMPS_STRUC_C& GetMumpsStruc() { return mumps_id; }
+
+        /// Classes that wraps some useful functions in OpenMP
+        /// (in case no OpenMP is used, it defaults to dummy functions
+        /// that do nothing)
+#ifdef _OPENMP
+
+        /// Sets the number of threads in subsequent parallel
+        /// regions, unless overridden by a 'num_threads' clause
+        static void SetNumThreads(int mth) { omp_set_num_threads(mth); }
+
+        /// Returns the number of threads in the parallel region.
+        static int GetNumThreads() { return omp_get_num_threads(); }
+
+        /// Returns the thread number of the thread executing
+        /// within its thread team.
+        static int GetThreadNum() { return omp_get_thread_num(); }
+
+        /// Returns the number of available processors on this machine
+        static int GetNumProcs() { return omp_get_num_procs(); }
+
+        /// Returns the max.number of threads that would be used
+        /// by default if num_threads not specified. This is the same
+        /// number as GetNumProcs() on most OMP implementations.
+        static int GetMaxThreads() { return omp_get_max_threads(); }
+
+#else
+        static void SetNumThreads(int mth) {}
+        static int GetNumThreads() { return 1; }
+        static int GetThreadNum() { return 0; }
+        static int GetNumProcs() { return 1; }
+        static int GetMaxThreads() { return 1; }
+#endif
 
 	private:
 		DMUMPS_STRUC_C mumps_id;

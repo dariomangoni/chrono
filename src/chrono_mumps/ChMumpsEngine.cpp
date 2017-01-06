@@ -23,8 +23,8 @@ namespace chrono
         mumps_id.ICNTL(3) = 0; // Global information
         mumps_id.ICNTL(4) = 1; // Error, warning and diagnostic control	
 
-                               /* Matrix control */
-        mumps_id.ICNTL(5) = 0; // COO Matrix format selection
+        /* Matrix control */
+        mumps_id.ICNTL(5) = 0;  // COO Matrix format selection
         mumps_id.ICNTL(18) = 0; // Matrix centralized on the host
     }
 

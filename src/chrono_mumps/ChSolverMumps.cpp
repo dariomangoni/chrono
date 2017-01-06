@@ -90,8 +90,8 @@ namespace chrono
 
         if (verbose) {
             GetLog() << " Mumps Solve call: " << m_solve_call << "\n";
-            GetLog() << "   Assembly: " << m_timer_solve_assembly.GetTimeSecondsIntermediate() << "s" <<
-                        "   Solve: " << m_timer_solve_solvercall.GetTimeSecondsIntermediate() << "\n";
+            GetLog() << "  Assembly: " << m_timer_solve_assembly.GetTimeSecondsIntermediate() << "s" <<
+                        "  Solve: " << m_timer_solve_solvercall.GetTimeSecondsIntermediate() << "\n";
 
             ChMatrixDynamic<double> res;
             m_mat.Multiply(m_rhs_sol, res);
