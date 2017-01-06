@@ -12,6 +12,7 @@
 #ifndef CHEIGENANALYSIS_H
 #define CHEIGENANALYSIS_H
 
+
 #include "core/ChVectorDynamic.h"
 #include "timestepper/ChState.h"
 #include "timestepper/ChIntegrable.h"
@@ -22,17 +23,13 @@
 #include <irrlicht.h>
 #endif
 
-
 namespace chrono {
 
 #ifdef CHRONO_IRRLICHT
-// The ModalAnalysisGUIReceiver class will be used to manage input
-// from the GUI graphical user interface (the interface will
-// be created with the basic -yet flexible- platform
-// independent toolset of Irrlicht).
 
-class ChEigenAnalysis;
+class ChEigenAnalysis; // forward decl
 
+    /// GUI class for the modal analysis
 class ModalAnalysisGUIReceiver : public irr::IEventReceiver {
 public:
     ModalAnalysisGUIReceiver(){}
@@ -41,6 +38,17 @@ public:
     bool OnEvent(const irr::SEvent& event) override;
 
     void Initialize(irrlicht::ChIrrApp& application, ChEigenAnalysis& eigen_analysis);
+    static const int buffer_size = 100;
+    wchar_t buffer[buffer_size];
+
+protected:
+    template<typename... T>
+    wchar_t* fwd_swprintf(wchar_t* ws, size_t len, const wchar_t* format, T... vararg)
+    {
+        assert(swprintf(ws, len, format, vararg...) > 0 );
+        return ws;
+    }
+
 
 private:
     irrlicht::ChIrrApp* app = nullptr;
@@ -69,6 +77,7 @@ class ChEigenAnalysis {
 
 #ifdef CHRONO_IRRLICHT
     ModalAnalysisGUIReceiver gui_receiver;
+    irrlicht::ChIrrApp* irrlicht_app = nullptr;
 #endif
 
 
@@ -80,8 +89,6 @@ class ChEigenAnalysis {
 
     double current_time = 0;
     int current_selected_mode = 1;
-    ChRealtimeStepTimer real_timer;
-    bool try_realtime = true;
     double magnitude_amplification = 1;
     double time_amplification = 1;
 
@@ -98,7 +105,18 @@ class ChEigenAnalysis {
         X.Reset(1, integrable);
         V.Reset(1, integrable);
         A.Reset(1, integrable);
-    };
+    }
+#ifdef CHRONO_IRRLICHT
+    ChEigenAnalysis(irrlicht::ChIrrApp& application) : m_system(application.GetSystem()), irrlicht_app(&application) {
+        integrable = static_cast<ChIntegrableIIorder*>(m_system);
+        L.Reset(0);
+        X0.Reset(1, integrable);
+        X.Reset(1, integrable);
+        V.Reset(1, integrable);
+        A.Reset(1, integrable);
+        AttachToChIrrApp(application);
+    }
+#endif
 
     /// Destructor
     virtual ~ChEigenAnalysis() {}
@@ -141,17 +159,19 @@ class ChEigenAnalysis {
         double T;
         integrable->StateGather(X0, V, T);
 
+#ifdef CHRONO_IRRLICHT
+        if (irrlicht_app) gui_receiver.Initialize(*irrlicht_app, *this);
+#endif
+
     }
 
-    void UpdateEigenMode()
+    void UpdateEigenMode(double step_percentage = 1)
     {
         // get the current time
-        //double systemdT;
-        //integrable->StateGather(X, V, systemdT);
-        //double dt = try_realtime ? real_timer.SuggestSimulationStep(systemdT) : systemdT;
-        auto dt = try_realtime ? real_timer.SuggestSimulationStep(m_system->GetStep()) : m_system->GetStep();
+        double systemdT;
+        integrable->StateGather(X, V, systemdT);
+        double dt = step_percentage*systemdT;
         current_time += dt;
-        std::cout << dt << " s" << std::endl;
 
         assert(current_selected_mode <= eig_val.GetRows());
             
@@ -159,8 +179,6 @@ class ChEigenAnalysis {
         eig_vect_col.PasteClippedMatrix(&eig_vect, 0, current_selected_mode -1, eig_vect.GetRows(), 1, 0, 0);
         double pulse = sqrt(eig_val(current_selected_mode -1));
         double amplitude_corrector = magnitude_amplification*sin(time_amplification*pulse*current_time);
-        //std::cout << amplitude_corrector << " ampl" << std::endl;
-        //GetLog() << eig_vect_col << "\n";
 
         eig_vect_col.MatrScale(amplitude_corrector);
 
@@ -182,8 +200,6 @@ class ChEigenAnalysis {
     double GetVisualizedFrequency() const { return sqrt(eig_val(current_selected_mode - 1)) / 2 / CH_C_PI; }
     double GetFrequency(int mode) const { return sqrt(eig_val(mode - 1)) / 2 / CH_C_PI; }
 
-    void SetRealtime(bool val) { try_realtime = val; }
-
     void SetTimeAmplification(double time_ampl) { time_amplification = time_ampl; }
     double GetTimeAmplification() const { return time_amplification; }
     void SetMagnitudeAmplification(double magnitude_ampl) { magnitude_amplification = magnitude_ampl; }
@@ -194,18 +210,16 @@ class ChEigenAnalysis {
 
 
 #ifdef CHRONO_IRRLICHT
-    void ActivateModalAnalysisGUI(irrlicht::ChIrrApp& application)
+    void AttachToChIrrApp(irrlicht::ChIrrApp& application)
     {
-        // ..Finally create the event receiver, for handling all the GUI (user will use
-        //   buttons/sliders to modify parameters)
-        gui_receiver.Initialize(application, *this);
-        // note how to add the custom event receiver to the default interface:
-        application.SetUserEventReceiver(&gui_receiver);
+        irrlicht_app = &application;
+        irrlicht_app->SetUserEventReceiver(&gui_receiver);
     }
 #endif
 
 };
 
+#ifdef CHRONO_IRRLICHT
 
     inline void ModalAnalysisGUIReceiver::Initialize(irrlicht::ChIrrApp& application, ChEigenAnalysis& eigen_analysis) {
         // store pointer to physical system & other stuff so we can tweak them by user keyboard
@@ -220,7 +234,7 @@ class ChEigenAnalysis {
 
         auto left_margin = 10;
         auto text_width = 120;
-        auto box_width = 50;
+        auto box_width = 80;
         auto item_height = 15;
         auto cum_y_pos = 35;
 
@@ -232,10 +246,10 @@ class ChEigenAnalysis {
         mdevice->getGUIEnvironment()->addStaticText(L"Mode selected", 
             irr::core::rect<irr::s32>(left_margin, cum_y_pos, left_margin + text_width, cum_y_pos + item_height), false, true, mode_tab);
         auto mode_sel_box = mdevice->getGUIEnvironment()->addEditBox(L"", 
-            irr::core::rect<irr::s32>(left_margin + text_width, cum_y_pos, left_margin + text_width + box_width*0.8, cum_y_pos + item_height), true, mode_tab, modes_selection_ID); cum_y_pos += item_height;
+            irr::core::rect<irr::s32>(left_margin + text_width, cum_y_pos, left_margin + text_width + box_width*0.6, cum_y_pos + item_height), true, mode_tab, modes_selection_ID);
         mode_selmax_text = mdevice->getGUIEnvironment()->addStaticText(L"/",
-                                                    irr::core::rect<irr::s32>(left_margin + text_width + box_width*0.8, cum_y_pos, left_margin + text_width + box_width*1.0, cum_y_pos + item_height), false, true, mode_tab);
-
+                                                    irr::core::rect<irr::s32>(left_margin + text_width + box_width*0.6, cum_y_pos, left_margin + text_width + box_width, cum_y_pos + item_height), false, true, mode_tab);
+        cum_y_pos += item_height;
 
         mdevice->getGUIEnvironment()->addStaticText(L"Magnitude amplification", 
             irr::core::rect<irr::s32>(left_margin, cum_y_pos, left_margin + text_width, cum_y_pos + item_height), false, true, mode_tab);
@@ -250,12 +264,12 @@ class ChEigenAnalysis {
         mode_freq_text = mdevice->getGUIEnvironment()->addStaticText(L"Frequency",
             irr::core::rect<irr::s32>(left_margin, cum_y_pos, left_margin + text_width, cum_y_pos + item_height), false, true, mode_tab);
 
-        mode_timestep_box->setText(std::to_wstring(app->GetSystem()->GetStep()).c_str());
-        mode_sel_box->setText(std::to_wstring(eig_analysis->GetVisualizedMode()).c_str());
-        mode_magn_ampl_box->setText(std::to_wstring(eig_analysis->GetMagnitudeAmplification()).c_str());
-        mode_time_ampl_box->setText(std::to_wstring(eig_analysis->GetTimeAmplification()).c_str());
-        mode_freq_text->setText(std::wstring(L"Frequency: ").append(std::to_wstring(eig_analysis->GetVisualizedFrequency())).append(L"Hz").c_str());
-        mode_selmax_text->setText(std::wstring(L"/").append(std::to_wstring(eig_analysis->GetComputedModes())).c_str());
+        mode_timestep_box->setText(fwd_swprintf(buffer, buffer_size, L"%.2e", app->GetSystem()->GetStep()));
+        mode_sel_box->setText(fwd_swprintf(buffer, buffer_size, L"%d", eig_analysis->GetVisualizedMode()));
+        mode_magn_ampl_box->setText(fwd_swprintf(buffer, buffer_size, L"%.1g", eig_analysis->GetMagnitudeAmplification()));
+        mode_time_ampl_box->setText(fwd_swprintf(buffer, buffer_size, L"%.1g", eig_analysis->GetTimeAmplification()));
+        mode_freq_text->setText(fwd_swprintf(buffer, buffer_size, L"Frequency: %.1fHz", eig_analysis->GetVisualizedFrequency()));
+        mode_selmax_text->setText(fwd_swprintf(buffer, buffer_size, L"/%d", eig_analysis->GetComputedModes()));
 
     }
 
@@ -280,9 +294,9 @@ class ChEigenAnalysis {
                         case modes_selection_ID:
                         {
                             int mode = atoi(irr::core::stringc(static_cast<irr::gui::IGUIEditBox*>(event.GUIEvent.Caller)->getText()).c_str());
-                            eig_analysis->SetVisualizedMode(mode);
-                            mode_selmax_text->setText(std::wstring(L"/").append(std::to_wstring(eig_analysis->GetComputedModes())).c_str());
-                            mode_freq_text->setText(std::wstring(L"Frequency: ").append(std::to_wstring(eig_analysis->GetVisualizedFrequency())).append(L"Hz").c_str());
+                            eig_analysis->SetVisualizedMode(std::min(eig_analysis->GetComputedModes(), mode));
+                            mode_freq_text->setText(fwd_swprintf(buffer, buffer_size, L"Frequency: %.1fHz", eig_analysis->GetVisualizedFrequency()));
+                            mode_selmax_text->setText(fwd_swprintf(buffer, buffer_size, L"/%d", eig_analysis->GetComputedModes()));
                             break;
                         }
 
@@ -290,6 +304,7 @@ class ChEigenAnalysis {
                         {
                             double magn_ampl = atof(irr::core::stringc(static_cast<irr::gui::IGUIEditBox*>(event.GUIEvent.Caller)->getText()).c_str());
                             eig_analysis->SetMagnitudeAmplification(magn_ampl);
+                            std::cout << "new amplitude is " << eig_analysis->GetMagnitudeAmplification() << std::endl;
                             break;
                         }
                             
@@ -310,6 +325,110 @@ class ChEigenAnalysis {
         return false;
     }
 
+#endif
+
+class ChRealtimeDualStepTimer
+{
+public:
+    
+    ChRealtimeDualStepTimer(ChSystem& chrono_system, std::function<void()>& simulation_advance_fun, std::function<void(double)>& rendering_fun) : 
+        sim_adv_fun(simulation_advance_fun),
+        render_fun(rendering_fun),
+        m_system(chrono_system) {}
+    
+    ChRealtimeDualStepTimer(ChSystem& chrono_system, std::function<void()>& simulation_advance_fun, std::function<void()>& rendering_fun) : 
+        sim_adv_fun(simulation_advance_fun),
+        m_system(chrono_system)
+    {
+        SetRenderFunction(rendering_fun);
+    }
+
+#ifdef CHRONO_IRRLICHT
+    ChRealtimeDualStepTimer(irrlicht::ChIrrApp& irrlicht_app, std::function<void()>& simulation_advance_fun, std::function<void(double)>& rendering_fun) :
+        sim_adv_fun(simulation_advance_fun),
+        render_fun(rendering_fun),
+        m_system(*irrlicht_app.GetSystem()),
+        irr_app(&irrlicht_app) {}
+    
+    ChRealtimeDualStepTimer(irrlicht::ChIrrApp& irrlicht_app, std::function<void()>& simulation_advance_fun, std::function<void()>& rendering_fun) :
+        sim_adv_fun(simulation_advance_fun),
+        m_system(*irrlicht_app.GetSystem()),
+        irr_app(&irrlicht_app)
+    {
+        SetRenderFunction(rendering_fun);
+    }
+#endif
+    
+    void DoRealtimeStep()
+    {
+#ifdef CHRONO_IRRLICHT
+        if (irr_app && irr_app->GetPaused())
+            return;
+#endif
+
+        if (on_realtime && try_realtime) delay_with_wallclock += wallclock_timer.GetTimeSecondsIntermediate();
+        wallclock_timer.start();
+
+        // eventually catch user input here
+        if (pre_adv_fun && state_updates)
+            pre_adv_fun();
+
+        simulation_timestep = m_system.GetStep();
+        state_updates = 0;
+        //std::cout << delay_with_wallclock << " initial delay" << std::endl;
+        while (delay_with_wallclock >= simulation_timestep && try_realtime)
+        {
+            double start = wallclock_timer.GetTimeSecondsIntermediate();
+            sim_adv_fun();
+            ++state_updates;
+            delay_with_wallclock -= simulation_timestep;
+            if (wallclock_timer.GetTimeSecondsIntermediate() - start > simulation_timestep) break;
+        }
+        on_realtime = delay_with_wallclock < simulation_timestep;
+        std::cout << delay_with_wallclock << " < " << simulation_timestep << ": " << on_realtime << std::endl;
+        std::cout << "State updates: " << state_updates << std::endl;
+
+        //std::cout << "It is " << (on_realtime ? "" : "not") << " realtime." << std::endl;
+
+        if (state_updates) render_fun(delay_with_wallclock / simulation_timestep);
+
+    }
+
+    void SetAdvanceSimulationFunction(std::function<void()>& simulation_advance_fun) { sim_adv_fun = simulation_advance_fun; }
+    void SetPreAdvanceSimulationFunction(std::function<void()>& pre_simulation_advance_fun) { pre_adv_fun = pre_simulation_advance_fun; }
+    void SetRenderFunction(std::function<void(double)>& rendering_fun) { render_fun = rendering_fun; }
+    void SetRenderFunction(std::function<void()>& rendering_fun) { render_fun = [&rendering_fun](double dummy) {return rendering_fun(); }; }
+
+    void SetRealtime(bool on_off) { try_realtime = on_off; }
+
+    //void SetMaxFrameRate(double framerate) { maxframerate = framerate; }
+
+    bool IsRealtime() const { return on_realtime; }
+
+#ifdef CHRONO_IRRLICHT
+    void AttachToGUI(irrlicht::ChIrrApp& irrlicht_app) { irr_app = &irrlicht_app; }
+#endif
+
+private:
+    ChTimer<double> wallclock_timer;
+    std::function<void()> sim_adv_fun;
+    std::function<void(double)> render_fun;
+    std::function<void()> pre_adv_fun;
+    ChSystem& m_system;
+#ifdef CHRONO_IRRLICHT
+    irrlicht::ChIrrApp* irr_app = nullptr;
+#endif
+    double previous_wallclock_time = -1;
+    double simulation_timestep = 1e-2;
+    bool loop_started = false;
+    bool on_realtime = false;
+    bool try_realtime = true;
+    int state_updates = 0;
+    //double maxframerate = 60;
+
+    double delay_with_wallclock = 0;
+
+};
 
 }  // END_OF_NAMESPACE____
 #endif
