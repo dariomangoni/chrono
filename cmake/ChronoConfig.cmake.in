@@ -198,8 +198,18 @@ foreach(COMPONENT ${Chrono_FIND_COMPONENTS})
 
       list(APPEND CHRONO_INCLUDE_DIRS "@CH_MKL_INCLUDES@")
       list(APPEND CHRONO_LINKER_FLAGS "@CH_MKL_LINK_FLAGS@")
+	  list(APPEND CHRONO_LIBRARIES "@MUMPS_LIBRARY@") # TODO: these are external libraries... should we call it CH_SOMETHING_LIBRARY or SOMETHING_LIBRARY?
       list(APPEND CHRONO_LIB_NAMES "ChronoEngine_mkl")
       list(APPEND CHRONO_DLL_NAMES "ChronoEngine_mkl.dll")
+	  
+	elseif(${COMPONENT_UPPER} MATCHES "MUMPS")
+
+      list(APPEND CHRONO_INCLUDE_DIRS "@CH_MUMPS_INCLUDES@")
+      list(APPEND CHRONO_LINKER_FLAGS "@CH_MUMPS_LINK_FLAGS@")
+      list(APPEND CHRONO_LIB_NAMES "ChronoEngine_mumps")
+	  list(APPEND CHRONO_LIBRARIES "@MUMPS_LIBRARY@") # TODO: these are external libraries... should we call it CH_SOMETHING_LIBRARY or SOMETHING_LIBRARY?
+      list(APPEND CHRONO_DLL_NAMES "ChronoEngine_mumps.dll")
+	  message(WARNING "Mumps (non-Chrono) dlls must be in the PATH envvar!")
 
     elseif(${COMPONENT_UPPER} MATCHES "POSTPROCESS")
 

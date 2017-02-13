@@ -32,7 +32,7 @@ ELSEIF (MUMPS_ARITHMETIC MATCHES "complex-double")
 ENDIF ()
 MESSAGE(STATUS "Mumps arithmetic set to '${MUMPS_ARITHMETIC}'")
 
-OPTION(MUMPS_SHARED "Link Mumps as shared library (only lib<arithmetic>mumps would be provided)" ON)
+OPTION(MUMPS_SHARED "Link Mumps as shared library (only lib<arithmetic>mumps will be needed)" ON)
 
 UNSET(MUMPS_FOUND)
 find_package(mumps REQUIRED)
@@ -101,14 +101,15 @@ LINK_DIRECTORIES(${INTEL_LIBRARIES_DIRS})
 
 
 IF (MUMPS_FOUND)
-	SET(CH_MUMPS_LIBRARIES
-							${MUMPS_LIBRARIES}
+	SET(MUMPS_LIBRARY
+							${MUMPS_LIBRARIES} # provided by FindMumps
 							${BLAS_LIBRARIES} #aka LIBBLAS
-							${ADDITIONALDEPENDENCIES_LIBRARIES}
 							)
+	
+	SET(MUMPS_LIBRARY ${MUMPS_LIBRARY} PARENT_SCOPE)
 							
 	SET(CH_MUMPS_INCLUDES
-							${MUMPS_INCLUDE_DIRS}
+							${MUMPS_INCLUDE_DIRS} # provided by FindMumps
 							)
 							
 	SET(CH_MUMPS_LINK_FLAGS ${CH_MUMPS_LINK_FLAGS} PARENT_SCOPE)
@@ -162,15 +163,15 @@ SET_TARGET_PROPERTIES(ChronoEngine_mumps PROPERTIES
 
 TARGET_LINK_LIBRARIES(ChronoEngine_mumps
                       ChronoEngine
-                      ${CH_MUMPS_LIBRARIES})
+                      ${MUMPS_LIBRARY})
 					  
 TARGET_INCLUDE_DIRECTORIES(ChronoEngine_mumps PUBLIC
 							${CH_MUMPS_INCLUDES})
 
 INSTALL(TARGETS ChronoEngine_mumps
         RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+        LIBRARY DESTINATION lib64
+        ARCHIVE DESTINATION lib64)
 
 INSTALL(FILES ${ChronoEngine_MUMPS_HEADERS} 
         DESTINATION include/chrono_mumps)

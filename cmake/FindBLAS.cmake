@@ -110,7 +110,7 @@ foreach(_library ${_list})
       PATHS ${_libdir}
       )
       
-    MESSAGE(STATUS "${_prefix}_${_library}_LIBRARY is ${${_prefix}_${_library}_LIBRARY}")
+    # MESSAGE(STATUS "${_prefix}_${_library}_LIBRARY is ${${_prefix}_${_library}_LIBRARY}")
     mark_as_advanced(${_prefix}_${_library}_LIBRARY)
     set(${LIBRARIES} ${${LIBRARIES}} ${${_prefix}_${_library}_LIBRARY})
     set(_libraries_work ${${_prefix}_${_library}_LIBRARY})
