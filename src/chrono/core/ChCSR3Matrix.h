@@ -21,6 +21,7 @@
 
 #include "chrono/core/ChSparseMatrix.h"
 #include "chrono/core/ChAlignedAllocator.h"
+#include <functional>
 
 namespace chrono {
 
@@ -118,7 +119,7 @@ namespace chrono {
 
 class ChApi ChCSR3Matrix : public ChSparseMatrix {
   private:
-    const bool row_major_format = true;
+    bool row_major_format = true;
     const static int array_alignment = 64;
     bool isCompressed = false;
     int max_shifts = std::numeric_limits<int>::max();
@@ -154,6 +155,9 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
 							 int& trail_ins, int lead_ins,
 							 int storage_augm);
 
+    ChCSR3Matrix& ChCSR3Matrix::apply_operator(const ChCSR3Matrix& mat_source, std::function<void(double&, const double&)> f);
+
+
   public:
     ChCSR3Matrix(int nrows = 1, int ncols = 1, bool row_major_format_on = true, int nonzeros = 1);
     ~ChCSR3Matrix() override {}
@@ -174,13 +178,19 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
     /// Get the number of non-zero elements in this matrix.
     int GetNNZ() const override { return GetTrailingIndexLength(); }
 
-    /// Return the row index array in the CSR representation of this matrix if in row major format.
-	/// Return the column index array if in col major format.
+    /// Return the leading/outer index array in the CSR representation of this matrix.
+	/// i.e. row index if the matrix is in row major format; column index otherwise.
 	int* GetCSR_LeadingIndexArray() const override;
 
-    /// Return the column index array in the CSR representation of this matrix if in row major format.
-	/// Return the row index array if in col major format.
-	int* GetCSR_TrailingIndexArray() const override;
+    /// Return the trailing/inner index array in the CSR representation of this matrix if in row major format.
+    /// i.e. column index if the matrix is in row major format; row index otherwise.
+    int* GetCSR_TrailingIndexArray() const override;
+
+    /// Return the row index array in the CSR representation of this matrix.
+    int* GetCSR_RowIndexArray() const override { return IsRowMajor() ? GetCSR_LeadingIndexArray() : GetCSR_TrailingIndexArray(); }
+
+    /// Return the column index array in the CSR representation of this matrix.
+    int* GetCSR_ColIndexArray() const override { return IsRowMajor() ? GetCSR_TrailingIndexArray() : GetCSR_LeadingIndexArray(); }
 
     /// Return the array of matrix values in the CSR representation of this matrix.
 	double* GetCSR_ValueArray() const override;
@@ -218,6 +228,43 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
     // Import/Export functions
 	void ImportFromDatFile(std::string filepath = "", bool row_major_format_on = true);
     void ExportToDatFile(std::string filepath = "", int precision = 6) const;
+
+    // Math operations
+
+    /// Copy operator: make a copy of \p mat_source
+    ChCSR3Matrix& operator=(const ChCSR3Matrix& mat_source);
+
+    /// Add \p mat_source to \a this, as [this]+=[mat_source]
+    ChCSR3Matrix& operator+=(const ChCSR3Matrix& mat_source);
+
+    /// Subtract \p mat_source to \a this, as [this]-=[mat_source]
+    ChCSR3Matrix& operator-=(const ChCSR3Matrix& mat_source);
+
+    /// Multiply \a this for \p coeff, as [this]*=coeff;
+    ChCSR3Matrix& operator*=(const double coeff);
+
+    /// Check if \a this is equal to \p mat_source componentwise.
+    /// It allows non compressed matrices.
+    bool operator==(const ChCSR3Matrix& mat_source) const;
+
+    /// Multiply \a this (or \a this transposed, if \p transposeA is \c true) to \p matB and put the result in \p mat_out
+    void MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& mat_out, bool transposeA = false) const;
+
+    /// Multiply part of \a this (or part of \a this transposed, if \p transposeA is \c true) to \p matB and put the result in \p mat_out.
+    /// \param start_row_this first row of \a this that has to be taken into account for the multiplication
+    /// \param transposeA multiply for \a this transposed instead of \a this
+    void MatrMultiplyClipped(const ChMatrix<double>& matB, ChMatrix<double>& mat_out,
+                             int start_row_this, int end_row_this,
+                             int start_col_this, int end_col_this,
+                             int start_row_matB,
+                             int start_row_mat_out,
+                             bool transposeA = false,
+                             int start_col_matB = 0, int end_col_matB = 0,
+                             int start_col_mat_out = 0) const;
+
+    void ForEachExistentValueInRange(std::function<void(double*)> func, int start_row, int end_row, int start_col, int end_col);
+
+
 
 };
 

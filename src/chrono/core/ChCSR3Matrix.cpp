@@ -369,16 +369,6 @@ namespace chrono {
 		ia_file.close();
 	}
 
-	//TODO: work in progress
-	//void ChCSR3Matrix::LoadFromMapMatrix(ChMapMatrix& map_mat)
-	//{
-	//	map_mat.ConvertToCSR(leadIndex, trailIndex, values);
-	//	*leading_dimension = leadIndex.size()-1;
-	//	*trailing_dimension = *leading_dimension;
-	//	auto nnz = leadIndex[*leading_dimension];
-	//	initialized_element.assign(nnz, true);
-	//	isCompressed = true;
-	//}
 
 	/// Acquire information about the sparsity pattern of the elements that _will_ be put into this matrix.
 	/// The information is provided by #m_sysd.
@@ -670,5 +660,202 @@ namespace chrono {
 		}
 	}
 
+    ChCSR3Matrix& ChCSR3Matrix::operator=(const ChCSR3Matrix& mat_source)
+    {
+        row_major_format = mat_source.IsRowMajor();
+        m_type = mat_source.GetType();
+        Reset(mat_source.GetNumRows(), mat_source.GetNumColumns(), mat_source.GetTrailingIndexLength());
+
+        for (auto lead_i = 0; lead_i <= *leading_dimension; ++lead_i)
+            leadIndex[lead_i] = mat_source.leadIndex[lead_i];
+
+        for (auto trail_i = 0; trail_i<leadIndex[*leading_dimension]; ++trail_i)
+        {
+            trailIndex[trail_i] = mat_source.trailIndex[trail_i];
+            values[trail_i] = mat_source.values[trail_i];
+            initialized_element[trail_i] = mat_source.initialized_element[trail_i];
+        }
+
+        isCompressed = mat_source.IsCompressed();
+        m_lock_broken = mat_source.m_lock_broken;
+
+        return *this;
+    }
+
+    ChCSR3Matrix& ChCSR3Matrix::apply_operator(const ChCSR3Matrix& mat_source, std::function<void(double&, const double&)> f)
+    {
+        assert(mat_source.GetNumRows() == GetNumRows() && mat_source.GetNumColumns() == GetNumColumns());
+
+        for (auto lead_i = 0; lead_i < *mat_source.leading_dimension; lead_i++)
+        {
+            for (auto trail_i = mat_source.leadIndex[lead_i]; trail_i < mat_source.trailIndex[lead_i + 1]; trail_i++)
+            {
+                if (mat_source.initialized_element[trail_i])
+                {
+                    auto col_i_source = mat_source.IsRowMajor() ? trailIndex[trail_i] : lead_i;
+                    auto row_i_source = mat_source.IsRowMajor() ? lead_i : trailIndex[trail_i];
+
+                    f(Element(row_i_source, col_i_source), mat_source.values[trail_i]);
+
+                }
+            }
+        }
+
+        return *this;
+    }
+
+    ChCSR3Matrix& ChCSR3Matrix::operator+=(const ChCSR3Matrix& mat_source)
+    {
+        return apply_operator(mat_source, [](double& a, const double& b) {a += b; });
+    }
+
+    ChCSR3Matrix& ChCSR3Matrix::operator-=(const ChCSR3Matrix& mat_source)
+    {
+        return apply_operator(mat_source, [](double& a, const double& b) {a -= b; });
+    }
+
+    ChCSR3Matrix& ChCSR3Matrix::operator*=(const double coeff)
+    {
+        assert(coeff != 0 && "ChCSR3Matrix::operator*= cannot accept coeff = zero");
+
+        for (auto trail_i = 0; trail_i < GetTrailingIndexLength(); trail_i++)
+            if (initialized_element[trail_i])
+                values[trail_i] *= coeff;
+
+        return *this;
+    }
+
+
+    bool ChCSR3Matrix::operator==(const ChCSR3Matrix& mat_source) const
+    {
+        if (mat_source.GetNumRows() != GetNumRows() || mat_source.GetNumColumns() != GetNumColumns())
+            return false;
+
+        for (auto lead_i = 0; lead_i < *leading_dimension; lead_i++)
+        {
+            auto trail_i_s = mat_source.leadIndex[lead_i];
+            auto trail_i_this = this->leadIndex[lead_i];
+
+            while (true)
+            {
+                if (!initialized_element[trail_i_this] && !mat_source.initialized_element[trail_i_s])
+                    break;
+
+                if (trailIndex[trail_i_this] != mat_source.trailIndex[trail_i_s]
+                    || values[trail_i_this] != mat_source.values[trail_i_s]
+                    || mat_source.initialized_element[trail_i_s] != initialized_element[trail_i_this])
+                    return false;
+            } //end while
+
+        } //end for
+
+        return true;
+    }
+
+
+    void ChCSR3Matrix::MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& mat_out, bool transposeA) const
+    {
+        transposeA ?
+            assert(this->GetNumRows() == matB.GetRows() && "Cannot perform matrix multiplication: wrong dimensions.") :
+            assert(this->GetNumColumns() == matB.GetRows() && "Cannot perform matrix multiplication: wrong dimensions.");
+
+
+        mat_out.Reset(transposeA ? this->GetNumColumns() : this->GetNumRows(), matB.GetColumns());
+
+        for (auto lead_i = 0; lead_i < *leading_dimension; lead_i++)
+        {
+            for (auto trail_i = leadIndex[lead_i]; trail_i<leadIndex[lead_i + 1] && initialized_element[trail_i]; ++trail_i)
+            {
+                if (!initialized_element[trail_i])
+                    break;
+
+                for (auto col_i = 0; col_i < matB.GetColumns(); col_i++)
+                    IsRowMajor() ^ transposeA ? mat_out(lead_i, col_i) += values[trail_i] * matB.GetElement(trailIndex[trail_i], col_i) : mat_out(trailIndex[trail_i], col_i) += values[trail_i] * matB.GetElement(lead_i, col_i);
+            }
+        }
+    }
+
+    
+    void ChCSR3Matrix::MatrMultiplyClipped(const ChMatrix<double>& matB, ChMatrix<double>& mat_out,
+                                           int start_row_matA, int end_row_matA,
+                                           int start_col_matA, int end_col_matA,
+                                           int start_row_matB,
+                                           int start_row_mat_out,
+                                           bool transposeA,
+                                           int start_col_matB, int end_col_matB,
+                                           int start_col_mat_out) const
+    {
+        if (end_col_matB == 0)
+            end_col_matB = matB.GetColumns() - 1;
+
+        assert(start_row_matA >= 0);
+        assert(start_col_matA >= 0);
+        assert(start_row_mat_out >= 0);
+        assert(start_col_matB >= 0);
+        assert(start_row_mat_out >= 0);
+        assert(start_col_mat_out >= 0);
+
+        assert(end_col_matB < matB.GetColumns());
+
+        if (!transposeA)
+        {
+            assert(end_row_matA < GetNumRows());
+            assert(end_col_matA < GetNumColumns());
+        }
+        else
+        {
+            assert(end_row_matA < GetNumColumns());
+            assert(end_col_matA < GetNumRows());
+        }
+
+        assert(end_col_matA - start_col_matA + 1 <= matB.GetRows() - start_row_matB && "Not enough rows in matB");
+        assert(end_row_matA - start_row_matA + 1 <= mat_out.GetRows() - start_row_mat_out && "Not enough rows in mat_out");
+        assert(end_col_matB - start_col_matB + 1 <= mat_out.GetColumns() - start_col_mat_out && "Not enough columns in mat_out");
+
+
+        auto start_lead_matA = IsRowMajor() ^ transposeA ? start_row_matA : start_col_matA;
+        auto end_lead_matA = IsRowMajor() ^ transposeA ? end_row_matA : end_col_matA;
+        auto start_trail_matA = IsRowMajor() ^ transposeA ? start_col_matA : start_row_matA;
+        auto end_trail_matA = IsRowMajor() ^ transposeA ? end_col_matA : end_row_matA;
+
+        for (auto lead_i = start_lead_matA; lead_i <= end_lead_matA; lead_i++)
+        {
+            for (auto trail_i = leadIndex[lead_i]; trail_i<leadIndex[lead_i + 1] && initialized_element[trail_i]; ++trail_i)
+            {
+                if (!initialized_element[trail_i] || trailIndex[trail_i]>end_trail_matA)
+                    break;
+
+                if (trailIndex[trail_i] < start_trail_matA)
+                    continue;
+
+                for (auto col_i = start_col_matB; col_i <= end_col_matB; col_i++)
+                    IsRowMajor() ^ transposeA ?
+                    mat_out(start_row_mat_out + lead_i - start_lead_matA,             start_col_mat_out + col_i - start_col_matB) += values[trail_i] * matB.GetElement(start_row_matB + trailIndex[trail_i] - start_col_matA, col_i - start_col_matB) :
+                    mat_out(start_row_mat_out + trailIndex[trail_i] - start_col_matA, start_col_mat_out + col_i - start_col_matB) += values[trail_i] * matB.GetElement(start_row_matB + lead_i - start_lead_matA,             col_i - start_col_matB);
+            }
+        }
+    }
+
+    void ChCSR3Matrix::ForEachExistentValueInRange(std::function<void(double*)> func, int start_row, int end_row, int start_col, int end_col)
+    {
+        auto start_lead = IsRowMajor() ? start_row : start_col;
+        auto end_lead = IsRowMajor() ? end_row : end_col;
+        auto start_trail = IsRowMajor() ? start_col : start_row;
+        auto end_trail = IsRowMajor() ? end_col : end_row;
+
+        for (auto lead_i = start_lead; lead_i <= end_lead; lead_i++)
+        {
+            for (auto trail_i = leadIndex[lead_i]; trail_i<leadIndex[lead_i + 1] && initialized_element[trail_i]; ++trail_i)
+            {
+                if (!initialized_element[trail_i] || trailIndex[trail_i]>end_trail)
+                    break;
+
+                if (trailIndex[trail_i] < start_trail)
+                    continue;
+
+                func(&values[trail_i]);
+            }
+        }
+    }
 }  // end namespace chrono
 
