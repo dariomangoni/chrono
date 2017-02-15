@@ -473,6 +473,12 @@ class ChMatrix {
             ElementN(nel) += (Real)matra.ElementN(nel);
     }
 
+    /// Increments this matrix by \p val, as [this]+=val
+    void MatrInc(Real val) {
+        for (int nel = 0; nel < rows * columns; ++nel)
+            ElementN(nel) *= val;
+    }
+
     /// Decrements this matrix with another matrix A, as: [this]-=[A]
     template <class RealB>
     void MatrDec(const ChMatrix<RealB>& matra) {
@@ -486,7 +492,8 @@ class ChMatrix {
         for (int nel = 0; nel < rows * columns; ++nel)
             ElementN(nel) *= factor;
     }
-    /// Scales a matrix, multiplying all element by all oter elements of
+
+    /// Scales a matrix, multiplying all element by all other elements of
     /// matra (it is not the classical matrix multiplication!)
     template <class RealB>
     void MatrScale(const ChMatrix<RealB>& matra) {
@@ -501,7 +508,7 @@ class ChMatrix {
             ElementN(nel) /= factor;
     }
 
-    /// Scales a matrix, dividing all element by all oter elements of
+    /// Scales a matrix, dividing all element by all other elements of
     /// matra (it is not the classical matrix multiplication!)
     template <class RealB>
     void MatrDivScale(const ChMatrix<RealB>& matra) {

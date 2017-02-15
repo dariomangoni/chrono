@@ -23,6 +23,7 @@
 #include "chrono/core/ChVector.h"
 #include "chrono/core/ChQuadrature.h"
 #include "chrono/core/ChException.h"
+#include "core/ChCSR3Matrix.h"
 
 using namespace chrono;
 
@@ -257,6 +258,22 @@ int main(int argc, char* argv[]) {
     ChMatrixNM<double, 2, 1> resultM;
     ChQuadrature::Integrate2D<ChMatrixNM<double, 2, 1> >(resultM, mfx2dM, 0, 1, 0, 3, 6);
     GetLog() << "Quadrature 2d matrix result:" << resultM << " (analytic solution: 2.25, 4.5) \n";
+
+
+    /////////
+
+    ChCSR3Matrix matA(3, 3), matD(3, 3);
+    ChMatrixDynamic<double> matB(3, 1), mat_out(3,1);
+
+    matA.SetElement(0, 0, 1);
+    matA.SetElement(1, 1, 1);
+    matA.SetElement(2, 2, 1);
+
+    matA.MatrMultiply(matB, mat_out);
+
+    
+
+    /////////
 
     GetLog() << "\n  CHRONO execution terminated.";
 

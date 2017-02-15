@@ -1,49 +1,42 @@
-//
+// =============================================================================
 // PROJECT CHRONO - http://projectchrono.org
 //
-// Copyright (c) 2010 Alessandro Tasora
-// All rights reserved.
+// Copyright (c) 2014 projectchrono.org
+// All right reserved.
 //
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file at the top level of the distribution
-// and at http://projectchrono.org/license-chrono.txt.
+// Use of this source code is governed by a BSD-style license that can be found
+// in the LICENSE file at the top level of the distribution and at
+// http://projectchrono.org/license-chrono.txt.
 //
-
-
-/// Class for Interior-Point methods
-/// for QP convex programming
-
+// =============================================================================
+// Authors: Dario Mangoni
+// =============================================================================
+//
+// Interior-Point Header File
+//
+// =============================================================================
 
 #ifndef CHIPENGINE_H
 #define CHIPENGINE_H
 
-///////////////////////////////////////////////////
-//
-//   ChMklEngine.h
-//
-//   Use this header if you want to exploit
-//   Interior-Point methods
-//   from Chrono::Engine programs.
-//
-//   HEADER file for CHRONO,
-//  Multibody dynamics engine
-//
-// ------------------------------------------------
-//             www.deltaknowledge.com
-// ------------------------------------------------
-///////////////////////////////////////////////////
 
+#include "ChApiInteriorPoint.h"
+#include "chrono/solver/ChSystemDescriptor.h"
+#include "chrono/solver/ChSolver.h"
 
-#include "chrono_mumps/ChApiMumps.h"
-//#include "core/ChMatrixDynamic.h"
+#ifdef CHRONO_MUMPS
 #include "chrono_mumps/ChCOOMatrix.h"
-#include "lcp/ChLcpSystemDescriptor.h"
-#include "lcp/ChLcpSolver.h"
 #include "chrono_mumps/ChMumpsEngine.h"
+#else
+#ifdef CHRONO_MKL
+#include "chrono_mkl/ChApiMkl.h"
+#include "chrono_mkl/ChMklEngine.h"
+#endif
+#endif
 
 // Interior point methdon based on Numerical Optimization by Nocedal, Wright
 // minimize 0.5*xT*G*x + xT*x while Ax>=b (16.54 pag.480)
-// WARNING: FOR THE MOMNET THE CONSTRAINTS MUST BE INEQUALITIES
+// WARNING: FOR THE MOMENT THE CONSTRAINTS MUST BE INEQUALITIES
 // Further references: (all pages number refers to [1] if not otherwise specified)
 // [1] Nocedal&Wright, Numerical Optimization 2nd edition
 // [2] D'Apuzzo et al., Starting-point strategies for an infeasible potential reduction method
@@ -84,8 +77,10 @@
 
 namespace chrono
 {
+/// Class for Interior-Point methods
+/// for QP convex programming
 
-	class ChApiMumps ChInteriorPoint : public ChLcpSolver
+	class ChApiInteriorPoint ChInteriorPoint : public ChSolver
 	{
 	public:
 		enum KKT_SOLUTION_METHOD
@@ -165,7 +160,7 @@ namespace chrono
 
 		// IP specific functions
 		void KKTsolve(double sigma = 0.0);
-		void initialize(ChLcpSystemDescriptor& sysd);
+		void initialize(ChSystemDescriptor& sysd);
 		void starting_point_STP1();
 		void starting_point_STP2(int n_old);
 		void starting_point_Nocedal_WS(int n_old, int m_old); // warm_start; try to reuse solution from previous cycles
@@ -197,8 +192,10 @@ namespace chrono
 
 		ChInteriorPoint();
 		~ChInteriorPoint();
-		virtual double Solve(ChLcpSystemDescriptor& sysd) override;
-		
+		double Solve(ChSystemDescriptor& sysd) override;
+
+        bool SolveRequiresMatrix() const override { return true; }
+
 		// Auxiliary
 		void VerifyKKTconditions(bool print = false);
 		void SetKKTSolutionMethod(KKT_SOLUTION_METHOD qp_solve_type_selection) { KKT_solve_method = qp_solve_type_selection; }

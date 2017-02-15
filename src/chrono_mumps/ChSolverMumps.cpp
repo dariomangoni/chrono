@@ -94,7 +94,7 @@ namespace chrono
                         "  Solve: " << m_timer_solve_solvercall.GetTimeSecondsIntermediate() << "\n";
 
             ChMatrixDynamic<double> res;
-            m_mat.Multiply(m_rhs_sol, res);
+            m_mat.MatrMultiply(m_rhs_sol, res);
             res -= m_rhs_bkp;
             auto res_norm = res.NormTwo();
 

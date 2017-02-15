@@ -30,10 +30,10 @@
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/assets/ChTexture.h"
 #include "chrono/core/ChRealtimeStep.h"
-#include "chrono/lcp/ChLcpIterativeMINRES.h"
+#include "chrono/solver/ChSolverMINRES.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
-#include <chrono_mkl/ChInteriorPoint.h>
+#include <chrono_interiorpoint/ChInteriorPoint.h>
 
 // Use the namespace of Chrono
 
@@ -49,11 +49,11 @@ using namespace gui;
 
 // Static data used for this simple demo
 
-std::vector<ChSharedPtr<ChBody> > mspheres;
+std::vector<std::shared_ptr<ChBody>> mspheres;
 
 float STATIC_COMPLIANCE = 0.1f * (10.0f / 1000) / 5;  // as 1/K, in m/N. es: 10mm/500N
 
-void create_items(ChIrrAppInterface& application, ChSharedPtr<ChMaterialSurface> material) {
+void create_items(irrlicht::ChIrrAppInterface& application, std::shared_ptr<ChMaterialSurface> material) {
     // Create some spheres in a vertical stack
 
     bool do_wall = false;
@@ -82,30 +82,31 @@ void create_items(ChIrrAppInterface& application, ChSharedPtr<ChMaterialSurface>
                 sphrad = sphrad * pow(oddfactor, 1. / 3.);
             double dens = 1000;
 
-            ChSharedPtr<ChBody> mrigidBody;
+            std::shared_ptr<ChBody> mrigidBody;
 
             if (do_spheres) {
-                mrigidBody = ChSharedPtr<ChBodyEasySphere>(new ChBodyEasySphere(sphrad,  // radius
-                                                                                dens,    // density
-                                                                                true,    // collide enable?
-                                                                                true));  // visualization?
+                mrigidBody = std::make_shared<ChBodyEasySphere>(sphrad,  // radius
+                                                                dens,    // density
+                                                                true,    // collide enable?
+                                                                true);  // visualization?
+
                 mrigidBody->SetPos(ChVector<>(0.5, sphrad + level, 0.7));
-                mrigidBody->AddAsset(ChSharedPtr<ChTexture>(new ChTexture(GetChronoDataFile("bluwhite.png"))));
+                mrigidBody->AddAsset(std::make_shared<ChTexture>(GetChronoDataFile("bluwhite.png")));
 
                 application.GetSystem()->Add(mrigidBody);
             } else {
-                mrigidBody = ChSharedPtr<ChBodyEasyBox>(new ChBodyEasyBox(sphrad, sphrad, sphrad,  // x,y,z size
+                mrigidBody = std::make_shared<ChBodyEasyBox>(sphrad, sphrad, sphrad,  // x,y,z size
                                                                           dens,                    // density
                                                                           true,                    // collide enable?
-                                                                          true));                  // visualization?
+                                                                          true);                  // visualization?
                 mrigidBody->SetPos(ChVector<>(0.5, sphrad + level, 0.7));
-                mrigidBody->AddAsset(
-                    ChSharedPtr<ChTexture>(new ChTexture(GetChronoDataFile("cubetexture_bluwhite.png"))));
+                mrigidBody->AddAsset(std::make_shared<ChTexture>(GetChronoDataFile("cubetexture_bluwhite.png")));
 
                 application.GetSystem()->Add(mrigidBody);
             }
 
 			mrigidBody->SetMaterialSurface(material);
+
 
             mspheres.push_back(mrigidBody);
 
@@ -123,16 +124,16 @@ void create_items(ChIrrAppInterface& application, ChSharedPtr<ChMaterialSurface>
             {
                 for (int ui = 0; ui < 15; ui++)  // N. of hor. bricks
                 {
-                    ChSharedPtr<ChBodyEasyBox> mrigidWall(new ChBodyEasyBox(3.96, 2, 4,  // radius
+                    auto mrigidWall = std::make_shared<ChBodyEasyBox>(3.96, 2, 4,  // radius
                                                                             dens,        // density
                                                                             true,        // collide enable?
-                                                                            true));      // visualization?
+                                                                            true);      // visualization?
                     mrigidWall->SetPos(ChVector<>(-8 + ui * 4.0 + 2 * (bi % 2), 1.0 + bi * 2.0, -5 + ai * 6));
 					
 					mrigidWall->SetMaterialSurface(material);
 
                     mrigidWall->AddAsset(
-                        ChSharedPtr<ChTexture>(new ChTexture(GetChronoDataFile("cubetexture_bluwhite.png"))));
+                        std::make_shared<ChTexture>(GetChronoDataFile("cubetexture_bluwhite.png")));
 
                     application.GetSystem()->Add(mrigidWall);
                 }
@@ -144,12 +145,12 @@ void create_items(ChIrrAppInterface& application, ChSharedPtr<ChMaterialSurface>
         double dens = 1000;
         double hfactor = 100;
 
-        ChSharedPtr<ChBodyEasySphere> mrigidHeavy(new ChBodyEasySphere(sphrad,          // radius
+        auto mrigidHeavy = std::make_shared<ChBodyEasySphere>(sphrad,          // radius
                                                                        dens * hfactor,  // density
                                                                        true,            // collide enable?
-                                                                       true));          // visualization?
+                                                                       true);          // visualization?
         mrigidHeavy->SetPos(ChVector<>(0.5, sphrad + 0.1, -1));
-        mrigidHeavy->AddAsset(ChSharedPtr<ChTexture>(new ChTexture(GetChronoDataFile("pinkwhite.png"))));
+        mrigidHeavy->AddAsset(std::make_shared<ChTexture>(GetChronoDataFile("pinkwhite.png")));
 
 		mrigidHeavy->SetMaterialSurface(material);
 
@@ -161,16 +162,16 @@ void create_items(ChIrrAppInterface& application, ChSharedPtr<ChMaterialSurface>
 
     // Create the floor using a fixed rigid body of 'box' type:
 
-    ChSharedPtr<ChBodyEasyBox> mrigidFloor(new ChBodyEasyBox(50, 4, 50,  // radius
+    auto mrigidFloor = std::make_shared<ChBodyEasyBox>(50, 4, 50,  // radius
                                                              dens,       // density
                                                              true,       // collide enable?
-                                                             true));     // visualization?
+                                                             true);     // visualization?
     mrigidFloor->SetPos(ChVector<>(0, -2, 0));
     mrigidFloor->SetBodyFixed(true);
 
 	mrigidFloor->SetMaterialSurface(material);
 
-    mrigidFloor->AddAsset(ChSharedPtr<ChTexture>(new ChTexture(GetChronoDataFile("concrete.jpg"))));
+    mrigidFloor->AddAsset(std::make_shared<ChTexture>(GetChronoDataFile("concrete.jpg")));
 
 
     application.GetSystem()->Add(mrigidFloor);
@@ -180,9 +181,9 @@ void create_items(ChIrrAppInterface& application, ChSharedPtr<ChMaterialSurface>
 // axis, without needing any constraint (for simplifying the solver benchmark).
 // Also impose no rotation.
 
-void align_spheres(ChIrrAppInterface& application) {
+void align_spheres(irrlicht::ChIrrAppInterface& application) {
     for (unsigned int i = 0; i < mspheres.size(); ++i) {
-        ChSharedPtr<ChBody> body = mspheres[i];
+        std::shared_ptr<ChBody> body = mspheres[i];
         ChVector<> mpos = body->GetPos();
         mpos.x = 0.5;
         mpos.z = 0.7;
@@ -197,17 +198,17 @@ int main(int argc, char* argv[]) {
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
-    ChIrrApp application(&mphysicalSystem, L"Critical cases for solver convergence", core::dimension2d<u32>(800, 600),
+    irrlicht::ChIrrApp application(&mphysicalSystem, L"Critical cases for solver convergence", core::dimension2d<u32>(800, 600),
                          false, true);
 
     // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
-    ChIrrWizard::add_typical_Logo(application.GetDevice());
-    ChIrrWizard::add_typical_Sky(application.GetDevice());
-    ChIrrWizard::add_typical_Lights(application.GetDevice());
-    ChIrrWizard::add_typical_Camera(application.GetDevice(), core::vector3df(0, 1.5, -3));
+    irrlicht::ChIrrWizard::add_typical_Logo(application.GetDevice());
+    irrlicht::ChIrrWizard::add_typical_Sky(application.GetDevice());
+    irrlicht::ChIrrWizard::add_typical_Lights(application.GetDevice());
+    irrlicht::ChIrrWizard::add_typical_Camera(application.GetDevice(), core::vector3df(0, 1.5, -3));
 
 	// Create a material that will be shared
-	ChSharedPtr<ChMaterialSurface> material(new ChMaterialSurface);
+	auto material = std::make_shared<ChMaterialSurface>();
 	material->SetFriction(0.5f);
 	//material->SetRestitution(0.0f);
 	material->SetCompliance(STATIC_COMPLIANCE);
@@ -245,17 +246,17 @@ int main(int argc, char* argv[]) {
 
     // Modify some setting of the physical system for the simulation, if you want
 
-    mphysicalSystem.SetLcpSolverType(ChSystem::LCP_ITERATIVE_BARZILAIBORWEIN);
-    // mphysicalSystem.SetLcpSolverType(ChSystem::LCP_ITERATIVE_SOR);
-    mphysicalSystem.SetIterLCPmaxItersSpeed(60);
-    mphysicalSystem.SetIterLCPmaxItersStab(5);
+    mphysicalSystem.SetSolverType(ChSolver::Type::BARZILAIBORWEIN);
+    // mphysicalSystem.SetSolverType(ChSystem::LCP_ITERATIVE_SOR);
+    mphysicalSystem.SetMaxItersSolverSpeed(60);
+    mphysicalSystem.SetMaxItersSolverStab(5);
     mphysicalSystem.SetParallelThreadNumber(1);
 	
 	// Change solver to Interior-Point
-	ChInteriorPoint* ip_solver_stab = new ChInteriorPoint;
-	ChInteriorPoint* ip_solver_speed = new ChInteriorPoint;
-	mphysicalSystem.ChangeLcpSolverStab(ip_solver_stab);
-	mphysicalSystem.ChangeLcpSolverSpeed(ip_solver_speed);
+    auto ip_solver_stab = std::make_shared<ChInteriorPoint>();
+    auto ip_solver_speed = std::make_shared<ChInteriorPoint>();
+    mphysicalSystem.SetStabSolver(ip_solver_stab);
+	mphysicalSystem.SetSolver(ip_solver_speed);
 	//ip_solver_stab->SetMaxIterations(10);
 	//ip_solver_speed->SetMaxIterations(10);
 	application.GetSystem()->Update();

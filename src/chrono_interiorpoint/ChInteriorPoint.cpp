@@ -58,7 +58,7 @@ namespace chrono
 	// | M  -Cq'|*|q|- | f|= |0|
 	// | Cq  -E | |l|  |-b|  |c| 
 
-	double ChInteriorPoint::Solve(ChLcpSystemDescriptor& sysd)
+	double ChInteriorPoint::Solve(ChSystemDescriptor& sysd)
 	{
 		solver_call++;
 		initialize(sysd);
@@ -96,7 +96,7 @@ namespace chrono
 	// The problem to be solved is loaded into the main matrix that will be used to solve the various step of the IP method
 	// The initial guess is modified in order to be feasible
 	// The residuals are computed
-	void ChInteriorPoint::initialize(ChLcpSystemDescriptor& sysd)
+	void ChInteriorPoint::initialize(ChSystemDescriptor& sysd)
 	{
 		verbose = true;
 
@@ -154,7 +154,7 @@ namespace chrono
 
 			// Solve the KKT system
 			mumps_engine.SetProblem(BigMat, rhs_sol);
-			printf("Mumps says: %d\n", mumps_engine.MumpsCall());
+			printf("Mumps says: %d\n", mumps_engine.MumpsCall(ChMumpsEngine::SOLVE));
 
 			//if (verbose)
 			//{
@@ -189,15 +189,15 @@ namespace chrono
 		y.FillElem(1);
 		lam.FillElem(1);
 		
-		double duality_gap_calc = y.MatrDot(&y, &lam); // [2] pag. 132
+		double duality_gap_calc = y.MatrDot(y, lam); // [2] pag. 132
 		double duality_gap = m; // [2] pag. 132
 		assert(duality_gap_calc == duality_gap);
 
 		
 		// norm of all residuals; [2] pag. 132
 		fullupdate_residual();
-		double res_norm = rp.MatrDot(&rp, &rp); 
-		res_norm += rp.MatrDot(&rd, &rd);
+		double res_norm = rp.MatrDot(rp, rp); 
+		res_norm += rp.MatrDot(rd, rd);
 		res_norm = sqrt(res_norm);
 
 		if (res_norm / duality_gap > infeas_dual_ratio)
@@ -359,7 +359,7 @@ namespace chrono
 		  y_pred = Dy;     y_pred.MatrScale(alfa_pred_prim);   y_pred += y;
 		lam_pred = Dlam; lam_pred.MatrScale(alfa_pred_dual); lam_pred += lam;
 
-		double mu_pred = y_pred.MatrDot(&y_pred, &lam_pred) / m; // from 14.33 pag.408 //TODO: why MatrDot is a member?
+		double mu_pred = y_pred.MatrDot(y_pred, lam_pred) / m; // from 14.33 pag.408 //TODO: why MatrDot is a member?
 
 		if (ONLY_PREDICT)
 		{
@@ -403,7 +403,7 @@ namespace chrono
 		/********** Variable update **********/
 		rp.MatrScale(1 - alfa_corr_prim);
 		rd.MatrScale(1 - alfa_corr_dual);
-		mu = y.MatrDot(&y, &lam) / m; // from 14.6 pag.395
+		mu = y.MatrDot(y, lam) / m; // from 14.6 pag.395
 		
 		if (!EQUAL_STEP_LENGTH)
 		{
@@ -417,7 +417,7 @@ namespace chrono
 	void ChInteriorPoint::KKTsolve(double sigma)
 	{
 		// TODO: only for test purpose
-		ChMatrixDynamic<double> res(BigMat.GetRows(), 1);
+		ChMatrixDynamic<double> res(BigMat.GetNumRows(), 1);
 		double res_norm;
 
 		switch (KKT_solve_method)
@@ -437,7 +437,7 @@ namespace chrono
 				// there is already y°lam
 				vectm = Dlam; // I could use Dlam directly, but it is not really clear
 				vectm.MatrScale(Dy);
-				vectm.MatrAdd(-sigma*mu);
+				vectm.MatrInc(-sigma*mu);
 				rpd += vectm;
 			}
 			else // rpd_pred as (16.57 pag.481 suggests)
@@ -459,7 +459,7 @@ namespace chrono
 
 			// Solve the KKT system
 			mumps_engine.SetProblem(BigMat, rhs_sol);
-			printf("Mumps says: %d\n", mumps_engine.MumpsCall());
+			printf("Mumps says: %d\n", mumps_engine.MumpsCall(ChMumpsEngine::SOLVE)); //TODO: is any other step needed before Mumps::SOLVE?
 
 			// Extract 'Dx', 'Dy' and 'Dlam' from 'sol'
 			for (size_t row_sel = 0; row_sel < n; row_sel++)
@@ -505,11 +505,11 @@ namespace chrono
 
 			// Solve the KKT system
 			mumps_engine.SetProblem(BigMat, rhs_sol);
-			mumps_engine.MumpsCall();
+			mumps_engine.MumpsCall(ChMumpsEngine::SOLVE);
 			mumps_engine.PrintINFOG();
-			BigMat.ExportToFile("dump/COO.txt", true);
-			//BigMat.ImportFromFile("COO.txt", true);
-			//BigMat.ExportToFile("COO.txt", true);
+			BigMat.ExportToDatFile("dump/COO.txt", true);
+			//BigMat.ImportFromDatFile("COO.txt", true);
+			//BigMat.ExportToDatFile("COO.txt", true);
 
 			ExportArrayToFile(rhs_sol, "dump/sol.txt");
 
@@ -525,7 +525,7 @@ namespace chrono
 			Dy += rp;
 			if (ADD_COMPLIANCE)
 			{
-				E.MatMultiply(Dlam, vectm);
+				E.MatrMultiply(Dlam, vectm);
 				Dy += vectm;
 			}
 				
@@ -571,8 +571,8 @@ namespace chrono
 	double ChInteriorPoint::evaluate_objective_function()
 	{
 		multiplyG(x, vectn);
-		double obj_value = vectn.MatrDot(&x, &vectn);
-		obj_value += c.MatrDot(&x, &c);
+		double obj_value = vectn.MatrDot(x, vectn);
+		obj_value += c.MatrDot(x, c);
 
 		return obj_value;
 	}
@@ -668,9 +668,9 @@ namespace chrono
 
 	void ChInteriorPoint::make_positive_definite() // cannot be const!
 	{
-		double* values = BigMat.GetValuesAddress();
-		int* colIndex = BigMat.GetColIndexAddress();
-		int* rowIndex = BigMat.GetRowIndexAddress();
+		auto* values = BigMat.GetCOO_ValuesAddress();
+		auto* colIndex = BigMat.GetCOO_ColIndexAddress();
+		auto* rowIndex = BigMat.GetCOO_RowIndexAddress();
 
 		int offset_AT_col = n;
 		if (KKT_solve_method == STANDARD)
@@ -693,10 +693,10 @@ namespace chrono
 		switch (KKT_solve_method)
 		{
 		case STANDARD:
-			BigMat.MatMultiplyClipped(vect_in, vect_out, n, n + m - 1, 0, n - 1, 0, 0);
+			BigMat.MatrMultiplyClipped(vect_in, vect_out, n, n + m - 1, 0, n - 1, 0, 0);
 			break;
 		case AUGMENTED:
-			BigMat.MatMultiplyClipped(vect_in, vect_out, n, n + m - 1, 0, n - 1, 0, 0);
+			BigMat.MatrMultiplyClipped(vect_in, vect_out, n, n + m - 1, 0, n - 1, 0, 0);
 			break;
 		case NORMAL:
 			std::cout << std::endl << "A multiplication is not implemented in 'NORMAL' method yet.";
@@ -710,10 +710,10 @@ namespace chrono
 		switch (KKT_solve_method)
 		{
 		case STANDARD:
-			BigMat.MatMultiplyClipped(vect_in, vect_out, 0, n - 1, n + m, n + 2*m - 1, 0, 0);
+			BigMat.MatrMultiplyClipped(vect_in, vect_out, 0, n - 1, n + m, n + 2*m - 1, 0, 0);
 			break;
 		case AUGMENTED:
-			BigMat.MatMultiplyClipped(vect_in, vect_out, 0, n - 1, n, n + m - 1, 0, 0);
+			BigMat.MatrMultiplyClipped(vect_in, vect_out, 0, n - 1, n, n + m - 1, 0, 0);
 			break;
 		case NORMAL:
 			std::cout << std::endl << "AT multiplication is not implemented in 'NORMAL' method yet.";
@@ -727,10 +727,10 @@ namespace chrono
 		switch (KKT_solve_method)
 		{
 		case STANDARD:
-			BigMat.MatMultiplyClipped(vect_in, vect_out, 0, n - 1, 0, n - 1, 0, 0);
+			BigMat.MatrMultiplyClipped(vect_in, vect_out, 0, n - 1, 0, n - 1, 0, 0);
 			break;
 		case AUGMENTED:
-			BigMat.MatMultiplyClipped(vect_in, vect_out, 0, n - 1, 0, n - 1, 0, 0);
+			BigMat.MatrMultiplyClipped(vect_in, vect_out, 0, n - 1, 0, n - 1, 0, 0);
 			break;
 		case NORMAL:
 			std::cout << std::endl << "G multiplication is not implemented in 'NORMAL' method yet.";
@@ -757,9 +757,9 @@ namespace chrono
 
 		double row_norm;
 
-		double* a_mat = BigMat.GetValuesAddress();
-		int* ia_mat = BigMat.GetRowIndexAddress();
-		int* ja_mat = BigMat.GetColIndexAddress();
+		auto* a_mat = BigMat.GetCOO_ValuesAddress();
+		auto* ia_mat = BigMat.GetCOO_RowIndexAddress();
+		auto* ja_mat = BigMat.GetCOO_ColIndexAddress();
 
 		for (size_t row_sel = n; row_sel < n + m; row_sel++)
 		{
@@ -801,7 +801,7 @@ namespace chrono
 
 		if (true)
 		{
-			double relative_duality_gap = y.MatrDot(&y, &lam); // TODO: you can recycle 'mu'
+			double relative_duality_gap = y.MatrDot(y, lam); // TODO: you can recycle 'mu'
 			
 			VerifyKKTconditions();
 			if (relative_duality_gap < mu_tolerance &&
@@ -836,7 +836,7 @@ namespace chrono
 			rp -= b;
 			if (ADD_COMPLIANCE)
 			{
-				E.MatMultiply(Dlam, vectm);
+				E.MatrMultiply(Dlam, vectm);
 				rp += vectm;
 			}
 				
@@ -847,7 +847,7 @@ namespace chrono
 			multiplyNegAT(lam, vectn); // vectn = (-A^T)*lam
 			rd += vectn; // rd = (G*x + c) + (-A^T*lam)
 
-			mu = y.MatrDot(&y, &lam) / m;
+			mu = y.MatrDot(y, lam) / m;
 	}
 
 	void ChInteriorPoint::update_history()
@@ -953,9 +953,9 @@ namespace chrono
 		IPtolerances(1e-12),
 		mu_tolerance(1e-12),
 		KKT_solve_method(AUGMENTED),
+        mumps_engine(),
 		mu(0)
 	{
-		mumps_engine.Initialize();
 		mumps_engine.SetICNTL(11, 2);
 		PrintHistory(true);
 	}
