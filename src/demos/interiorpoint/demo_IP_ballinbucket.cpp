@@ -75,7 +75,7 @@ void create_bucket(ChSystem& mphysicalSystem) {
 	double ball_pos_radius = 0.5*apothem / cos(alfa / 2);
 
 
-	// Create Ployhedron
+	// Create Polyhedron
 	for (int edge_k = 0; edge_k < edges; edge_k++)
 	{
 		double alfa_k = alfa*edge_k;
@@ -96,7 +96,8 @@ void create_bucket(ChSystem& mphysicalSystem) {
         mtexture->SetTextureFilename(GetChronoDataFile("cubetexture_borders.png"));
 		wall->AddAsset(mtexture);
 
-		int ball_arrays = 10;
+
+		int ball_arrays = 5;
 		for (int ball_set = 0; ball_set < ball_arrays; ball_set++)
 		{
 			// Create a ball that will collide with wall
@@ -105,7 +106,7 @@ void create_bucket(ChSystem& mphysicalSystem) {
 				                                                 true,    // collide enable?
 				                                                 true);  // visualization?
 			mrigidBall->SetMaterialSurface(mmaterial);
-			mrigidBall->SetPos(ChVector<>(ball_pos_radius*sin(alfa_k + alfa / 2), 2*ball_radius * (ball_set + 1), ball_pos_radius*cos(alfa_k + alfa / 2)));
+			mrigidBall->SetPos(ChVector<>(ball_pos_radius*sin(alfa_k + alfa / 2), 2.1*ball_radius * (ball_set + 1), ball_pos_radius*cos(alfa_k + alfa / 2)));
 			mrigidBall->SetPos_dtdt(ChVector<>(0, -3, 0));          // set initial acceleration
 			mrigidBall->GetMaterialSurface()->SetFriction(0.4f);  // use own (not shared) matrial properties
 			mrigidBall->GetMaterialSurface()->SetCompliance(0.0);

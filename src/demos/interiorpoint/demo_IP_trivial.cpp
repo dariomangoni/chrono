@@ -49,6 +49,9 @@ using namespace video;
 using namespace io;
 using namespace gui;
 
+std::shared_ptr<ChBody> generic_body_ptr;
+
+
 // Create a bunch of ChronoENGINE rigid bodies that
 // represent bricks in a large wall.
 void create_system(ChSystem& mphysicalSystem) {
@@ -82,9 +85,9 @@ void create_system(ChSystem& mphysicalSystem) {
 
 	mphysicalSystem.Add(mrigidFloor);
 
+
 	
-	
-	if (true)
+	if (false)
 	{
 		// Create bricks
 		auto mrigidBody = std::make_shared<ChBodyEasyBox>(4, 2, 2,  // x,y,z size
@@ -94,6 +97,7 @@ void create_system(ChSystem& mphysicalSystem) {
 		mrigidBody->SetPos(ChVector<>(0, 4, 0));
 		mrigidBody->SetMaterialSurface(mmaterial);  // use shared surface properties
 
+        generic_body_ptr = mrigidBody;
 		mphysicalSystem.Add(mrigidBody);
 
 		// optional, attach a texture for better visualization
@@ -102,8 +106,7 @@ void create_system(ChSystem& mphysicalSystem) {
 		mrigidBody->AddAsset(mtexture);
 	}
 	
-
-	if (false)
+	if (true)
 	{
 		// Create a ball that will collide with wall
 		auto mrigidBall = std::make_shared<ChBodyEasySphere>(1,       // radius
@@ -115,6 +118,7 @@ void create_system(ChSystem& mphysicalSystem) {
 		mrigidBall->SetPos_dt(ChVector<>(0, -1, 0));          // set initial speed
 
 		mphysicalSystem.Add(mrigidBall);
+        generic_body_ptr = mrigidBall;
 
 		// optional, attach a texture for better visualization
 		auto mtextureball = std::make_shared<ChTexture>();
@@ -146,7 +150,7 @@ int main(int argc, char* argv[]) {
     //
 
     // Create all the rigid bodies.
-	create_system(mphysicalSystem);
+    create_system(mphysicalSystem);
 
     // Use this function for adding a ChIrrNodeAsset to all items
     // If you need a finer control on which item really needs a visualization proxy in
@@ -168,21 +172,21 @@ int main(int argc, char* argv[]) {
     mphysicalSystem.SetMaxItersSolverStab(20);  // unuseful for Anitescu, only Tasora uses this
     mphysicalSystem.SetSolverWarmStarting(true);
     mphysicalSystem.SetParallelThreadNumber(4);
-	
-	// Change solver to IP
+
+    // Change solver to IP
     auto ip_solver_stab = std::make_shared<ChInteriorPoint>();
     auto ip_solver_speed = std::make_shared<ChInteriorPoint>();
-	mphysicalSystem.SetStabSolver(ip_solver_stab);
-	mphysicalSystem.SetSolver(ip_solver_speed);
-	application.GetSystem()->Update();
+    mphysicalSystem.SetStabSolver(ip_solver_stab);
+    mphysicalSystem.SetSolver(ip_solver_speed);
+    application.GetSystem()->Update();
 
-	//// Change solver to Matlab external linear solver, for max precision in benchmarks
-	//ChMatlabEngine matlab_engine;
-	//ChLcpMatlabSolver* matlab_solver_stab = new ChLcpMatlabSolver(matlab_engine);
-	//ChLcpMatlabSolver* matlab_solver_speed = new ChLcpMatlabSolver(matlab_engine);
-	//mphysicalSystem.SetStabSolver(matlab_solver_stab);
-	//mphysicalSystem.SetSolver(matlab_solver_speed);
-	//application.GetSystem()->Update();
+    //// Change solver to Matlab external linear solver, for max precision in benchmarks
+    //ChMatlabEngine matlab_engine;
+    //ChLcpMatlabSolver* matlab_solver_stab = new ChLcpMatlabSolver(matlab_engine);
+    //ChLcpMatlabSolver* matlab_solver_speed = new ChLcpMatlabSolver(matlab_engine);
+    //mphysicalSystem.SetStabSolver(matlab_solver_stab);
+    //mphysicalSystem.SetSolver(matlab_solver_speed);
+    //application.GetSystem()->Update();
 
 
     //
@@ -191,8 +195,8 @@ int main(int argc, char* argv[]) {
 
     application.SetStepManage(true);
     application.SetTimestep(0.02);
-	//application.SetPaused(true);
 
+    int step_counter = 0;
     while (application.GetDevice()->run()) {
         application.GetVideoDriver()->beginScene(true, true, SColor(255, 140, 161, 192));
 
@@ -203,6 +207,15 @@ int main(int argc, char* argv[]) {
         application.DrawAll();
 
         application.DoStep();
+
+        step_counter++;
+        std::cout << "Step " << step_counter << std::endl;
+        //GetLog()
+        //    << "Force:" << generic_body_ptr->Get_Xforce()
+        //    << "Speed: " << generic_body_ptr->GetPos_dt()
+        //    << "ContactForce: " << generic_body_ptr->GetContactForce()
+        //    << "\n";
+
 
         application.GetVideoDriver()->endScene();
     }

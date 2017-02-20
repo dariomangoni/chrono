@@ -40,6 +40,7 @@
 // Further references: (all pages number refers to [1] if not otherwise specified)
 // [1] Nocedal&Wright, Numerical Optimization 2nd edition
 // [2] D'Apuzzo et al., Starting-point strategies for an infeasible potential reduction method
+// [3] Mangoni D., Tasora A., Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
 
 // Symbol conversion table from [1] to [2]
 // [2] | [1]
@@ -62,7 +63,7 @@
 // Cq  |  A
 //  l  | lam
 //  f  |  -c
-//  E  |  E (+ o - ?)
+//  ?  |  E (+ o - ?)
 //  c  |  y
 //  b  |  -b
 
@@ -159,23 +160,22 @@ namespace chrono
 		ChMatrixDynamic<double> vectm; // temporary variable that has always size (m,1)
 
 		// IP specific functions
-		void KKTsolve(double sigma = 0.0);
-		void initialize(ChSystemDescriptor& sysd);
+		void KKTsolve(double sigma, bool apply_correction);
 		void starting_point_STP1();
 		void starting_point_STP2(int n_old);
 		void starting_point_Nocedal_WS(int n_old, int m_old); // warm_start; try to reuse solution from previous cycles
 		void starting_point_Nocedal(int n_old, int m_old);
 		void iterate();
-		double find_Newton_step_length(ChMatrix<double>& vect, ChMatrix<double>& Dvect, double eta = 1) const;
+        static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double eta = 1);
 		double evaluate_objective_function();
 
 		// Auxiliary
 		void reset_dimensions(int n_old, int m_old);
 		void fullupdate_residual();
 		void make_positive_definite();
-		void multiplyA(ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
-		void multiplyNegAT(ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
-		void multiplyG(ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+		void multiplyA(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+		void multiplyNegAT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+		void multiplyG(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 		void normalize_Arows();
 		bool check_exit_conditions(bool only_mu = true);
 		bool check_feasibility(double tolerance);
@@ -209,7 +209,7 @@ namespace chrono
 
 		// Test
 		void DumpProblem(std::string suffix = "");
-		void DumpIPStatus(std::string suffix = "");
+		void DumpIPStatus(std::string suffix = "") const;
 		void PrintHistory(bool on_off, std::string filepath = "history_file.txt");
 	};
 
