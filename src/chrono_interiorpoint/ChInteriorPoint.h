@@ -27,11 +27,6 @@
 #ifdef CHRONO_MUMPS
 #include "chrono_mumps/ChCOOMatrix.h"
 #include "chrono_mumps/ChMumpsEngine.h"
-#else
-#ifdef CHRONO_MKL
-#include "chrono_mkl/ChApiMkl.h"
-#include "chrono_mkl/ChMklEngine.h"
-#endif
 #endif
 
 // Interior point methdon based on Numerical Optimization by Nocedal, Wright
@@ -57,15 +52,15 @@
 //  G  |  -
 
 // Symbol conversion table from [1] to Chrono
-// Chr | [1]
-//  M  |  G
-//  q  |  x
-// Cq  |  A
-//  l  | lam
-//  f  |  -c
-//  ?  |  E (+ o - ?)
-//  c  |  y
-//  b  |  -b
+//                          | Chr | [1]
+// Mass/Stiffness           |  H  |  G
+// Acceleration/DSpeed      |  q  |  x
+// Constraints              | Cq  |  A
+// Forces(internal)         |  l  |  lam
+// Forces(external)         |  f  |  -c
+// Constr. compliance       |  ?  |  E (+ o - ?)
+// Slack (contact distance) |  c  |  y
+// Constraint rhs           |  b  |  -b
 
 
 
@@ -78,114 +73,99 @@
 
 namespace chrono
 {
-/// Class for Interior-Point methods
-/// for QP convex programming
+    /// Class for Interior-Point method
+    /// for QP convex programming
 
 	class ChApiInteriorPoint ChInteriorPoint : public ChSolver
 	{
 	public:
-		enum KKT_SOLUTION_METHOD
+		enum class IP_KKT_SOLUTION_METHOD
 		{
 			STANDARD,
 			AUGMENTED,
 			NORMAL
 		};
 
+        enum class IP_STARTING_POINT_METHOD
+        {
+            STP1,
+            STP2,
+            NOCEDAL,
+            NOCEDAL_WS
+        };
+
 	private:
-		size_t m; // size of lam, y, A rows
-		size_t n; // size of x, G, A columns
-		size_t solver_call;
-		size_t iteration_count;
-		size_t iteration_count_max;
+		int m = 0; // size of #lam, #y, A rows
+		int n = 0; // size of #x, G, A columns
+		int solver_call = 0;
+		int iteration_count = 0;
+		int iteration_count_max = 50;
 
-		bool EQUAL_STEP_LENGTH;
-		bool ADAPTIVE_ETA;
-		bool ONLY_PREDICT;
-		bool warm_start_broken;
-		bool warm_start;
+		const bool EQUAL_STEP_LENGTH = false;
+		const bool ADAPTIVE_ETA = true;
+		const bool ONLY_PREDICT = false;
+		bool warm_start_broken = false;
+		bool warm_start = true;
 
-		struct IPresidual_t
-		{
-			double rp_nnorm;
-			double rd_nnorm;
+        double rp_nnorm_tol = 1e-8;
+        double rd_nnorm_tol = 1e-8;
+		double mu_tol = 1e-8;
 
-			IPresidual_t() : rp_nnorm(0), rd_nnorm(0) {};
-			explicit IPresidual_t(double tol) : rp_nnorm(tol), rd_nnorm(tol) {};
-		} IPtolerances, IPres;
+		IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
 
-		double mu_tolerance; // stop iterations if mu under this threshold
+		// Variables
+		ChMatrixDynamic<double> x; // DeltaSpeed/Acceleration ('q' in chrono)
+		ChMatrixDynamic<double> y; // Slack variable/Contact points distance ('c' in chrono)
+		ChMatrixDynamic<double> lam; // Lagrangian multipliers/contact|constraint forces ('l' in chrono)
+        ChMatrixDynamic<double> b; // rhs of constraints (is '-b' in chrono)
+        ChMatrixDynamic<double> c; // forces (is '-f' in chrono)
 
-		KKT_SOLUTION_METHOD KKT_solve_method;
+        // Temporaries used in iterate() function
+		ChMatrixDynamic<double> x_pred, y_pred, lam_pred;
+		ChMatrixDynamic<double> x_corr, y_corr, lam_corr;
+		ChMatrixDynamic<double> Dx, Dy, Dlam;
+        ChMatrixDynamic<double> Dx_pre, Dy_pre, Dlam_pre;
+        ChMatrixDynamic<double> vectn; // temporary variable that has always size (#n,1)
+        ChMatrixDynamic<double> vectm; // temporary variable that has always size (#m,1)
 
-		// variables: x primal; lam dual, y slack
-		ChMatrixDynamic<double> x; // ('q' in chrono)
-		ChMatrixDynamic<double> y; // ('c' in chrono)
-		ChMatrixDynamic<double> lam; // ('l' in chrono)
-
-		ChMatrixDynamic<double> x_pred;
-		ChMatrixDynamic<double> y_pred;
-		ChMatrixDynamic<double> lam_pred;
-
-		ChMatrixDynamic<double> x_corr;
-		ChMatrixDynamic<double> y_corr;
-		ChMatrixDynamic<double> lam_corr;
-
-		ChMatrixDynamic<double> Dx;
-		ChMatrixDynamic<double> Dy;
-		ChMatrixDynamic<double> Dlam;
-
-		// vectors
-		ChMatrixDynamic<double> b; // rhs of constraints (is '-b' in chrono)
-		ChMatrixDynamic<double> c; // part of minimization function (is '-f' in chrono)
-
-
-		// residuals
-		ChMatrixDynamic<double> rp; // primal constraint A*x - y - b = 0
-		ChMatrixDynamic<double> rd; // dual constraint G*x - AT*lam + c = 0
-		ChMatrixDynamic<double> rpd; // primal-dual constraints
-		double mu; // complementarity measure
-
+		// Residuals
+		ChMatrixDynamic<double> rp; ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
+		ChMatrixDynamic<double> rd; ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
+		ChMatrixDynamic<double> rpd; ///< Residual about primal-dual variables (only for #IP_KKT_SOLUTION_METHOD#NORMAL mode)
+		double mu = 0; // complementarity measure
+        double rp_nnorm = 0;
+        double rd_nnorm = 0;
 
 		// problem matrices and vectors
 		ChMatrixDynamic<double> rhs_sol;
+        ChMatrixDynamic<double> sol_chrono; // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
 		ChCOOMatrix BigMat;
 		ChCOOMatrix SmallMat;
 		ChCOOMatrix E; // compliance matrix
 		
-		// MKL engine
+		// MUMPS engine
 		ChMumpsEngine mumps_engine;
 
-		// temporary vectors
-		ChMatrixDynamic<double> vectn; // temporary variable that has always size (n,1)
-		ChMatrixDynamic<double> vectm; // temporary variable that has always size (m,1)
 
 		// IP specific functions
+        bool iterate(); ///< Perform an IP iteration; returns \e true if exit conditions are met.
 		void KKTsolve(double sigma, bool apply_correction);
-		void starting_point_STP1();
-		void starting_point_STP2(int n_old);
-		void starting_point_Nocedal_WS(int n_old, int m_old); // warm_start; try to reuse solution from previous cycles
-		void starting_point_Nocedal(int n_old, int m_old);
-		void iterate();
+		void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_old = 0);
         static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double eta = 1);
-		double evaluate_objective_function();
+		double evaluate_objective_function(); ///< Evaluate the objective function i.e. 0.5*xT*G*x + xT*x.
 
 		// Auxiliary
 		void reset_dimensions(int n_old, int m_old);
-		void fullupdate_residual();
-		void make_positive_definite();
+        ChMatrix<>& adapt_to_Chrono(ChMatrix<>& solution_vect) const;
+		void residual_fullupdate();    ///< Update #rp, #rd, and #mu from current #x, #y, #lam and the current system matrix.
+        void make_positive_definite();    ///< Change A^T to -A^T in the current system matrix.
 		void multiplyA(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 		void multiplyNegAT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 		void multiplyG(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
-		void normalize_Arows();
-		bool check_exit_conditions(bool only_mu = true);
-		bool check_feasibility(double tolerance);
 		
-		// Test
+		// Debug
 		std::ofstream history_file;
 		bool print_history;
-		void update_history();
-		ChMatrixDynamic<double> sol_chrono;
-		void generate_solution();
 		void LoadProblem();
 
 	public:
@@ -197,20 +177,25 @@ namespace chrono
         bool SolveRequiresMatrix() const override { return true; }
 
 		// Auxiliary
-		void VerifyKKTconditions(bool print = false);
-		void SetKKTSolutionMethod(KKT_SOLUTION_METHOD qp_solve_type_selection) { KKT_solve_method = qp_solve_type_selection; }
-		void SetMaxIterations(size_t max_iter){ iteration_count_max = max_iter; }
-		void SetTolerances(double rp_tol, double rd_tol, double complementarity_tol)
-		{
-			IPtolerances.rp_nnorm = rp_tol;
-			IPtolerances.rd_nnorm = rd_tol;
-			mu_tolerance = complementarity_tol;
-		}
+        /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem.
+		void SetKKTSolutionMethod(IP_KKT_SOLUTION_METHOD qp_solve_type_selection) { KKT_solve_method = qp_solve_type_selection; }
+
+        /// Set the maximum number of iterations after which the iteration loop will be stopped.
+		void SetMaxIterations(int max_iter){ iteration_count_max = max_iter; }
+
+        /// Set the tolerance over the residual of the primal variables (i.e. violation if dynamic equation of motion).
+        void SetPrimalResidualTolerance(double rp_tol) { rp_nnorm_tol = rp_tol; }
+
+        /// Set the tolerance over the residual of the dual variables (i.e. violation of constraints equations).
+        void SetDualResidualTolerance(double rd_tol) { rd_nnorm_tol = rd_tol; }
+
+        /// Set the tolerance over the residual of complementarity measure (i.e. violation of orthogonality of forces and contact points distance)
+        void SetComplementarityMeasureTolerance(double complementarity_tol) { mu_tol = complementarity_tol; }
 
 		// Test
 		void DumpProblem(std::string suffix = "");
 		void DumpIPStatus(std::string suffix = "") const;
-		void PrintHistory(bool on_off, std::string filepath = "history_file.txt");
+		void RecordHistory(bool on_off, std::string filepath = "history_file.txt");
 	};
 
 } // end of namespace chrono

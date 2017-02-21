@@ -208,8 +208,7 @@ int main(int argc, char* argv[]) {
 
         application.DoStep();
 
-        step_counter++;
-        std::cout << "Step " << step_counter << std::endl;
+
         //GetLog()
         //    << "Force:" << generic_body_ptr->Get_Xforce()
         //    << "Speed: " << generic_body_ptr->GetPos_dt()
