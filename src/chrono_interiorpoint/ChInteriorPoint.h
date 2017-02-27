@@ -24,6 +24,28 @@
 #include "chrono/solver/ChSystemDescriptor.h"
 #include "chrono/solver/ChSolver.h"
 
+
+
+#define VTK_PLOT
+#ifdef VTK_PLOT
+#include <vtkVersion.h>
+#include <vtkRenderer.h>
+#include <vtkRenderWindowInteractor.h>
+#include <vtkRenderWindow.h>
+#include <vtkSmartPointer.h>
+#include <vtkChartXY.h>
+#include <vtkTable.h>
+#include <vtkPlot.h>
+#include <vtkPlotPoints.h>
+#include <vtkFloatArray.h>
+#include <vtkDoubleArray.h>
+#include <vtkIntArray.h>
+#include <vtkContextView.h>
+#include <vtkContextScene.h>
+#include <vtkPen.h>
+#include <vtkAxis.h>
+#endif
+
 #ifdef CHRONO_MUMPS
 #include "chrono_mumps/ChCOOMatrix.h"
 #include "chrono_mumps/ChMumpsEngine.h"
@@ -101,7 +123,7 @@ namespace chrono
 		int iteration_count = 0;
 		int iteration_count_max = 50;
 
-		const bool EQUAL_STEP_LENGTH = false;
+		const bool EQUAL_STEP_LENGTH = true;
 		const bool ADAPTIVE_ETA = true;
 		const bool ONLY_PREDICT = false;
 		bool warm_start_broken = false;
@@ -110,6 +132,18 @@ namespace chrono
         double rp_nnorm_tol = 1e-8;
         double rd_nnorm_tol = 1e-8;
 		double mu_tol = 1e-8;
+
+#ifdef VTK_PLOT
+
+        // vtk handlers
+        vtkSmartPointer<vtkTable> table;
+        vtkSmartPointer<vtkContextView> view;
+        vtkSmartPointer<vtkIntArray> arr_call;
+        vtkSmartPointer<vtkDoubleArray> arr_rpnnorm;
+        vtkSmartPointer<vtkDoubleArray> arr_rdnnorm;
+        vtkSmartPointer<vtkDoubleArray> arr_mu;
+        vtkSmartPointer<vtkChartXY> chart;
+#endif
 
 		IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
 
@@ -151,7 +185,7 @@ namespace chrono
         bool iterate(); ///< Perform an IP iteration; returns \e true if exit conditions are met.
 		void KKTsolve(double sigma, bool apply_correction);
 		void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_old = 0);
-        static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double eta = 1);
+        static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
 		double evaluate_objective_function(); ///< Evaluate the objective function i.e. 0.5*xT*G*x + xT*x.
 
 		// Auxiliary

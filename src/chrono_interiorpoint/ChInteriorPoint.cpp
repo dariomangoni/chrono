@@ -2,7 +2,7 @@
 #include <algorithm>
 
 
-//#define DEBUG_MODE
+#define DEBUG_MODE
 #define SKIP_CONTACTS_UV true
 #define ADD_COMPLIANCE false
 #define REUSE_OLD_SOLUTIONS false
@@ -138,6 +138,18 @@ namespace chrono
 
         set_starting_point(IP_STARTING_POINT_METHOD::NOCEDAL, n_old, m_old);
 
+#ifdef DEBUG_MODE
+        GetLog() << "n: " << n << " | m: " << m << "\n";
+        GetLog() << "Starting with values:\n";
+        GetLog() << "x: " << x << "\n";
+        GetLog() << "y: " << y << "\n";
+        GetLog() << "lambda: " << lam << "\n";
+        GetLog() << "ResidualNNorm primal: " << rp.NormTwo()/m << "\n";
+        GetLog() << "ResidualNNorm dual: " << rd.NormTwo()/n << "\n";
+        GetLog() << "Complementarity measure: " << y.MatrDot(y, lam) << "\n";
+        GetLog() << "\n";
+#endif
+
         for (iteration_count = 1; iteration_count < iteration_count_max && !iterate(); iteration_count++) {}
 
 		if (verbose) std::cout << "IP call: " << solver_call << "; iter: " << iteration_count << "/" << iteration_count_max << std::endl;
@@ -160,20 +172,9 @@ namespace chrono
         /***************************** Prediction Phase **********************************/
         /*********************************************************************************/
 #ifdef DEBUG_MODE
-        GetLog() << "\n\n\n\n\n/*********************************************************************************/\n";
+        GetLog() << "\n\n\n/*********************************************************************************/\n";
         GetLog() << "/******************* IP call: " << solver_call << "; iter: " << iteration_count << " ************************/\n";
         GetLog() << "/*********************************************************************************/\n";
-#endif
-
-#ifdef DEBUG_MODE
-        GetLog() << "n: "<< n << " | m: " << m << "\n";
-        GetLog() << "Starting with values:\n";
-        GetLog() << "x: " << x << "\n";
-        GetLog() << "y: " << y << "\n";
-        GetLog() << "lambda: " << lam << "\n";
-        GetLog() << "ResidualNorm primal: " << rp.NormTwo() << "\n";
-        GetLog() << "ResidualNorm dual: " << rd.NormTwo() << "\n";
-        GetLog() << "\n";
 #endif
 
         /*** find directions ***/
@@ -187,7 +188,7 @@ namespace chrono
 
         BigMat.Compress();
         mumps_engine.SetProblem(BigMat, rhs_sol);
-        mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE);
+        if (mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE)) mumps_engine.PrintINFOG();
         //TODO: between different iterations only the bottom-right part of the matrix changes. This part is diagonal! Can't we avoid a FULL reevalutation of the factors?
 
         // fill 'rhs_sol' with rhs [-rd;-rp-y]
@@ -216,15 +217,6 @@ namespace chrono
             Dy_pre += vectm;
         }
 
-
-#ifdef DEBUG_MODE
-        GetLog() << "Direction (prediction):\n";
-        GetLog() << "Dx: " << Dx_pre << "\n";
-        GetLog() << "Dy: " << Dy_pre << "\n";
-        GetLog() << "Dlambda: " << Dlam_pre << "\n";
-        GetLog() << "\n";
-#endif
-
         /*** compute step lengths ***/
 		// from 16.60 pag.482 from 14.32 pag.408 (remember that y>=0!)
 		double alfa_pred_prim = find_Newton_step_length(y, Dy_pre);
@@ -238,26 +230,28 @@ namespace chrono
 		}
 
 #ifdef DEBUG_MODE
-        GetLog() << "Step length 'alfa' (prediction):\n";
-        GetLog() << "| primal: " << alfa_pred_prim << "\n";
-        GetLog() << "| dual: " << alfa_pred_dual << "\n";
-        GetLog() << "\n";
+
 #endif
 
         /*** make the prediction step ***/
 		  y_pred = Dy;     y_pred.MatrScale(alfa_pred_prim);   y_pred += y;
 		lam_pred = Dlam; lam_pred.MatrScale(alfa_pred_dual); lam_pred += lam;
 
-#ifdef DEBUG_MODE
-        GetLog() << "Values (prediction):\n";
-        GetLog() << "y_pred: " << y_pred << "\n";
-        GetLog() << "lambda_pred: " << lam_pred << "\n";
-#endif
-
         /*** compute complementarity measure ***/
-		double mu_pred = y_pred.MatrDot(y_pred, lam_pred) / m; // from 14.33 pag.408 //TODO: why MatrDot is a member?
+		double mu_pred = y_pred.MatrDot(y_pred, lam_pred) / m; // from 16.56 pag.481
 
 #ifdef DEBUG_MODE
+        //GetLog() << "Direction (prediction):\n";
+        //GetLog() << "Dx: " << Dx_pre << "\n";
+        //GetLog() << "Dy: " << Dy_pre << "\n";
+        //GetLog() << "Dlambda: " << Dlam_pre << "\n";
+        //GetLog() << "\n";
+        GetLog() << "Step length (prediction): P: " << alfa_pred_prim << " | D: " << alfa_pred_dual << "\n";
+        //GetLog() << "\n";
+        //GetLog() << "\n";
+        //GetLog() << "Values (prediction):\n";
+        //GetLog() << "y_pred: " << y_pred << "\n";
+        //GetLog() << "lambda_pred: " << lam_pred << "\n";
         GetLog() << "Complementarity measure (prediction): " << mu_pred << "\n";
         GetLog() << "\n";
 #endif
@@ -284,7 +278,7 @@ namespace chrono
 
 #ifdef DEBUG_MODE
             GetLog() << "InteriorPoint Results only_pred\n";
-            GetLog() << "Complementarity measure: " << mu << "\n";
+            GetLog() << "x_pred: " << x_pred << "\n";
             GetLog() << "ResidualNorm primal: " << rp.NormTwo() << "\n";
             GetLog() << "ResidualNorm dual: " << rd.NormTwo() << "\n";
             GetLog() << "\n";
@@ -292,8 +286,7 @@ namespace chrono
             return met_exit_conditions;
 		}
 
-            
-
+        
 		
         /*********************************************************************************/
 		/******************************* Correction phase ********************************/
@@ -308,8 +301,7 @@ namespace chrono
 
 
         // Solve the KKT system
-        mumps_engine.MumpsCall(ChMumpsEngine::SOLVE);
-        mumps_engine.PrintINFOG();
+        if (mumps_engine.MumpsCall(ChMumpsEngine::SOLVE)) mumps_engine.PrintINFOG();
         if (verbose && mumps_engine.GetRINFOG(6)>1e-6)
                 std::cout << "Scaled residual norm of MUMPS call: " << mumps_engine.GetRINFOG(6) << std::endl;
 
@@ -328,21 +320,12 @@ namespace chrono
             Dy += vectm;
         }
 
-#ifdef DEBUG_MODE
-        GetLog() << "Direction (correction):\n";
-        GetLog() << "centering param 'sigma': " << sigma << "\n";
-        GetLog() << "Dx: " << Dx << "\n";
-        GetLog() << "Dy: " << Dy << "\n";
-        GetLog() << "Dlambda: " << Dlam << "\n";
-        GetLog() << "\n";
-#endif
-
         /*** step length correction ***/
-		double eta = ADAPTIVE_ETA ? exp(-mu*m)*0.1 + 0.9 : 0.95; // exponential descent of eta
+		double tau = ADAPTIVE_ETA ? exp(-mu*m)*0.1 + 0.9 : 0.95; // exponential descent of tau
 
         /*** compute step lengths ***/
-		double alfa_corr_prim = find_Newton_step_length(y, Dy, eta);
-		double alfa_corr_dual = find_Newton_step_length(lam, Dlam, eta);
+		double alfa_corr_prim = find_Newton_step_length(y, Dy, tau);
+		double alfa_corr_dual = find_Newton_step_length(lam, Dlam, tau);
 
 		if (EQUAL_STEP_LENGTH)
 		{
@@ -351,12 +334,6 @@ namespace chrono
 			alfa_corr_dual = alfa_corr;
 		}
 
-#ifdef DEBUG_MODE
-        GetLog() << "Step length 'alfa' (correction):\n";
-        GetLog() << "| primal: " << alfa_corr_prim << "\n";
-        GetLog() << "| dual: " << alfa_corr_dual << "\n";
-        GetLog() << "\n";
-#endif
 
         /*** make the correction step ***/
 		  x_corr = Dx;		  x_corr.MatrScale(alfa_corr_prim);		  x_corr += x;		  x = x_corr;
@@ -364,11 +341,19 @@ namespace chrono
 		lam_corr = Dlam;	lam_corr.MatrScale(alfa_corr_dual);		lam_corr += lam;	lam = lam_corr;
 
 #ifdef DEBUG_MODE
-        GetLog() << "Values (correction):\n";
-        GetLog() << "x: " << x << "\n";
-        GetLog() << "y: " << y << "\n";
-        GetLog() << "lambda: " << lam << "\n";
+        GetLog() << "Direction (correction):\n";
+        GetLog() << "centering param 'sigma': " << sigma << "\n";
+        //GetLog() << "Dx: " << Dx << "\n";
+        //GetLog() << "Dy: " << Dy << "\n";
+        //GetLog() << "Dlambda: " << Dlam << "\n";
+        //GetLog() << "\n";
+        GetLog() << "Step length (correction): P: " << alfa_corr_prim << " | D: " << alfa_corr_dual << "\n";
         GetLog() << "\n";
+        //GetLog() << "Values (correction):\n";
+        //GetLog() << "x: " << x << "\n";
+        //GetLog() << "y: " << y << "\n";
+        //GetLog() << "lambda: " << lam << "\n";
+        //GetLog() << "\n";
 #endif
 
 		/********** Residuals update **********/
@@ -418,16 +403,34 @@ namespace chrono
         GetLog() << "\n";
 #endif
 
-        if (history_file.is_open())
+#ifdef VTK_PLOT
+       
+        arr_call->InsertNextValue(solver_call * 100 + iteration_count);
+        arr_rpnnorm->InsertNextValue(rp_nnorm);
+        arr_rdnnorm->InsertNextValue(rd_nnorm);
+        arr_mu->InsertNextValue(mu);
+
+        if (arr_call->GetNumberOfValues()>2)
         {
-            history_file << std::endl << solver_call << ", " << iteration_count << ", " << rp_nnorm << ", " << rd_nnorm << ", " << mu;
+            chart->GetAxis(vtkAxis::BOTTOM)->SetMinimum(arr_call->GetValue(0));
+            chart->GetAxis(vtkAxis::BOTTOM)->SetMaximum(arr_call->GetValue(arr_call->GetNumberOfValues() - 1));
+            chart->GetAxis(vtkAxis::BOTTOM)->AutoScale();
+            view->Render();
         }
+        
+#endif
+
+        if (history_file.is_open())
+            history_file << std::endl << solver_call << ", " << iteration_count << ", " << rp_nnorm << ", " << rd_nnorm << ", " << mu << ", " << evaluate_objective_function();
 
         DumpProblem();
 
         return met_exit_conditions;
 
 	}
+
+
+
 
 	// Solve the KKT system in different modes: 'rp', 'rd', 'mu', 'x', 'y', 'lam' must be updated before calling this function
     // 'sigma' is the centering parameter;
@@ -712,21 +715,29 @@ namespace chrono
     }
 
     /// Find the maximum step length, along the direction defined by \p Dvect, so that \p vect has no negative components;
-	/// It is applied to #lam and #y
-	double ChInteriorPoint::find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double eta )
+	/// It is applied to #lam and #y.
+	double ChInteriorPoint::find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau )
 	{
-		double alpha = 1;
+		double alpha = 1; // in this way alpha is clamped to a maximum of 1
+        bool alpha_found = false;
 		for (auto row_sel = 0; row_sel < vect.GetRows(); row_sel++)
 		{
 			if (Dvect(row_sel,0)<0)
 			{
-				double alfa_temp = -eta * vect(row_sel,0) / Dvect(row_sel,0);
-				if (alfa_temp < alpha)
-					alpha = alfa_temp;
+				double alfa_temp = -tau * vect(row_sel,0) / Dvect(row_sel,0);
+				if (alfa_temp < alpha && alfa_temp>0)
+				{
+                    alpha_found = true;
+                    alpha = alfa_temp;
+				}
 			}
 		}
 
-		return alpha>0 ? alpha : 0;
+
+        if (!alpha_found || alpha <= 0)
+            alpha = 0.001;
+
+		return alpha;
 	}
 
 	double ChInteriorPoint::evaluate_objective_function()
@@ -970,7 +981,7 @@ namespace chrono
 		}
 
 		history_file << std::scientific << std::setprecision(3);
-		history_file << std::endl << "SolverCall" << ", " << "Iteration" << ", " << "rp_nnorm" << ", " << "rd_nnorm" << ", " << "mu";
+		history_file << "SolverCall, Iteration, rp_nnorm, rd_nnormm, mu, obj_fun";
 
 		print_history = true;
 	}
@@ -980,6 +991,74 @@ namespace chrono
 	{
 		mumps_engine.SetICNTL(11, 2);
 		RecordHistory(true);
+
+
+        // Set up the data table
+        table = vtkSmartPointer<vtkTable>::New();
+
+        arr_call = vtkSmartPointer<vtkIntArray>::New();
+        arr_rpnnorm = vtkSmartPointer<vtkDoubleArray>::New();
+        arr_rdnnorm = vtkSmartPointer<vtkDoubleArray>::New();
+        arr_mu = vtkSmartPointer<vtkDoubleArray>::New();
+
+        arr_call->SetName("call");
+        arr_rpnnorm->SetName("rp_nnorm");
+        arr_rdnnorm->SetName("rd_nnorm");
+        arr_mu->SetName("mu");
+
+        table->AddColumn(arr_call);
+        table->AddColumn(arr_rpnnorm);
+        table->AddColumn(arr_rdnnorm);
+        table->AddColumn(arr_mu);
+
+        // Set up the view
+        view = vtkSmartPointer<vtkContextView>::New();
+        view->GetRenderer()->SetBackground(1.0, 1.0, 1.0);
+
+        // Add multiple line plots, setting the colors etc
+        chart = vtkSmartPointer<vtkChartXY>::New();
+        view->GetScene()->AddItem(chart);
+        chart->GetAxis(vtkAxis::LEFT)->SetLogScale(true);
+        chart->GetAxis(vtkAxis::LEFT)->SetNotation(vtkAxis::SCIENTIFIC_NOTATION);
+        chart->SetRenderEmpty(true);
+        chart->SetShowLegend(true);
+
+        vtkPlot* line;
+        line = chart->AddPlot(vtkChart::LINE);
+        vtkPlotPoints::SafeDownCast(line)->SetMarkerStyle(vtkPlotPoints::CROSS);
+        line->SetInputData(table, 0, 1);
+        line->SetColor(255, 0, 0, 255);
+        line->SetWidth(1.0);
+
+        line = chart->AddPlot(vtkChart::LINE);
+        vtkPlotPoints::SafeDownCast(line)->SetMarkerStyle(vtkPlotPoints::CROSS);
+        line->SetInputData(table, 0, 2);
+        line->SetColor(0, 255, 0, 255);
+        line->SetWidth(1.0);
+
+        line = chart->AddPlot(vtkChart::LINE);
+        vtkPlotPoints::SafeDownCast(line)->SetMarkerStyle(vtkPlotPoints::CROSS);
+        line->SetInputData(table, 0, 3);
+        line->SetColor(0, 0, 255, 255);
+        line->SetWidth(1.0);
+
+
+
+
+        // For dotted line, the line type can be from 2 to 5 for different dash/dot
+        // patterns (see enum in vtkPen containing DASH_LINE, value 2):
+#ifndef WIN32
+        line->GetPen()->SetLineType(vtkPen::DASH_LINE);
+#endif
+        // (ifdef-ed out on Windows because DASH_LINE does not work on Windows
+        //  machines with built-in Intel HD graphics card...)
+
+        //view->GetRenderWindow()->SetMultiSamples(0);
+        //view->Render();
+
+
+
+
 	}
 
 	ChInteriorPoint::~ChInteriorPoint()

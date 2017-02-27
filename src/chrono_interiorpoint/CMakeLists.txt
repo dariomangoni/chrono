@@ -40,6 +40,10 @@ SET(ChronoEngine_IP_HEADERS
 SOURCE_GROUP("" FILES 
     ${ChronoEngine_IP_SOURCES} 
     ${ChronoEngine_IP_HEADERS})
+	
+find_package(VTK)
+include(${VTK_USE_FILE})
+
 
 #-----------------------------------------------------------------------------	
 # Create the ChronoEngine_interiorpoint library
@@ -55,12 +59,13 @@ SET_TARGET_PROPERTIES(ChronoEngine_interiorpoint PROPERTIES
                           
 TARGET_LINK_LIBRARIES(ChronoEngine_interiorpoint
                       ChronoEngine
-					  ${KERNEL_SOLVER_MODULE_LIB})
+					  ${KERNEL_SOLVER_MODULE_LIB}
+					  ${VTK_LIBRARIES}
+					  )
 
 ADD_DEPENDENCIES(ChronoEngine_interiorpoint
-	ChronoEngine
-	${KERNEL_SOLVER_MODULE_LIB}
-)
+				ChronoEngine
+				)
 
 INSTALL(TARGETS ChronoEngine_interiorpoint
         RUNTIME DESTINATION bin

@@ -10,20 +10,9 @@ SET(IP_DEMOS
 
 INCLUDE_DIRECTORIES( ${CH_IRRLICHTINC} )
 
-# # Check which solver is being used to solve the kernel
-# IF (ENABLE_MODULE_MUMPS)
-	# # SET(KERNEL_SOLVER_MODULE_LIB "ChronoEngine_MUMPS")
-	# INCLUDE_DIRECTORIES( ${CH_MUMPS_INCLUDES} )
-# ELSEIF (ENABLE_MODULE_MKL)
-	# # SET(KERNEL_SOLVER_MODULE_LIB "ChronoEngine_MKL")
-	# INCLUDE_DIRECTORIES( ${CH_MKL_INCLUDES} )
-	# MESSAGE(SEND_ERROR "InteriorPoint with MKL not implemented yet.")
-	# RETURN()
-# ELSE()
-	# MESSAGE(SEND_ERROR "ChronoEngine InteriorPoint module needs MKL or MUMPS modules to be built.")
-	# RETURN()
-# ENDIF()
-    
+find_package(VTK REQUIRED)
+include(${VTK_USE_FILE})
+ 
 FOREACH(PROGRAM ${IP_DEMOS})
 	MESSAGE(STATUS "...add ${PROGRAM}")
 
@@ -41,7 +30,7 @@ FOREACH(PROGRAM ${IP_DEMOS})
 		ChronoEngine_fea
 		ChronoEngine_irrlicht
 		ChronoEngine_interiorpoint
-		# ${KERNEL_SOLVER_MODULE_LIB}
+		${VTK_LIBRARIES}
 		)
 		
 	ADD_DEPENDENCIES(${PROGRAM}
@@ -49,7 +38,6 @@ FOREACH(PROGRAM ${IP_DEMOS})
 		ChronoEngine_fea
 		ChronoEngine_irrlicht
 		ChronoEngine_interiorpoint
-		# ${KERNEL_SOLVER_MODULE_LIB}
 		)
 	INSTALL(TARGETS ${PROGRAM} DESTINATION ${CH_INSTALL_DEMO})
 
