@@ -147,28 +147,63 @@ namespace chrono
 
 		IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
 
+        struct IPvariables_t
+        {
+            ChMatrixDynamic<double> x; // DeltaSpeed/Acceleration ('q' in chrono)
+            ChMatrixDynamic<double> y; // Slack variable/Contact points distance ('c' in chrono)
+            ChMatrixDynamic<double> lam; // Lagrangian multipliers/contact|constraint forces ('l' in chrono)
+
+        } var, Dvar;
+
+        struct IPrhs_t
+        {
+            ChMatrixDynamic<double> b; // rhs of constraints (is '-b' in chrono)
+            ChMatrixDynamic<double> c; // forces (is '-f' in chrono)
+        } rhs;
+
+        struct IPresidual_t
+        {
+            ChMatrixDynamic<double> rp; ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
+            ChMatrixDynamic<double> rd; ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
+            ChMatrixDynamic<double> rpd; ///< Residual about primal-dual variables (only for #IP_KKT_SOLUTION_METHOD#NORMAL mode)
+            double mu = 0; // complementarity measure
+        } res;
+
+        struct IPresidual_nnorm_t
+        {
+            double rp_nnorm = 0;
+            double rd_nnorm = 0;
+            double mu = 0;
+            IPresidual_nnorm_t(double rp_nnorm_in, double rd_nnorm_in, double mu_in) : rp_nnorm(rp_nnorm_in), rd_nnorm(rd_nnorm_in), mu(mu_in) {}
+            IPresidual_nnorm_t() {}
+            bool operator<(const IPresidual_nnorm_t& other) const { return rp_nnorm < other.rp_nnorm && rd_nnorm < other.rd_nnorm && mu < other.mu; }
+            bool operator<=(const IPresidual_nnorm_t& other) const { return rp_nnorm <= other.rp_nnorm && rd_nnorm <= other.rd_nnorm && mu <= other.mu; }
+            bool operator>(const IPresidual_nnorm_t& other) const { return !(*this<=other); }
+            bool operator>=(const IPresidual_nnorm_t& other) const { return !(*this < other); }
+        } res_nnorm, res_nnorm_tol{1e-8, 1e-8, 1e-8};
+
 		// Variables
-		ChMatrixDynamic<double> x; // DeltaSpeed/Acceleration ('q' in chrono)
-		ChMatrixDynamic<double> y; // Slack variable/Contact points distance ('c' in chrono)
-		ChMatrixDynamic<double> lam; // Lagrangian multipliers/contact|constraint forces ('l' in chrono)
-        ChMatrixDynamic<double> b; // rhs of constraints (is '-b' in chrono)
-        ChMatrixDynamic<double> c; // forces (is '-f' in chrono)
+		//ChMatrixDynamic<double> x; // DeltaSpeed/Acceleration ('q' in chrono)
+		//ChMatrixDynamic<double> y; // Slack variable/Contact points distance ('c' in chrono)
+		//ChMatrixDynamic<double> lam; // Lagrangian multipliers/contact|constraint forces ('l' in chrono)
+        //ChMatrixDynamic<double> b; // rhs of constraints (is '-b' in chrono)
+        //ChMatrixDynamic<double> c; // forces (is '-f' in chrono)
 
         // Temporaries used in iterate() function
-		ChMatrixDynamic<double> x_pred, y_pred, lam_pred;
-		ChMatrixDynamic<double> x_corr, y_corr, lam_corr;
-		ChMatrixDynamic<double> Dx, Dy, Dlam;
-        ChMatrixDynamic<double> Dx_pre, Dy_pre, Dlam_pre;
+		//ChMatrixDynamic<double> x_pred, y_pred, lam_pred;
+		//ChMatrixDynamic<double> x_corr, y_corr, lam_corr;
+		//ChMatrixDynamic<double> Dx, Dy, Dlam;
+  //      ChMatrixDynamic<double> Dx_pre, Dy_pre, Dlam_pre;
         ChMatrixDynamic<double> vectn; // temporary variable that has always size (#n,1)
         ChMatrixDynamic<double> vectm; // temporary variable that has always size (#m,1)
 
 		// Residuals
-		ChMatrixDynamic<double> rp; ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
-		ChMatrixDynamic<double> rd; ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
-		ChMatrixDynamic<double> rpd; ///< Residual about primal-dual variables (only for #IP_KKT_SOLUTION_METHOD#NORMAL mode)
-		double mu = 0; // complementarity measure
-        double rp_nnorm = 0;
-        double rd_nnorm = 0;
+		//ChMatrixDynamic<double> rp; ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
+		//ChMatrixDynamic<double> rd; ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
+		//ChMatrixDynamic<double> rpd; ///< Residual about primal-dual variables (only for #IP_KKT_SOLUTION_METHOD#NORMAL mode)
+		//double mu = 0; // complementarity measure
+  //      double rp_nnorm = 0;
+  //      double rd_nnorm = 0;
 
 		// problem matrices and vectors
 		ChMatrixDynamic<double> rhs_sol;
@@ -182,7 +217,7 @@ namespace chrono
 
 
 		// IP specific functions
-        bool iterate(); ///< Perform an IP iteration; returns \e true if exit conditions are met.
+        ChInteriorPoint::IPresidual_nnorm_t& iterate(); ///< Perform an IP iteration; returns \e true if exit conditions are met.
 		void KKTsolve(double sigma, bool apply_correction);
 		void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_old = 0);
         static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
