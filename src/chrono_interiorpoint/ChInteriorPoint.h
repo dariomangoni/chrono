@@ -54,8 +54,7 @@
 // Further references: (all pages number refers to [1] if not otherwise specified)
 // [1] Nocedal&Wright, Numerical Optimization 2nd edition
 // [2] D'Apuzzo et al., Starting-point strategies for an infeasible potential reduction method
-// [3] Mangoni D., Tasora A., Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior
-// Point Method
+// [3] Mangoni D., Tasora A., Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
 
 // Symbol conversion table from [1] to [2]
 // [2] | [1]
@@ -96,9 +95,9 @@ namespace chrono {
 /// for QP convex programming
 
 class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
+
   public:
     enum class IP_KKT_SOLUTION_METHOD { STANDARD, AUGMENTED, NORMAL };
-
     enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS };
 
   private:
@@ -138,6 +137,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
         ChMatrixDynamic<double> lam;  ///< Lagrangian multipliers/contact|constraint forces ('l' in chrono)
     } var, Dvar;
 
+    // Residuals
     struct IPresidual_t {
         ChMatrixDynamic<double> rp;    ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
         ChMatrixDynamic<double> rd;    ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
@@ -167,37 +167,18 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
             rd_nnorm = res.rd.NormTwo() / res.rd.GetRows();
             mu = res.mu;
         }
-    } res_nnorm_tol{1e-8, 1e-8, 1e-8};
+    } res_nnorm_tol{1e-10, 1e-10, 1e-10};
 
     struct IPrhs_t {
         ChMatrixDynamic<double> b;  ///< rhs of constraints (is '-b' in chrono)
         ChMatrixDynamic<double> c;  ///< forces (is '-f' in chrono)
     } rhs;
 
-    // Variables
-    // ChMatrixDynamic<double> x; // DeltaSpeed/Acceleration ('q' in chrono)
-    // ChMatrixDynamic<double> y; // Slack variable/Contact points distance ('c' in chrono)
-    // ChMatrixDynamic<double> lam; // Lagrangian multipliers/contact|constraint forces ('l' in chrono)
-    // ChMatrixDynamic<double> b; // rhs of constraints (is '-b' in chrono)
-    // ChMatrixDynamic<double> c; // forces (is '-f' in chrono)
-
     // Temporaries used in iterate() function
-    // ChMatrixDynamic<double> x_pred, y_pred, lam_pred;
-    // ChMatrixDynamic<double> x_corr, y_corr, lam_corr;
-    // ChMatrixDynamic<double> Dx, Dy, Dlam;
-    //      ChMatrixDynamic<double> Dx_pre, Dy_pre, Dlam_pre;
     ChMatrixDynamic<double> vectn;  // temporary variable that has always size (#n,1)
     ChMatrixDynamic<double> vectm;  // temporary variable that has always size (#m,1)
 
-    // Residuals
-    // ChMatrixDynamic<double> rp; ///< Residual about primal variables (i.e. violation if dynamic equation of motion);
-    // rp = A*x - y - b.  ChMatrixDynamic<double> rd; ///< Residual about dual variables (i.e. violation of constraints
-    // equations); rd = G*x - AT*lam + c.  ChMatrixDynamic<double> rpd; ///< Residual about primal-dual variables (only
-    // for #IP_KKT_SOLUTION_METHOD#NORMAL mode)  double mu = 0; // complementarity measure
-    //      double rp_nnorm = 0;
-    //      double rd_nnorm = 0;
-
-    // problem matrices and vectors
+    // Problem matrices and vectors
     ChMatrixDynamic<double> rhs_sol;
     ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
     ChCOOMatrix BigMat;
@@ -236,7 +217,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     bool SolveRequiresMatrix() const override { return true; }
 
     // Auxiliary
-    /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem.
+    /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem. Change it before starting the solver.
     void SetKKTSolutionMethod(IP_KKT_SOLUTION_METHOD qp_solve_type_selection) {
         KKT_solve_method = qp_solve_type_selection;
     }
@@ -244,14 +225,13 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     /// Set the maximum number of iterations after which the iteration loop will be stopped.
     void SetMaxIterations(int max_iter) { iteration_count_max = max_iter; }
 
-    /// Set the tolerance over the residual of the primal variables (i.e. violation if dynamic equation of motion).
+    /// Set the tolerance over the residual of the \a primal variables (i.e. violation of constraints equations).
     void SetPrimalResidualTolerance(double rp_tol) { rp_nnorm_tol = rp_tol; }
 
-    /// Set the tolerance over the residual of the dual variables (i.e. violation of constraints equations).
+    /// Set the tolerance over the residual of the \a dual variables (i.e. stationarity of the solution).
     void SetDualResidualTolerance(double rd_tol) { rd_nnorm_tol = rd_tol; }
 
-    /// Set the tolerance over the residual of complementarity measure (i.e. violation of orthogonality of forces and
-    /// contact points distance)
+    /// Set the tolerance over the residual of complementarity measure (i.e. violation of orthogonality of forces and contact points distance)
     void SetComplementarityMeasureTolerance(double complementarity_tol) { mu_tol = complementarity_tol; }
 
     // Test

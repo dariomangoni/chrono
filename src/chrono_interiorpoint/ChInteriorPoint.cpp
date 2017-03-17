@@ -258,11 +258,10 @@ ChInteriorPoint::IPresidual_nnorm_t& ChInteriorPoint::iterate() {
     double sigma = std::pow(mu_pred / res.mu, 3.0);  // from 14.34 pag.408
 
     /*** find directions ***/
+    for (auto row_sel = 0; row_sel < n; row_sel++)
+        rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
     for (auto row_sel = 0; row_sel < m; row_sel++)
-        rhs_sol.SetElement(
-            row_sel + n, 0,
-            -res.rp(row_sel, 0) - var.y(row_sel, 0) +
-                (sigma * res.mu - Dvar_pred.lam(row_sel, 0) * Dvar_pred.y(row_sel, 0)) / var.lam(row_sel, 0));
+        rhs_sol.SetElement( row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0) + (sigma * res.mu - Dvar_pred.lam(row_sel, 0) * Dvar_pred.y(row_sel, 0)) / var.lam(row_sel, 0));
 
     // Solve the KKT system
     if (mumps_engine.MumpsCall(ChMumpsEngine::SOLVE))
@@ -350,25 +349,6 @@ ChInteriorPoint::IPresidual_nnorm_t& ChInteriorPoint::iterate() {
     }
 
 
-#ifdef VTK_PLOT
-
-    arr_call->InsertNextValue(solver_call * 100 + iteration_count);
-    arr_rpnnorm->InsertNextValue(res_nnorm.rp_nnorm);
-    arr_rdnnorm->InsertNextValue(res_nnorm.rd_nnorm);
-    arr_mu->InsertNextValue(res.mu);
-
-    if (arr_call->GetNumberOfValues() > 2) {
-        chart->GetAxis(vtkAxis::BOTTOM)->SetMinimum(arr_call->GetValue(0));
-        chart->GetAxis(vtkAxis::BOTTOM)->SetMaximum(arr_call->GetValue(arr_call->GetNumberOfValues() - 1));
-        chart->GetAxis(vtkAxis::BOTTOM)->AutoScale();
-        view->Render();
-    }
-
-    postprocess::ChVTKMatrixPlot vtk_matplot;
-    vtk_matplot.PrintMatrix(BigMat);
-
-#endif
-
     if (history_file.is_open())
         history_file << std::endl
                      << solver_call << ", " << iteration_count << ", " << res_nnorm.rp_nnorm << ", "
@@ -432,14 +412,14 @@ void ChInteriorPoint::KKTsolve(double sigma, bool apply_correction) {
             }
 
             break;
+
         case IP_KKT_SOLUTION_METHOD::AUGMENTED:
             if (!apply_correction) {
                 // update y/lambda diagonal submatrix
                 if (ADD_COMPLIANCE)
                     for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
                         BigMat.SetElement(n + diag_sel, n + diag_sel,
-                                          var.y.GetElement(diag_sel, 0) / var.lam.GetElement(diag_sel, 0) +
-                                              E.GetElement(diag_sel, diag_sel));
+                                          var.y.GetElement(diag_sel, 0) / var.lam.GetElement(diag_sel, 0) + E.GetElement(diag_sel, diag_sel));
                     }
                 else
                     for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
@@ -451,11 +431,11 @@ void ChInteriorPoint::KKTsolve(double sigma, bool apply_correction) {
                 mumps_engine.SetProblem(BigMat, rhs_sol);
                 mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE);
 
-                // fill 'rhs_sol' with rhs [-res.rd;-res.rp-y+sigma*res.mu/lam]
-                for (auto row_sel = 0; row_sel < n; row_sel++)
-                    rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
             }
 
+            // fill 'rhs_sol' with rhs [-res.rd;-res.rp-y+sigma*res.mu/lam]
+            for (auto row_sel = 0; row_sel < n; row_sel++)
+                rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
             for (auto row_sel = 0; row_sel < m; row_sel++)
                 rhs_sol.SetElement(row_sel + n, 0,
                                    -res.rp(row_sel, 0) - var.y(row_sel, 0) + (apply_correction ? sigma * res.mu - Dvar.lam(row_sel, 0) * Dvar.y(row_sel, 0) : sigma * res.mu) / var.lam(row_sel, 0));
