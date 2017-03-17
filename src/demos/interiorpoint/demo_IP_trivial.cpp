@@ -195,6 +195,7 @@ int main(int argc, char* argv[]) {
 
     application.SetStepManage(true);
     application.SetTimestep(0.02);
+    application.SetTryRealtime(true);
 
     int step_counter = 0;
     while (application.GetDevice()->run()) {
