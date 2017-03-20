@@ -70,7 +70,7 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     auto m_old = m;
     reset_dimensions(sysd.CountActiveVariables(), sysd.CountActiveConstraints(false, SKIP_CONTACTS_UV));
 
-    // Load system matrix in 'BigMat', 'rhs_sol', 'b' and 'c'
+    // Load system matrix in 'BigMat', 'mumps_rhs', 'b' and 'c'
     // Convert to different formats:
     // format = 0; (used throughout Chrono, but not here)
     //             | M  Cq'|*| q|-| f|=|0|
@@ -104,13 +104,15 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     /********** Check if system has constraints **********/
     if (m == 0)  // if no constraints
     {
-        // Fill 'rhs_sol' with just Chrono's 'f' i.e. IP's '-c'
+        ChMatrixDynamic<double> mumps_rhs(n, 1);
+
+        // Fill 'mumps_rhs' with just Chrono's 'f' i.e. IP's '-c'
         for (auto row_sel = 0; row_sel < n; row_sel++)
-            rhs_sol.SetElement(row_sel, 0, -rhs.c.GetElement(row_sel, 0));
+            mumps_rhs.SetElement(row_sel, 0, -rhs.c.GetElement(row_sel, 0));
 
         // Solve the KKT system
         BigMat.Compress();
-        mumps_engine.SetProblem(BigMat, rhs_sol);
+        mumps_engine.SetProblem(BigMat, mumps_rhs);
         if (mumps_engine.MumpsCall(ChMumpsEngine::COMPLETE))
             mumps_engine.PrintINFOG();
 
@@ -119,11 +121,11 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 
         residual_fullupdate();
 
-        sysd.FromVectorToUnknowns(rhs_sol);
+        sysd.FromVectorToUnknowns(mumps_rhs);
 
         // Export variable so that can be used in the next iteration as starting point
-        //var.x.Resize(n, 1);
-        //var.x = rhs_sol;
+        var.x.Resize(n, 1);
+        var.x = mumps_rhs;
 
         if (verbose)
             std::cout << "IP call: " << solver_call << "; No constraints." << std::endl;
@@ -138,16 +140,54 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
         E *= -1;
     }
 
-    //DumpProblem();
+    DumpProblem();
 
     set_starting_point(IP_STARTING_POINT_METHOD::NOCEDAL, n_old, m_old);
 
-    for (iteration_count = 1; iteration_count < iteration_count_max && iterate() > res_nnorm_tol; iteration_count++) {
-    }
+    for (iteration_count = 1; iteration_count < iteration_count_max; iteration_count++) {
 
-    if (verbose)
-        std::cout << "IP call: " << solver_call << "; iter: " << iteration_count << "/" << iteration_count_max
-                  << std::endl;
+        iterate();
+
+        /*********************************************************************************/
+        /******************************** Exit conditions ********************************/
+        /*********************************************************************************/
+
+        for (auto cont = 0; cont < m; cont++) {
+            if (var.y(cont, 0) < 0 || var.lam(cont, 0) < 0)
+            {
+                std::cout << "'y' or 'lambda' have negative elements" << std::endl;
+                break;
+            }
+        }
+
+
+        if (verbose)
+        {
+            GetLog() << "InteriorPoint | Call: " << solver_call << " Iter: "  << iteration_count << "/" << iteration_count_max  <<"\n";
+            GetLog() << "Complementarity Measure: " << res.mu << "\n";
+            GetLog() << "|rd|/n (stationarity): " << res.rd.NormTwo() / n << "\n";
+            GetLog() << "|rp|/m (constraint violation): " << res.rp.NormTwo() / m << "\n";
+            GetLog() << "Objective Function: " << evaluate_objective_function() << "\n";
+            GetLog() << "\n";
+        }
+
+        if (history_file.is_open())
+            history_file << std::endl
+            << solver_call << ", " << iteration_count << ", " << res.rp.NormTwo() / m << ", "
+            << res.rd.NormTwo() / n << ", " << res.mu << ", " << evaluate_objective_function();
+
+        //DumpProblem("_end");
+
+        if (res < res_nnorm_tol)
+        {
+            if (verbose)
+                std::cout << "IP call: " << solver_call << "; iter: " << iteration_count << "/" << iteration_count_max
+                << std::endl;
+
+
+            break;
+        }
+    }
 
     // Scatter the solution into the Chrono environment
     sysd.FromVectorToUnknowns(adapt_to_Chrono(sol_chrono));
@@ -159,151 +199,103 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 // output: (x, y, lam) are computed
 // (res.rp, res.rd, res.mu) are updated based on most recent (x, y, lam)
 // (res.rp, res.rd, res.mu, x, y, lam) are taken as they are
-ChInteriorPoint::IPresidual_nnorm_t& ChInteriorPoint::iterate() {
-/*********************************************************************************/
-/***************************** Prediction Phase **********************************/
-/*********************************************************************************/
+void ChInteriorPoint::iterate() {
+    /*********************************************************************************/
+    /***************************** Prediction Phase **********************************/
+    /*********************************************************************************/
 
-    IPresidual_nnorm_t res_nnorm;
-    IPvariables_t var_pred, Dvar_pred;
-    var_pred.x.Resize(n, 1);      var_pred.y.Resize(m, 1);     var_pred.lam.Resize(m, 1);
+    setup_system_matrix(var);
+
+    ChMatrixDynamic<double> mumps_rhs(n + m, 1);
+    IPvariables_t Dvar_pred;
     Dvar_pred.x.Resize(n, 1);    Dvar_pred.y.Resize(m, 1);    Dvar_pred.lam.Resize(m, 1);
 
-    /*** find directions ***/
-    // update y/lambda diagonal submatrix
-    if (ADD_COMPLIANCE)
-        for (auto diag_sel = 0; diag_sel < m; diag_sel++)
-            BigMat.SetElement(
-                n + diag_sel, n + diag_sel,
-                var.y.GetElement(diag_sel, 0) / var.lam.GetElement(diag_sel, 0) + E.GetElement(diag_sel, diag_sel));
-    else
-        for (auto diag_sel = 0; diag_sel < m; diag_sel++)
-            BigMat.SetElement( n + diag_sel, n + diag_sel, var.y.GetElement(diag_sel, 0) / var.lam.GetElement(diag_sel, 0) );
+    // WARNING: the residual structure 'res' must be already updated at this point!
 
-    BigMat.Compress();
-    mumps_engine.SetProblem(BigMat, rhs_sol);
-    if (mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE))
-        mumps_engine.PrintINFOG();
-    // TODO: between different iterations only the bottom-right part of the matrix changes. This part is diagonal! Can't we avoid a FULL re-evalutation of all the factors?
-
-    // fill 'rhs_sol' with rhs [-res.rd;-res.rp-y]
+    // fill 'mumps_rhs' with rhs [-res.rd;-res.rp-y]
     for (auto row_sel = 0; row_sel < n; row_sel++)
-        rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
+        mumps_rhs.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
     for (auto row_sel = 0; row_sel < m; row_sel++)
-        rhs_sol.SetElement(row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0));
+        mumps_rhs.SetElement(row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0));
 
-    // Solve the KKT system
-    if (mumps_engine.MumpsCall(ChMumpsEngine::SOLVE))
-        mumps_engine.PrintINFOG();
-    if (mumps_engine.GetRINFOG(6) > 1e-6)
-        std::cout << "Scaled residual norm of MUMPS call: " << mumps_engine.GetRINFOG(6) << std::endl;
-
-    // Extract 'Dvar.x' and 'Dvar.lam' from 'sol'
-    for (auto row_sel = 0; row_sel < n; row_sel++)
-        Dvar_pred.x.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel, 0));
-    for (auto row_sel = 0; row_sel < m; row_sel++)
-        Dvar_pred.lam.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel + n, 0));
-
-    // Calc 'Dvar.y' (it is also possible to evaluate Dvar.y as Dvar.y=(-lam°y+sigma*res.mu*e-y°Dvar.lam)./lam )
-    multiplyA(Dvar_pred.x, Dvar_pred.y);  // Dvar.y = A*Dvar.x
-    Dvar_pred.y += res.rp;
-    if (ADD_COMPLIANCE) {
-        E.MatrMultiply(Dvar_pred.lam, vectm);
-        Dvar_pred.y += vectm;
-    }
+    makeNewtonStep(Dvar_pred, mumps_rhs, res);
 
     /*** compute step lengths ***/
     // from 16.60 pag.482 from 14.32 pag.408 (remember that y>=0!)
-    double alfa_pred_prim = find_Newton_step_length(var.y, Dvar_pred.y);
-    double alfa_pred_dual = find_Newton_step_length(var.lam, Dvar_pred.lam);
+    auto alfa_pred_prim = find_Newton_step_length(var.y, Dvar_pred.y);
+    auto alfa_pred_dual = find_Newton_step_length(var.lam, Dvar_pred.lam);
 
     if (EQUAL_STEP_LENGTH) {
-        double alfa_pred = std::min(alfa_pred_prim, alfa_pred_dual);
+        auto alfa_pred = std::min(alfa_pred_prim, alfa_pred_dual);
         alfa_pred_prim = alfa_pred;
         alfa_pred_dual = alfa_pred;
     }
 
 
     /*** make the prediction step ***/
+    IPvariables_t var_pred;
+    var_pred.x.Resize(n, 1);      var_pred.y.Resize(m, 1);     var_pred.lam.Resize(m, 1);
+
     var_pred.y = Dvar_pred.y;        var_pred.y.MatrScale(alfa_pred_prim);        var_pred.y += var.y;
     var_pred.lam = Dvar_pred.lam;    var_pred.lam.MatrScale(alfa_pred_dual);    var_pred.lam += var.lam;
 
     /*** compute complementarity measure ***/
-    double mu_pred = var_pred.y.MatrDot(var_pred.y, var_pred.lam) / m;  // from 16.56 pag.481
+    auto mu_pred = var_pred.y.MatrDot(var_pred.y, var_pred.lam) / m;  // from 16.56 pag.481
 
     if (ONLY_PREDICT) {
-        var_pred.x = Dvar.x;        var_pred.x.MatrScale(alfa_pred_prim);        var_pred.x += var.x;        var.x = var_pred.x;
+        var_pred.x = Dvar_pred.x;        var_pred.x.MatrScale(alfa_pred_prim);        var_pred.x += var.x;        var.x = var_pred.x;
         var.y = var_pred.y;
         var.lam = var_pred.lam;
 
+        // update residuals
         res.rp.MatrScale(1 - alfa_pred_prim);
 
-        multiplyG(Dvar.x, vectn);                          // vectn = G * Dvar.x
+        multiplyG(Dvar_pred.x, vectn);                          // vectn = G * Dvar.x
         vectn.MatrScale(alfa_pred_prim - alfa_pred_dual);  // vectn = (alfa_pred_prim - alfa_pred_dual) * (G * Dvar.x)
         res.rd.MatrScale(1 - alfa_pred_dual);
         res.rd += vectn;
 
         res.mu = mu_pred;
 
-        res_nnorm.update_residual_status(res);
-
-        return res_nnorm;
+        return;
     }
 
     /*********************************************************************************/
     /******************************* Correction phase ********************************/
     /*********************************************************************************/
+    IPvariables_t Dvar;
+    Dvar.x.Resize(n, 1);    Dvar.y.Resize(m, 1);    Dvar.lam.Resize(m, 1);
 
     /*** evaluate centering parameter ***/
-    double sigma = std::pow(mu_pred / res.mu, 3.0);  // from 14.34 pag.408
+    auto sigma = std::pow(mu_pred / res.mu, 3.0);  // from 14.34 pag.408
 
     /*** find directions ***/
     for (auto row_sel = 0; row_sel < n; row_sel++)
-        rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
+        mumps_rhs.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
     for (auto row_sel = 0; row_sel < m; row_sel++)
-        rhs_sol.SetElement( row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0) + (sigma * res.mu - Dvar_pred.lam(row_sel, 0) * Dvar_pred.y(row_sel, 0)) / var.lam(row_sel, 0));
+        mumps_rhs.SetElement(row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0) + (sigma * res.mu - Dvar_pred.lam(row_sel, 0) * Dvar_pred.y(row_sel, 0)) / var.lam(row_sel, 0));
 
-    // Solve the KKT system
-    if (mumps_engine.MumpsCall(ChMumpsEngine::SOLVE))
-        mumps_engine.PrintINFOG();
-    if (verbose && mumps_engine.GetRINFOG(6) > 1e-6)
-        std::cout << "Scaled residual norm of MUMPS call: " << mumps_engine.GetRINFOG(6) << std::endl;
-
-    // Extract 'Dvar.x' and 'Dvar.lam' from 'sol'
-    for (auto row_sel = 0; row_sel < n; row_sel++)
-        Dvar.x.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel, 0));
-    for (auto row_sel = 0; row_sel < m; row_sel++)
-        Dvar.lam.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel + n, 0));
-
-    // Calc 'Dvar.y' (it is also possible to evaluate Dvar.y as Dvar.y=(-lam°y+sigma*res.mu*e-y°Dvar.lam)./lam )
-    multiplyA(Dvar.x, Dvar.y);  // Dvar.y = A*Dvar.x
-    Dvar.y += res.rp;
-    if (ADD_COMPLIANCE) {
-        E.MatrMultiply(Dvar.lam, vectm);
-        Dvar.y += vectm;
-    }
+    makeNewtonStep(Dvar, mumps_rhs, res);
 
     /*** step length correction ***/
-    double tau = ADAPTIVE_ETA ? exp(-res.mu * m) * 0.1 + 0.9 : 0.95;  // exponential descent of tau
+    auto tau = ADAPTIVE_ETA ? exp(-res.mu * m) * 0.1 + 0.9 : 0.95;  // exponential descent of tau
 
     /*** compute step lengths ***/
-    double alfa_corr_prim = find_Newton_step_length(var.y, Dvar.y, tau);
-    double alfa_corr_dual = find_Newton_step_length(var.lam, Dvar.lam, tau);
+    auto alfa_corr_prim = find_Newton_step_length(var.y, Dvar.y, tau);
+    auto alfa_corr_dual = find_Newton_step_length(var.lam, Dvar.lam, tau);
 
     if (EQUAL_STEP_LENGTH) {
-        double alfa_corr = std::min(alfa_corr_prim, alfa_corr_dual);
+        auto alfa_corr = std::min(alfa_corr_prim, alfa_corr_dual);
         alfa_corr_prim = alfa_corr;
         alfa_corr_dual = alfa_corr;
     }
 
     IPvariables_t var_corr;
-    var_corr.x.Resize(n, 1);
-    var_corr.y.Resize(m, 1);
-    var_corr.lam.Resize(m, 1);
+    var_corr.x.Resize(n, 1);    var_corr.y.Resize(m, 1);    var_corr.lam.Resize(m, 1);
 
     /*** make the correction step ***/
-      var_corr.x = Dvar.x;      var_corr.x.MatrScale(alfa_corr_prim);        var_corr.x += var.x;        var.x = var_corr.x;
-      var_corr.y = Dvar.y;      var_corr.y.MatrScale(alfa_corr_prim);        var_corr.y += var.y;        var.y = var_corr.y;
+    var_corr.x = Dvar.x;      var_corr.x.MatrScale(alfa_corr_prim);        var_corr.x += var.x;        var.x = var_corr.x;
+    var_corr.y = Dvar.y;      var_corr.y.MatrScale(alfa_corr_prim);        var_corr.y += var.y;        var.y = var_corr.y;
     var_corr.lam = Dvar.lam;    var_corr.lam.MatrScale(alfa_corr_dual);    var_corr.lam += var.lam;    var.lam = var_corr.lam;
 
     /********** Residuals update **********/
@@ -317,195 +309,77 @@ ChInteriorPoint::IPresidual_nnorm_t& ChInteriorPoint::iterate() {
         res.rd += vectn;
     }
 
-    /*********************************************************************************/
-    /******************************** Exit conditions ********************************/
-    /*********************************************************************************/
-
-    res_nnorm.update_residual_status(res);
-
-    bool neg_y = false;
-    bool neg_lam = false;
-    for (int cont = 0; cont < m; cont++) {
-        if (var.y(cont, 0) < 0)
-            neg_y = true;
-        if (var.lam(cont, 0) < 0)
-            neg_lam = true;
-    }
-
-    if (neg_y)
-        std::cout << "'y' has negative elements" << std::endl;
-
-    if (neg_lam)
-        std::cout << "'lam' has negative elements" << std::endl;
-
-    if (verbose)
-    {
-        GetLog() << "InteriorPoint Results Pred+Corr\n";
-        GetLog() << "Complementarity measure: " << res.mu << "\n";
-        GetLog() << "|rd|/n (stationarity): " << res.rd.NormTwo() / n << "\n";
-        GetLog() << "|rp|/m (constraint violation): " << res.rp.NormTwo() / m << "\n";
-        GetLog() << "Objective Function: " << evaluate_objective_function() << "\n";
-        GetLog() << "\n";
-    }
-
-
-    if (history_file.is_open())
-        history_file << std::endl
-                     << solver_call << ", " << iteration_count << ", " << res_nnorm.rp_nnorm << ", "
-                     << res_nnorm.rd_nnorm << ", " << res.mu << ", " << evaluate_objective_function();
-
-    DumpProblem("_end");
-
-    return res_nnorm;
 }
 
-// Solve the KKT system in different modes: 'res.rp', 'res.rd', 'res.mu', 'x', 'y', 'lam' must be updated before calling
-// this function 'sigma' is the centering parameter;
-void ChInteriorPoint::KKTsolve(double sigma, bool apply_correction) {
-    switch (KKT_solve_method) {
-        case IP_KKT_SOLUTION_METHOD::STANDARD:
-            assert(false && "Standard mode to be fixed");
-            // update lambda and y diagonal submatrices
-            for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
-                BigMat.SetElement(n + m + diag_sel, n + diag_sel,
-                                  var.lam.GetElement(diag_sel, 0));  // write lambda diagonal submatrix
-                BigMat.SetElement(n + m + diag_sel, n + m + diag_sel,
-                                  var.y.GetElement(diag_sel, 0));   // write y diagonal submatrix
-                BigMat.SetElement(n + diag_sel, n + diag_sel, -1);  // write -identy_matrix diagonal submatrix
-            }
+void ChInteriorPoint::setup_system_matrix(const IPvariables_t& vars)
+{
+    // update y/lambda diagonal submatrix
+    if (ADD_COMPLIANCE)
+        for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
+            BigMat.SetElement(n + diag_sel, n + diag_sel,
+                              vars.y.GetElement(diag_sel, 0) / vars.lam.GetElement(diag_sel, 0) + E.GetElement(diag_sel, diag_sel));
+        }
+    else
+        for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
+            BigMat.SetElement(n + diag_sel, n + diag_sel,
+                              vars.y.GetElement(diag_sel, 0) / vars.lam.GetElement(diag_sel, 0));
+        }
 
-            if (sigma != 0)  // rpd_corr
-            {
-                // I'm supposing that in 'res.rpd', since the previous call should have been without perturbation,
-                // there is already y°lam
-                vectm = Dvar.lam;  // I could use Dvar.lam directly, but it is not really clear
-                vectm.MatrScale(Dvar.y);
-                vectm.MatrInc(-sigma * res.mu);
-                res.rpd += vectm;
-            } else  // rpd_pred as (16.57 pag.481 suggests)
-            {
-                res.rpd = var.y;
-                res.rpd.MatrScale(var.lam);
-            }
+    BigMat.Compress();
+    mumps_engine.SetMatrix(BigMat);
+    mumps_engine.SetICNTL(14, 30);
+    if (mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE))
+        mumps_engine.PrintINFOG();
+}
 
-            // Fill 'rhs_sol' with [-res.rd;-res.rp;-res.rpd]
-            for (auto row_sel = 0; row_sel < n; row_sel++)
-                rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
+void ChInteriorPoint::makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals)
+{
+    // Solve the KKT system
+    mumps_engine.SetRhsVector(rhs);
+    if (mumps_engine.MumpsCall(ChMumpsEngine::SOLVE))
+        mumps_engine.PrintINFOG();
+    if (mumps_engine.GetRINFOG(6) > 1e-6)
+        std::cout << "Scaled residual norm of MUMPS call: " << mumps_engine.GetRINFOG(6) << std::endl;
 
-            for (auto row_sel = 0; row_sel < m; row_sel++) {
-                rhs_sol.SetElement(row_sel + n, 0, -res.rp.GetElement(row_sel, 0));
-                rhs_sol.SetElement(row_sel + n + m, 0, -res.rpd.GetElement(row_sel, 0));
-            }
+    // MUMPS uses its 'rhs' vector to store the solution. In order to clarify that:
+    const ChMatrixDynamic<double>& sol{ rhs };
 
-            // Solve the KKT system
-            BigMat.Compress();
-            mumps_engine.SetProblem(BigMat, rhs_sol);
-            printf("Mumps says: %d\n", mumps_engine.MumpsCall(ChMumpsEngine::SOLVE));
+    // Extract 'x' and 'lam' from 'sol'
+    for (auto row_sel = 0; row_sel < n; row_sel++)
+        Dvar_unknown.x.SetElement(row_sel, 0, sol.GetElement(row_sel, 0));
+    for (auto row_sel = 0; row_sel < m; row_sel++)
+        Dvar_unknown.lam.SetElement(row_sel, 0, sol.GetElement(row_sel + n, 0));
 
-            // Extract 'Dvar.x', 'Dvar.y' and 'Dvar.lam' from 'sol'
-            for (auto row_sel = 0; row_sel < n; row_sel++)
-                Dvar.x.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel, 0));
-
-            for (auto row_sel = 0; row_sel < m; row_sel++) {
-                Dvar.y.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel + n, 0));
-                Dvar.lam.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel + n + m, 0));
-            }
-
-            break;
-
-        case IP_KKT_SOLUTION_METHOD::AUGMENTED:
-            if (!apply_correction) {
-                // update y/lambda diagonal submatrix
-                if (ADD_COMPLIANCE)
-                    for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
-                        BigMat.SetElement(n + diag_sel, n + diag_sel,
-                                          var.y.GetElement(diag_sel, 0) / var.lam.GetElement(diag_sel, 0) + E.GetElement(diag_sel, diag_sel));
-                    }
-                else
-                    for (auto diag_sel = 0; diag_sel < m; diag_sel++) {
-                        BigMat.SetElement(n + diag_sel, n + diag_sel,
-                                          var.y.GetElement(diag_sel, 0) / var.lam.GetElement(diag_sel, 0));
-                    }
-
-                BigMat.Compress();
-                mumps_engine.SetProblem(BigMat, rhs_sol);
-                mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE);
-
-            }
-
-            // fill 'rhs_sol' with rhs [-res.rd;-res.rp-y+sigma*res.mu/lam]
-            for (auto row_sel = 0; row_sel < n; row_sel++)
-                rhs_sol.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
-            for (auto row_sel = 0; row_sel < m; row_sel++)
-                rhs_sol.SetElement(row_sel + n, 0,
-                                   -res.rp(row_sel, 0) - var.y(row_sel, 0) + (apply_correction ? sigma * res.mu - Dvar.lam(row_sel, 0) * Dvar.y(row_sel, 0) : sigma * res.mu) / var.lam(row_sel, 0));
-
-            // ExportArrayToFile(rhs_sol, "dump/rhs.txt");
-
-            // Solve the KKT system
-            mumps_engine.MumpsCall(ChMumpsEngine::SOLVE);
-            mumps_engine.PrintINFOG();
-            if (verbose) {
-                double res_norm = mumps_engine.GetRINFOG(6);
-                if (res_norm > 1e-6)
-                    std::cout << "Scaled residual norm of MUMPS call: " << res_norm << std::endl;
-            }
-
-            // BigMat.ExportToDatFile("dump/COO.txt", true);
-            // BigMat.ImportFromDatFile("COO.txt", true);
-            // BigMat.ExportToDatFile("COO.txt", true);
-
-            // ExportArrayToFile(rhs_sol, "dump/sol.txt");
-
-            // Extract 'Dvar.x' and 'Dvar.lam' from 'sol'
-            for (auto row_sel = 0; row_sel < n; row_sel++)
-                Dvar.x.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel, 0));
-            for (auto row_sel = 0; row_sel < m; row_sel++)
-                Dvar.lam.SetElement(row_sel, 0, rhs_sol.GetElement(row_sel + n, 0));
-
-            // Calc 'Dvar.y' (it is also possible to evaluate Dvar.y as Dvar.y=(-lam°y+sigma*res.mu*e-y°Dvar.lam)./lam )
-            multiplyA(Dvar.x, Dvar.y);  // Dvar.y = A*Dvar.x
-            Dvar.y += res.rp;
-            if (ADD_COMPLIANCE) {
-                E.MatrMultiply(Dvar.lam, vectm);
-                Dvar.y += vectm;
-            }
-
-            break;
-        case IP_KKT_SOLUTION_METHOD::NORMAL:
-            assert(false && "Normal mode to be fixed");
-            for (auto row_sel = 0; row_sel < n; row_sel++) {
-                for (auto col_sel = 0; col_sel < n; col_sel++) {
-                    double temp = 0;
-                    for (auto el_sel = 0; el_sel < m; el_sel++) {
-                        temp += var.lam(el_sel, 0) / var.y(el_sel, 0) * SmallMat.GetElement(el_sel, row_sel) *
-                                SmallMat.GetElement(el_sel, col_sel);
-                        if (temp != 0)
-                            BigMat.SetElement(row_sel, col_sel, temp, false);
-                    }
-                }
-            }
-
-            break;
+    // Calc 'y' (it is also possible to evaluate y as (-lam°y+sigma*res.mu*e-y°lam)./lam )
+    multiplyA(Dvar_unknown.x, Dvar_unknown.y);  // Dy = A*Dx
+    Dvar_unknown.y += residuals.rp;
+    if (ADD_COMPLIANCE) {
+        E.MatrMultiply(Dvar_unknown.lam, vectm);
+        Dvar_unknown.y += vectm;
     }
 }
 
 void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old, int m_old) {
+    IPvariables_t Dvar;
+    Dvar.x.Resize(n, 1);    Dvar.y.Resize(m, 1);    Dvar.lam.Resize(m, 1);
+
+    ChMatrixDynamic<double> mumps_rhs(n + m, 1);
+
     switch (start_point_method) {
         case IP_STARTING_POINT_METHOD::STP1: {
-            double infeas_dual_ratio = 0.1;  // TODO: dependant on n
+            auto infeas_dual_ratio = 0.1;  // TODO: dependant on n
 
             var.x.FillElem(1);
             var.y.FillElem(1);
             var.lam.FillElem(1);
 
-            double duality_gap_calc = var.y.MatrDot(var.y, var.lam);  // [2] pag. 132
+            auto duality_gap_calc = var.y.MatrDot(var.y, var.lam);  // [2] pag. 132
             double duality_gap = m;                                   // [2] pag. 132
             assert(duality_gap_calc == duality_gap);
 
             // norm of all residuals; [2] pag. 132
             residual_fullupdate();
-            double res_norm = res.rp.MatrDot(res.rp, res.rp);
+            auto res_norm = res.rp.MatrDot(res.rp, res.rp);
             res_norm += res.rp.MatrDot(res.rd, res.rd);
             res_norm = sqrt(res_norm);
 
@@ -556,7 +430,15 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
             residual_fullupdate();
 
             // Feasible starting Point (pag.484-485)
-            KKTsolve(0, false);
+            setup_system_matrix(var);
+
+            // fill 'mumps_rhs' with rhs [-res.rd;-res.rp-y]
+            for (auto row_sel = 0; row_sel < n; row_sel++)
+                mumps_rhs.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
+            for (auto row_sel = 0; row_sel < m; row_sel++)
+                mumps_rhs.SetElement(row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0));
+
+            makeNewtonStep(Dvar, mumps_rhs, res);
 
             // x is accepted as it is
             var.y += Dvar.y;      // calculate y0
@@ -578,7 +460,7 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
             ChMatrixDynamic<double> y_bkp(var.y);
             ChMatrixDynamic<double> lam_bkp(var.lam);
             residual_fullupdate();
-            double residual_value_bkp = res.rp.NormTwo() + res.rd.NormTwo() + res.mu * m;
+            auto residual_value_bkp = res.rp.NormTwo() + res.rd.NormTwo() + res.mu;
 
             /********** Initialize IP algorithm **********/
             // Initial guess
@@ -595,8 +477,18 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
             // Calculate the residual
             residual_fullupdate();
 
+            setup_system_matrix(var);
+
             // Feasible starting Point (pag.484-485)
-            KKTsolve(0, false);  // to obtain Dvar.x, Dvar.y, Dvar.lam called "affine"
+
+            // fill 'mumps_rhs' with rhs [-res.rd;-res.rp-y]
+            for (auto row_sel = 0; row_sel < n; row_sel++)
+                mumps_rhs.SetElement(row_sel, 0, -res.rd.GetElement(row_sel, 0));
+            for (auto row_sel = 0; row_sel < m; row_sel++)
+                mumps_rhs.SetElement(row_sel + n, 0, -res.rp(row_sel, 0) - var.y(row_sel, 0));
+
+            makeNewtonStep(Dvar, mumps_rhs, res);
+
 
             // x is accepted as it is
             var.y += Dvar.y;      // calculate y0
@@ -612,14 +504,15 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
             residual_fullupdate();
 
             /* Check if restoring previous values would be better */
-            double residual_value_new = res.rp.NormTwo() + res.rd.NormTwo() + res.mu * m;
+            auto residual_value_new = res.rp.NormTwo() + res.rd.NormTwo() + res.mu;
 
             if (residual_value_bkp < residual_value_new) {
                 var.x = x_bkp;
                 var.y = y_bkp;
                 var.lam = lam_bkp;
                 residual_fullupdate();
-            } else {
+            }
+            else {
                 std::cout << "Not WS\n";
             }
 
@@ -637,7 +530,7 @@ double ChInteriorPoint::find_Newton_step_length(const ChMatrix<double>& vect,
     bool alpha_found = false;
     for (auto row_sel = 0; row_sel < vect.GetRows(); row_sel++) {
         if (Dvect(row_sel, 0) < 0) {
-            double alfa_temp = - tau * vect(row_sel, 0) / Dvect(row_sel, 0);
+            double alfa_temp = -tau * vect(row_sel, 0) / Dvect(row_sel, 0);
             if (alfa_temp < alpha && alfa_temp > 0) {
                 alpha_found = true;
                 alpha = alfa_temp;
@@ -660,11 +553,10 @@ double ChInteriorPoint::evaluate_objective_function() {
 }
 
 
-    /// Take care of adapting the size of matrices to \p n_new and \p m_new
+/// Take care of adapting the size of matrices to \p n_new and \p m_new
 void ChInteriorPoint::reset_dimensions(int n_new, int m_new) {
     if (n != n_new) {
         var.x.Resize(n_new, 1);
-        Dvar.x.Resize(n_new, 1);
         rhs.c.Resize(n_new, 1);
         res.rd.Resize(n_new, 1);
         vectn.Resize(n_new, 1);
@@ -673,8 +565,6 @@ void ChInteriorPoint::reset_dimensions(int n_new, int m_new) {
     if (m != m_new) {
         var.y.Resize(m_new, 1);
         var.lam.Resize(m_new, 1);
-        Dvar.y.Resize(m_new, 1);
-        Dvar.lam.Resize(m_new, 1);
         rhs.b.Resize(m_new, 1);
         res.rp.Resize(m_new, 1);
         res.rpd.Resize(m_new, 1);
@@ -687,11 +577,9 @@ void ChInteriorPoint::reset_dimensions(int n_new, int m_new) {
     switch (KKT_solve_method) {
         case IP_KKT_SOLUTION_METHOD::STANDARD:
             BigMat.Reset(2 * m_new + n_new, 2 * m_new + n_new, static_cast<int>(n_new * n_new * SPM_DEF_FULLNESS));
-            rhs_sol.Resize(2 * m_new + n_new, 1);
             break;
         case IP_KKT_SOLUTION_METHOD::AUGMENTED:
             BigMat.Reset(n_new + m_new, n_new + m_new, static_cast<int>(n_new * n_new * SPM_DEF_FULLNESS));
-            rhs_sol.Resize(n_new + m_new, 1);
             break;
         case IP_KKT_SOLUTION_METHOD::NORMAL:
             std::cout << std::endl << "Perturbed KKT system cannot be stored with 'NORMAL' method yet.";
@@ -730,12 +618,6 @@ void ChInteriorPoint::DumpIPStatus(std::string suffix) const {
     ExportArrayToFile(var.x, "dump/x" + suffix + ".txt");
     ExportArrayToFile(var.lam, "dump/lam" + suffix + ".txt");
 
-    ExportArrayToFile(Dvar.x, "dump/Dvar.x" + suffix + ".txt");
-    ExportArrayToFile(Dvar.y, "dump/Dvar.y" + suffix + ".txt");
-    ExportArrayToFile(Dvar.lam, "dump/Dvar.lam" + suffix + ".txt");
-
-    ExportArrayToFile(rhs_sol, "dump/rhs_sol" + suffix + ".txt");
-    // ExportArrayToFile(sol, "dump/sol" + suffix + ".txt");
 }
 
 void ChInteriorPoint::make_positive_definite() {
@@ -813,12 +695,13 @@ void ChInteriorPoint::residual_fullupdate() {
         res.rp -= var.y;
         res.rp -= rhs.b;
         if (ADD_COMPLIANCE) {
-            E.MatrMultiply(Dvar.lam, vectm);
+            E.MatrMultiply(var.lam, vectm);
             res.rp += vectm;
         }
 
         res.mu = var.y.MatrDot(var.y, var.lam) / m;
-    } else {
+    }
+    else {
         res.rp.FillElem(0);
         res.mu = 0;
     }
@@ -841,10 +724,11 @@ ChMatrix<>& ChInteriorPoint::adapt_to_Chrono(ChMatrix<>& solution_vect) const {
             solution_vect(n + row_sel * 3 + 1, 0) = 0;
             solution_vect(n + row_sel * 3 + 2, 0) = 0;
         }
-    } else {
+    }
+    else {
         for (auto row_sel = 0; row_sel < m; row_sel++)
             solution_vect(row_sel + n, 0) =
-                -var.lam(row_sel);  // there will be an inversion inside FromVectorToUnknowns()
+            -var.lam(row_sel);  // there will be an inversion inside FromVectorToUnknowns()
     }
 
     return solution_vect;
@@ -915,16 +799,16 @@ ChInteriorPoint::ChInteriorPoint() {
     line->SetColor(0, 0, 255, 255);
     line->SetWidth(1.0);
 
-// For dotted line, the line type can be from 2 to 5 for different dash/dot
-// patterns (see enum in vtkPen containing DASH_LINE, value 2):
+    // For dotted line, the line type can be from 2 to 5 for different dash/dot
+    // patterns (see enum in vtkPen containing DASH_LINE, value 2):
 #ifndef WIN32
     line->GetPen()->SetLineType(vtkPen::DASH_LINE);
 #endif
-// (ifdef-ed out on Windows because DASH_LINE does not work on Windows
-//  machines with built-in Intel HD graphics card...)
+    // (ifdef-ed out on Windows because DASH_LINE does not work on Windows
+    //  machines with built-in Intel HD graphics card...)
 
-// view->GetRenderWindow()->SetMultiSamples(0);
-// view->Render();
+    // view->GetRenderWindow()->SetMultiSamples(0);
+    // view->Render();
 
 #endif
 }

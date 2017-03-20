@@ -135,9 +135,15 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
         ChMatrixDynamic<double> x;    ///< DeltaSpeed/Acceleration ('q' in chrono)
         ChMatrixDynamic<double> y;    ///< Slack variable/Contact points distance ('c' in chrono)
         ChMatrixDynamic<double> lam;  ///< Lagrangian multipliers/contact|constraint forces ('l' in chrono)
-    } var, Dvar;
+    } var;
 
     // Residuals
+    struct IPresidual_nnorm_t {
+        double rp_nnorm = 1e-10;
+        double rd_nnorm = 1e-10;
+        double mu = 1e-10;
+    } res_nnorm_tol;
+
     struct IPresidual_t {
         ChMatrixDynamic<double> rp;    ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
         ChMatrixDynamic<double> rd;    ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
@@ -149,25 +155,14 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
         bool operator>(const IPresidual_t& other) const { return !(*this <= other); }
         bool operator>=(const IPresidual_t& other) const { return !(*this < other); }
 
-    } res;
-
-    struct IPresidual_nnorm_t {
-        double rp_nnorm = 0;
-        double rd_nnorm = 0;
-        double mu = 0;
-        IPresidual_nnorm_t(double rp_nnorm_in, double rd_nnorm_in, double mu_in) : rp_nnorm(rp_nnorm_in), rd_nnorm(rd_nnorm_in), mu(mu_in) {}
-        IPresidual_nnorm_t() {}
-        bool operator<(const IPresidual_nnorm_t& other) const { return rp_nnorm < other.rp_nnorm && rd_nnorm < other.rd_nnorm && mu < other.mu; }
-        bool operator<=(const IPresidual_nnorm_t& other) const { return rp_nnorm <= other.rp_nnorm && rd_nnorm <= other.rd_nnorm && mu <= other.mu; }
+        bool operator<(const IPresidual_nnorm_t& other) const { return rp.NormTwo() < other.rp_nnorm * rp.GetRows() && rd.NormTwo() < other.rd_nnorm * rd.GetRows() && mu < other.mu; }
+        bool operator<=(const IPresidual_nnorm_t& other) const { return rp.NormTwo() <= other.rp_nnorm * rp.GetRows() && rd.NormTwo() <= other.rd_nnorm * rd.GetRows() && mu <= other.mu; }
         bool operator>(const IPresidual_nnorm_t& other) const { return !(*this <= other); }
         bool operator>=(const IPresidual_nnorm_t& other) const { return !(*this < other); }
-        void update_residual_status(IPresidual_t& res)
-        {
-            rp_nnorm = res.rp.NormTwo() / res.rp.GetRows();
-            rd_nnorm = res.rd.NormTwo() / res.rd.GetRows();
-            mu = res.mu;
-        }
-    } res_nnorm_tol{1e-10, 1e-10, 1e-10};
+
+    } res;
+
+
 
     struct IPrhs_t {
         ChMatrixDynamic<double> b;  ///< rhs of constraints (is '-b' in chrono)
@@ -179,7 +174,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     ChMatrixDynamic<double> vectm;  // temporary variable that has always size (#m,1)
 
     // Problem matrices and vectors
-    ChMatrixDynamic<double> rhs_sol;
     ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
     ChCOOMatrix BigMat;
     ChCOOMatrix SmallMat;
@@ -189,8 +183,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     ChMumpsEngine mumps_engine;
 
     // IP specific functions
-    IPresidual_nnorm_t& iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
-    void KKTsolve(double sigma, bool apply_correction);
+    void iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
+    void setup_system_matrix(const IPvariables_t& vars);
+    void makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
     void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_old = 0);
     static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
     double evaluate_objective_function();  ///< Evaluate the objective function i.e. 0.5*xT*G*x + xT*x.
