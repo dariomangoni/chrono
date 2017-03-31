@@ -830,6 +830,8 @@ namespace chrono {
             }
         }
 
+        // perform multiplication
+        // the algorithm would minimize the accesses to *this matrix; every element is loaded only once and is used for e
         for (auto lead_i = start_lead_matA; lead_i <= end_lead_matA; lead_i++) { // loop through the selected rows (in RowMaj format) of matA
             for (auto trail_i = leadIndex[lead_i];
                  trail_i < leadIndex[lead_i + 1] &&

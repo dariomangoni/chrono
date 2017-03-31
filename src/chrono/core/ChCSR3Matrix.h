@@ -159,7 +159,7 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
 
 
   public:
-    ChCSR3Matrix(int nrows = 1, int ncols = 1, bool row_major_format_on = true, int nonzeros = 1);
+    explicit ChCSR3Matrix(int nrows = 1, int ncols = 1, bool row_major_format_on = true, int nonzeros = 1);
     ~ChCSR3Matrix() override {}
 
     void SetElement(int row_sel, int col_sel, double insval, bool overwrite = true) override;
@@ -208,7 +208,7 @@ class ChApi ChCSR3Matrix : public ChSparseMatrix {
 	/// Get the length of the trailing-index array (e.g. column index if row major, row index if column major)
 	int GetTrailingIndexLength() const { return leadIndex[*leading_dimension]; }
 
-	/// Get the capacity of the trailing-index array (e.g. column index if row major, row index if column major)
+	/// Get the capacity of the trailing-index array. This is NOT the length of the matrix array, but the underlying std::vector::capacity();
     int GetTrailingIndexCapacity() const { return static_cast<int>(trailIndex.capacity()); }
 
     /// Advanced use. While setting new elements in the matrix, SetMaxShifts() tells how far the internal algorithm

@@ -16,32 +16,13 @@
 //
 // =============================================================================
 
-#ifndef CHIPENGINE_H
-#define CHIPENGINE_H
+#ifndef CHIPSOLVER_H
+#define CHIPSOLVER_H
 
 #include "ChApiInteriorPoint.h"
 #include "chrono/solver/ChSystemDescriptor.h"
 #include "chrono/solver/ChSolver.h"
 
-//#define VTK_PLOT
-#ifdef VTK_PLOT
-#include <vtkVersion.h>
-#include <vtkRenderer.h>
-#include <vtkRenderWindowInteractor.h>
-#include <vtkRenderWindow.h>
-#include <vtkSmartPointer.h>
-#include <vtkChartXY.h>
-#include <vtkTable.h>
-#include <vtkPlot.h>
-#include <vtkPlotPoints.h>
-#include <vtkFloatArray.h>
-#include <vtkDoubleArray.h>
-#include <vtkIntArray.h>
-#include <vtkContextView.h>
-#include <vtkContextScene.h>
-#include <vtkPen.h>
-#include <vtkAxis.h>
-#endif
 
 #ifdef CHRONO_MUMPS
 #include "chrono_mumps/ChCOOMatrix.h"
@@ -52,9 +33,10 @@
 // minimize 0.5*xT*G*x + xT*x while Ax>=b (16.54 pag.480)
 // WARNING: FOR THE MOMENT THE CONSTRAINTS MUST BE INEQUALITIES
 // Further references: (all pages number refers to [1] if not otherwise specified)
-// [1] Nocedal&Wright, Numerical Optimization 2nd edition
-// [2] D'Apuzzo et al., Starting-point strategies for an infeasible potential reduction method
-// [3] Mangoni D., Tasora A., Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
+// [1] Nocedal&Wright - Numerical Optimization, 2nd edition
+// [2] D'Apuzzo et al. - Starting-point strategies for an infeasible potential reduction method
+// [3] Mangoni D., Tasora A. - Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
+// [4] Meszaros - Steplengths in interior-point algorithms of quadratic programming
 
 // Symbol conversion table from [1] to [2]
 // [2] | [1]
@@ -88,11 +70,20 @@
 // y>=0
 // lam>=0
 
+// In order to run the ChInteriorPoint solver needs:
+// - ChCOOMatrix BigMat
+// - IPrhs_t rhs
+// everything else is computed from this two elements.
+
 
 namespace chrono {
 
-/// Class for Interior-Point method
-/// for QP convex programming
+/** \class ChInteriorPoint
+\brief ChInteriorPoint is a class that implements an Interior-Point Primal-Dual solver for QP convex programming.
+
+The solver is experimental;
+- no friction yet
+*/
 
 class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
@@ -107,7 +98,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count = 0;
     int iteration_count_max = 50;
 
-    const bool EQUAL_STEP_LENGTH = false;
+    const bool EQUAL_STEP_LENGTH = true;
     const bool ADAPTIVE_ETA = true;
     const bool ONLY_PREDICT = false;
     bool warm_start_broken = false;
@@ -117,20 +108,23 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     double rd_nnorm_tol = 1e-8;
     double mu_tol = 1e-8;
 
-#ifdef VTK_PLOT
-
-    // vtk handlers
-    vtkSmartPointer<vtkTable> table;
-    vtkSmartPointer<vtkContextView> view;
-    vtkSmartPointer<vtkIntArray> arr_call;
-    vtkSmartPointer<vtkDoubleArray> arr_rpnnorm;
-    vtkSmartPointer<vtkDoubleArray> arr_rdnnorm;
-    vtkSmartPointer<vtkDoubleArray> arr_mu;
-    vtkSmartPointer<vtkChartXY> chart;
-#endif
-
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
+    IP_STARTING_POINT_METHOD starting_point_method = IP_STARTING_POINT_METHOD::NOCEDAL;
 
+    // Problem matrices and vectors
+    ChCOOMatrix BigMat;
+    ChCOOMatrix SmallMat;
+    ChCOOMatrix E;  // compliance matrix
+
+    // Known terms
+    struct IPrhs_t {
+        ChMatrixDynamic<double> b;  ///< rhs of constraints (is '-b' in chrono)
+        ChMatrixDynamic<double> c;  ///< forces (is '-f' in chrono)
+    } rhs;
+
+
+
+    // Variables
     struct IPvariables_t {
         ChMatrixDynamic<double> x;    ///< DeltaSpeed/Acceleration ('q' in chrono)
         ChMatrixDynamic<double> y;    ///< Slack variable/Contact points distance ('c' in chrono)
@@ -143,6 +137,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
         double rd_nnorm = 1e-10;
         double mu = 1e-10;
     } res_nnorm_tol;
+
 
     struct IPresidual_t {
         ChMatrixDynamic<double> rp;    ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
@@ -162,22 +157,11 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     } res;
 
-
-
-    struct IPrhs_t {
-        ChMatrixDynamic<double> b;  ///< rhs of constraints (is '-b' in chrono)
-        ChMatrixDynamic<double> c;  ///< forces (is '-f' in chrono)
-    } rhs;
-
-    // Temporaries used in iterate() function
-    ChMatrixDynamic<double> vectn;  // temporary variable that has always size (#n,1)
-    ChMatrixDynamic<double> vectm;  // temporary variable that has always size (#m,1)
-
-    // Problem matrices and vectors
+    // Temporaries used in different functions
+    mutable ChMatrixDynamic<double> vectn;  // temporary variable that has always size (#n,1)
+    mutable ChMatrixDynamic<double> vectm;  // temporary variable that has always size (#m,1)
     ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
-    ChCOOMatrix BigMat;
-    ChCOOMatrix SmallMat;
-    ChCOOMatrix E;  // compliance matrix
+
 
     // MUMPS engine
     ChMumpsEngine mumps_engine;
@@ -188,21 +172,24 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
     void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_old = 0);
     static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
-    double evaluate_objective_function();  ///< Evaluate the objective function i.e. 0.5*xT*G*x + xT*x.
+    void find_Newton_step_length(const IPvariables_t& vars, const IPvariables_t& Dvars, double tau, double& alfa_prim, double& alfa_dual) const;
+    double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*xT*G*x + xT*x.
 
     // Auxiliary
-    void reset_dimensions(int n_old, int m_old);
+    void reset_internal_dimensions(int n_old, int m_old);
     ChMatrix<>& adapt_to_Chrono(ChMatrix<>& solution_vect) const;
-    void residual_fullupdate();  ///< Update #rp, #rd, and #mu from current #x, #y, #lam and the current system matrix.
+    void residual_fullupdate(IPresidual_t& residuals, const IPvariables_t& variables) const;
     void make_positive_definite();  ///< Change A^T to -A^T in the current system matrix.
     void multiplyA(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
     void multiplyNegAT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
     void multiplyG(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 
     // Debug
-    std::ofstream history_file;
+    std::ofstream logfile_stream;
+    std::string logfile_name{ "interior_point_log" };
     bool print_history;
     void LoadProblem();
+
 
   public:
     ChInteriorPoint();
@@ -213,9 +200,10 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     // Auxiliary
     /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem. Change it before starting the solver.
-    void SetKKTSolutionMethod(IP_KKT_SOLUTION_METHOD qp_solve_type_selection) {
-        KKT_solve_method = qp_solve_type_selection;
-    }
+    void SetKKTSolutionMethod(IP_KKT_SOLUTION_METHOD qp_solve_type_selection) { KKT_solve_method = qp_solve_type_selection; }
+
+    /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem. Change it before starting the solver.
+    void SetStartingPointMethod(IP_STARTING_POINT_METHOD starting_point_method_in) { starting_point_method = starting_point_method_in; }
 
     /// Set the maximum number of iterations after which the iteration loop will be stopped.
     void SetMaxIterations(int max_iter) { iteration_count_max = max_iter; }
@@ -232,7 +220,10 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     // Test
     void DumpProblem(std::string suffix = "");
     void DumpIPStatus(std::string suffix = "") const;
-    void RecordHistory(bool on_off, std::string filepath = "history_file.txt");
+    void RecordHistory(bool on_off, std::string file_name = "interior_point_log");
+    int GetSolverCalls() const { return solver_call; }
+    //void Solve(const ChSparseMatrix& Q, const ChSparseMatrix& A, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrix<double>& var_x, ChMatrix<double>& var_y, ChMatrix<double>& var_lam );
+    void Solve(const ChCOOMatrix& normal_mat, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrixDynamic<double>& var_x, ChMatrixDynamic<double>& var_y, ChMatrixDynamic<double>& var_lam);
 };
 
 }  // end of namespace chrono

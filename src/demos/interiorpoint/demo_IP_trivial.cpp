@@ -114,6 +114,7 @@ void create_system(ChSystem& mphysicalSystem) {
 			true,    // collide enable?
 			true);  // visualization?
 		mrigidBall->SetMaterialSurface(mmaterial);
+		mrigidBall->SetMass(10);
 		mrigidBall->SetPos(ChVector<>(0, 3, 0));
 		mrigidBall->SetPos_dt(ChVector<>(0, -1, 0));          // set initial speed
 
@@ -211,8 +212,9 @@ int main(int argc, char* argv[]) {
 
 
         //GetLog()
-        //    << "Force:" << generic_body_ptr->Get_Xforce()
+        //    << "Pos: " << generic_body_ptr->GetPos()
         //    << "Speed: " << generic_body_ptr->GetPos_dt()
+        //    << "Force:" << generic_body_ptr->Get_Xforce()
         //    << "ContactForce: " << generic_body_ptr->GetContactForce()
         //    << "\n";
 

@@ -207,7 +207,7 @@ int main(int argc, char* argv[]) {
 
     application.SetStepManage(true);
     application.SetTimestep(0.02);
-	application.SetPaused(true);
+	//application.SetPaused(true);
 
     while (application.GetDevice()->run()) {
         application.GetVideoDriver()->beginScene(true, true, SColor(255, 140, 161, 192));
@@ -221,6 +221,10 @@ int main(int argc, char* argv[]) {
         application.DoStep();
 
         application.GetVideoDriver()->endScene();
+
+        //if (ip_solver_speed->GetSolverCalls() > 50)
+        //    break;
+
     }
 
     return 0;
