@@ -114,7 +114,7 @@ void create_items(irrlicht::ChIrrAppInterface& application, std::shared_ptr<ChMa
             totmass += mrigidBody->GetMass();
         }
 
-        GetLog() << "Expected contact force at bottom F=" << (totmass * application.GetSystem()->Get_G_acc().y) << "\n";
+        GetLog() << "Expected contact force at bottom F=" << (totmass * application.GetSystem()->Get_G_acc().y()) << "\n";
     }
 
     if (do_wall)
@@ -157,7 +157,7 @@ void create_items(irrlicht::ChIrrAppInterface& application, std::shared_ptr<ChMa
         application.GetSystem()->Add(mrigidHeavy);
 
         GetLog() << "Expected contact deformation at side sphere="
-                 << (mrigidHeavy->GetMass() * application.GetSystem()->Get_G_acc().y) * STATIC_COMPLIANCE << "\n";
+                 << (mrigidHeavy->GetMass() * application.GetSystem()->Get_G_acc().y()) * STATIC_COMPLIANCE << "\n";
     }
 
     // Create the floor using a fixed rigid body of 'box' type:
@@ -185,8 +185,8 @@ void align_spheres(irrlicht::ChIrrAppInterface& application) {
     for (unsigned int i = 0; i < mspheres.size(); ++i) {
         std::shared_ptr<ChBody> body = mspheres[i];
         ChVector<> mpos = body->GetPos();
-        mpos.x = 0.5;
-        mpos.z = 0.7;
+        mpos.x() = 0.5;
+        mpos.z() = 0.7;
         body->SetPos(mpos);
         body->SetRot(QUNIT);
     }
@@ -213,7 +213,7 @@ int main(int argc, char* argv[]) {
 	//material->SetRestitution(0.0f);
 	material->SetCompliance(STATIC_COMPLIANCE);
 	material->SetComplianceT(STATIC_COMPLIANCE);
-	material->SetDampingF(0.3);
+	material->SetDampingF(0.3f);
 
 	// Create all the rigid bodies.
     create_items(application, material);
