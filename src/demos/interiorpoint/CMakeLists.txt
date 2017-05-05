@@ -9,9 +9,6 @@ SET(IP_DEMOS
 )
 
 INCLUDE_DIRECTORIES( ${CH_IRRLICHTINC} )
-
-find_package(VTK REQUIRED)
-include(${VTK_USE_FILE})
  
 FOREACH(PROGRAM ${IP_DEMOS})
 	MESSAGE(STATUS "...add ${PROGRAM}")
@@ -30,7 +27,6 @@ FOREACH(PROGRAM ${IP_DEMOS})
 		ChronoEngine_fea
 		ChronoEngine_irrlicht
 		ChronoEngine_interiorpoint
-		${VTK_LIBRARIES}
 		)
 		
 	ADD_DEPENDENCIES(${PROGRAM}
