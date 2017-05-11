@@ -30,7 +30,7 @@
 // ------------------------------------------------
 ///////////////////////////////////////////////////
 
-#include "chrono/physics/ChSystem.h"
+#include "chrono/physics/ChSystemNSC.h"
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/assets/ChTexture.h"
 #include "chrono_irrlicht/ChIrrApp.h"
@@ -52,10 +52,10 @@ using namespace gui;
 // Create a bunch of ChronoENGINE rigid bodies that
 // represent bricks in a large wall.
 
-void create_bucket(ChSystem& mphysicalSystem) {
+void create_bucket(ChSystemNSC& mphysicalSystem) {
 
     // Create a material that will be shared between bricks
-    auto mmaterial = std::make_shared<ChMaterialSurface>();
+    auto mmaterial = std::make_shared<ChMaterialSurfaceNSC>();
 
     mmaterial->SetFriction(0.4f);
     mmaterial->SetCompliance(0.0000005f);
@@ -63,66 +63,58 @@ void create_bucket(ChSystem& mphysicalSystem) {
     mmaterial->SetDampingF(0.2f);
 
     // Create bricks
-	int edges = 6;
-	double s = 0.01;
-	double apothem = 0.15;
-	double height = 0.25;
+	int box_edges = 36;
+	double wall_thick = 0.01;
+	double box_apothem = 0.5;
+	double box_height = 0.25;
 	double ball_radius = 0.035;
+	double ball_clearance = 0.005;
+    int ball_arrays = 5;
+
 
 	
-	double alfa = 2*PI/edges;
-	double width = 2*apothem*tan(alfa/2); // width bricks
-	double ball_pos_radius = 0.5*apothem / cos(alfa / 2);
-
+	double alfa = 2*PI/box_edges;
+	double width = 2*box_apothem*tan(alfa/2); // width bricks
 
 	// Create Polyhedron
-	for (int edge_k = 0; edge_k < edges; edge_k++)
+	for (int edge_k = 0; edge_k < box_edges; edge_k++)
 	{
 		double alfa_k = alfa*edge_k;
-        auto wall = std::make_shared<ChBodyEasyBox>(width, height, s,  // x,y,z size
+        auto wall = std::make_shared<ChBodyEasyBox>(width, box_height, wall_thick,  // x,y,z size
                                                     1000,         // density
                                                     true,         // collide enable?
                                                     (alfa_k >= 0 && alfa_k < PI) ? true : false);
 
 		ChQuaternion<double> quat(cos(alfa_k/2), 0, sin(alfa_k / 2), 0);
 		wall->SetRot(quat);
-		wall->SetPos(ChVector<>((apothem + s / 2)*sin(alfa_k), height / 2, (apothem + s / 2)*cos(alfa_k)));
+		wall->SetPos(ChVector<>((box_apothem + wall_thick / 2)*sin(alfa_k), box_height / 2, (box_apothem + wall_thick / 2)*cos(alfa_k)));
 		wall->SetMaterialSurface(mmaterial);
 		wall->SetBodyFixed(true);
 		mphysicalSystem.Add(wall);
 
-		// optional, attach a texture for better visualization
-        auto mtexture = std::make_shared<ChTexture>();
-        mtexture->SetTextureFilename(GetChronoDataFile("cubetexture_borders.png"));
-		wall->AddAsset(mtexture);
-
-
-		int ball_arrays = 5;
-		for (int ball_set = 0; ball_set < ball_arrays; ball_set++)
-		{
-			// Create a ball that will collide with wall
-			auto mrigidBall = std::make_shared<ChBodyEasySphere>(ball_radius,       // radius
-				                                                 8000,    // density
-				                                                 true,    // collide enable?
-				                                                 true);  // visualization?
-			mrigidBall->SetMaterialSurface(mmaterial);
-			mrigidBall->SetPos(ChVector<>(ball_pos_radius*sin(alfa_k + alfa / 2), 2.1*ball_radius * (ball_set + 1), ball_pos_radius*cos(alfa_k + alfa / 2)));
-			mrigidBall->SetPos_dtdt(ChVector<>(0, -3, 0));          // set initial acceleration
-			mrigidBall->GetMaterialSurface()->SetFriction(0.4f);  // use own (not shared) matrial properties
-			mrigidBall->GetMaterialSurface()->SetCompliance(0.0);
-			mrigidBall->GetMaterialSurface()->SetComplianceT(0.0);
-			mrigidBall->GetMaterialSurface()->SetDampingF(0.2f);
-
-			mphysicalSystem.Add(mrigidBall);
-
-			// optional, attach a texture for better visualization
-            auto mtextureball = std::make_shared<ChTexture>();
-            mtextureball->SetTextureFilename(GetChronoDataFile("bluwhite.png"));
-			mrigidBall->AddAsset(mtextureball);
-		}
-		
-
 	}
+
+
+    double square_box_edge = box_apothem*2;
+    auto mtextureball = std::make_shared<ChTexture>();
+    mtextureball->SetTextureFilename(GetChronoDataFile("bluwhite.png"));
+    for (auto ball_array = 0; ball_array < ball_arrays; ++ball_array)
+        for (auto body_pos_x = -square_box_edge / 2 + ball_clearance; body_pos_x <= square_box_edge / 2 - ball_clearance; body_pos_x += 2 * (ball_radius + ball_clearance))
+            for (auto body_pos_z = -square_box_edge / 2 + ball_clearance; body_pos_z <= square_box_edge / 2 - ball_clearance; body_pos_z += 2 * (ball_radius + ball_clearance))
+            {
+                if (sqrt(body_pos_x*body_pos_x + body_pos_z*body_pos_z) > box_apothem - ball_clearance)
+                    continue;
+
+                auto mrigidBall = std::make_shared<ChBodyEasySphere>(ball_radius, 8000, true, true);  // visualization?
+                mrigidBall->SetPos(ChVector<>(body_pos_x, (2 * ball_array + 1)*(ball_radius + ball_clearance), body_pos_z));
+                mrigidBall->AddAsset(mtextureball);
+                mrigidBall->GetMaterialSurfaceNSC()->SetFriction(0.4f);  // use own (not shared) matrial properties
+                mrigidBall->GetMaterialSurfaceNSC()->SetCompliance(0.0);
+                mrigidBall->GetMaterialSurfaceNSC()->SetComplianceT(0.0);
+                mrigidBall->GetMaterialSurfaceNSC()->SetDampingF(0.2f);
+                mrigidBall->AddAsset(mtextureball);
+                mphysicalSystem.Add(mrigidBall);
+            }
 
 
     // Create the floor using
@@ -144,7 +136,7 @@ void create_bucket(ChSystem& mphysicalSystem) {
 
 int main(int argc, char* argv[]) {
     // Create a ChronoENGINE physical system
-    ChSystem mphysicalSystem;
+    ChSystemNSC mphysicalSystem;
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
@@ -190,15 +182,13 @@ int main(int argc, char* argv[]) {
     auto ip_solver_speed = std::make_shared<ChInteriorPoint>();
 	mphysicalSystem.SetStabSolver(ip_solver_stab);
 	mphysicalSystem.SetSolver(ip_solver_speed);
+    ip_solver_speed->RecordHistory(false);
+    ip_solver_speed->SetNullPivotDetection(true, 1e-18);
+    ip_solver_speed->SetVerbose(true);
+
 	application.GetSystem()->Update();
 
-	//// Change solver to Matlab external linear solver, for max precision in benchmarks
-	//ChMatlabEngine matlab_engine;
-	//ChLcpMatlabSolver* matlab_solver_stab = new ChLcpMatlabSolver(matlab_engine);
-	//ChLcpMatlabSolver* matlab_solver_speed = new ChLcpMatlabSolver(matlab_engine);
-	//mphysicalSystem.SetStabSolver(matlab_solver_stab);
-	//mphysicalSystem.SetSolver(matlab_solver_speed);
-	//application.GetSystem()->Update();
+
 
 
     //
@@ -208,6 +198,7 @@ int main(int argc, char* argv[]) {
     application.SetStepManage(true);
     application.SetTimestep(0.02);
 	//application.SetPaused(true);
+
 
     while (application.GetDevice()->run()) {
         application.GetVideoDriver()->beginScene(true, true, SColor(255, 140, 161, 192));
@@ -222,10 +213,13 @@ int main(int argc, char* argv[]) {
 
         application.GetVideoDriver()->endScene();
 
-        //if (ip_solver_speed->GetSolverCalls() > 50)
-        //    break;
+        if (ip_solver_speed->GetSolverCalls() > 100)
+            break;
 
     }
+    std::cout << "Time spent: " << ip_solver_speed->GetIPTimer() << "; IP calls: " << ip_solver_speed->GetIPSolverCalls() << "; IP iterations: " << ip_solver_speed->GetIPIterations() << std::endl;
+    std::cout << "Mass matrix size: " << ip_solver_speed->GetMassMatrixDimension() << "; Jacobian rows: " << ip_solver_speed->GetJacobianMatrixRows() << std::endl;
+    getchar();
 
     return 0;
 }

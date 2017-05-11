@@ -30,7 +30,7 @@
 // ------------------------------------------------
 ///////////////////////////////////////////////////
 
-#include "chrono/physics/ChSystem.h"
+#include "chrono/physics/ChSystemNSC.h"
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/assets/ChTexture.h"
 #include "chrono_irrlicht/ChIrrApp.h"
@@ -54,10 +54,10 @@ std::shared_ptr<ChBody> generic_body_ptr;
 
 // Create a bunch of ChronoENGINE rigid bodies that
 // represent bricks in a large wall.
-void create_system(ChSystem& mphysicalSystem) {
+void create_system(ChSystemNSC& mphysicalSystem) {
 
 	// Create a material that will be shared between bricks
-	auto mmaterial = std::make_shared<ChMaterialSurface>();
+	auto mmaterial = std::make_shared<ChMaterialSurfaceNSC>();
 	mmaterial->SetFriction(0.4f);
 	
 	if (false) // material selector
@@ -133,7 +133,7 @@ void create_system(ChSystem& mphysicalSystem) {
 
 int main(int argc, char* argv[]) {
     // Create a ChronoENGINE physical system
-    ChSystem mphysicalSystem;
+    ChSystemNSC mphysicalSystem;
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
@@ -179,6 +179,7 @@ int main(int argc, char* argv[]) {
     auto ip_solver_speed = std::make_shared<ChInteriorPoint>();
     mphysicalSystem.SetStabSolver(ip_solver_stab);
     mphysicalSystem.SetSolver(ip_solver_speed);
+    ip_solver_speed->RecordHistory(false);
     application.GetSystem()->Update();
 
     //// Change solver to Matlab external linear solver, for max precision in benchmarks
@@ -196,7 +197,7 @@ int main(int argc, char* argv[]) {
 
     application.SetStepManage(true);
     application.SetTimestep(0.02);
-    application.SetTryRealtime(true);
+    //application.SetTryRealtime(true);
 
     int step_counter = 0;
     while (application.GetDevice()->run()) {
@@ -220,7 +221,13 @@ int main(int argc, char* argv[]) {
 
 
         application.GetVideoDriver()->endScene();
+
+        if (ip_solver_speed->GetSolverCalls() > 100)
+            break;
     }
+
+    std::cout << "Time spent: " << ip_solver_speed->GetIPTimer() << "; IP calls: " << ip_solver_speed->GetIPSolverCalls() << "; IP iterations: " << ip_solver_speed->GetIPIterations() << std::endl;
+    getchar();
 
     return 0;
 }

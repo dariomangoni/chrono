@@ -26,7 +26,7 @@
 // ------------------------------------------------
 ///////////////////////////////////////////////////
 
-#include "chrono/physics/ChSystem.h"
+#include "chrono/physics/ChSystemNSC.h"
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/assets/ChTexture.h"
 #include "chrono/core/ChRealtimeStep.h"
@@ -194,7 +194,7 @@ void align_spheres(irrlicht::ChIrrAppInterface& application) {
 
 int main(int argc, char* argv[]) {
     // Create a ChronoENGINE physical system
-    ChSystem mphysicalSystem;
+    ChSystemNSC mphysicalSystem;
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
@@ -208,7 +208,7 @@ int main(int argc, char* argv[]) {
     irrlicht::ChIrrWizard::add_typical_Camera(application.GetDevice(), core::vector3df(0, 1.5, -3));
 
 	// Create a material that will be shared
-	auto material = std::make_shared<ChMaterialSurface>();
+	auto material = std::make_shared<ChMaterialSurfaceNSC>();
 	material->SetFriction(0.5f);
 	//material->SetRestitution(0.0f);
 	material->SetCompliance(STATIC_COMPLIANCE);
@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
     create_items(application, material);
 
 	/*
-    class MyContactCallback : public ChSystem::ChCustomCollisionPointCallback {
+    class MyContactCallback : public ChSystemNSC::ChCustomCollisionPointCallback {
       public:
         virtual void ContactCallback(
             const collision::ChCollisionInfo& mcontactinfo,  ///< get info about contact (cannot change it)
@@ -230,7 +230,7 @@ int main(int argc, char* argv[]) {
             material.complianceT = material.compliance;
             material.dampingf = 0.2f;
         };
-        ChSystem* msystem;
+        ChSystemNSC* msystem;
     };
 
     MyContactCallback mycontact_callback;           // create the callback object
@@ -247,7 +247,7 @@ int main(int argc, char* argv[]) {
     // Modify some setting of the physical system for the simulation, if you want
 
     mphysicalSystem.SetSolverType(ChSolver::Type::BARZILAIBORWEIN);
-    // mphysicalSystem.SetSolverType(ChSystem::LCP_ITERATIVE_SOR);
+    // mphysicalSystem.SetSolverType(ChSystemNSC::LCP_ITERATIVE_SOR);
     mphysicalSystem.SetMaxItersSolverSpeed(60);
     mphysicalSystem.SetMaxItersSolverStab(5);
     mphysicalSystem.SetParallelThreadNumber(1);
