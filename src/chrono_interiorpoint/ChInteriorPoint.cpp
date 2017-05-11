@@ -409,10 +409,18 @@ void ChInteriorPoint::setup_system_matrix(const IPvariables_t& vars) {
                               vars.y.GetElement(diag_sel, 0) / vars.lam.GetElement(diag_sel, 0));
         }
 
+    // factorize the matrix
     BigMat.Compress();
     mumps_engine.SetMatrix(BigMat);
-    mumps_engine.SetICNTL(23, 50);
-    mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE);
+    for (auto loop_expand_workspace_size = 0; loop_expand_workspace_size < 5; ++loop_expand_workspace_size)
+    {
+        if (!mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE))
+            break;
+        mumps_engine.SetICNTL(14, static_cast<int>(round(mumps_engine.GetICNTL(14)*1.5)));
+        std::cout << "MUMPS work space will be allocated overestimating the estimate by " << mumps_engine.GetICNTL(14) << "%" << std::endl;
+    }
+
+
 }
 
 void ChInteriorPoint::makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals) {
