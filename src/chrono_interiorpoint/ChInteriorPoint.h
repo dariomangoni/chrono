@@ -104,9 +104,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     bool warm_start_broken = false;
     bool warm_start = true;
 
-    double rp_nnorm_tol = 1e-8;
-    double rd_nnorm_tol = 1e-8;
-    double mu_tol = 1e-8;
+    ChTimer<> ip_timer;
+    int ip_solver_call = 0;
+    int iteration_count_tot = 0;
 
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
     IP_STARTING_POINT_METHOD starting_point_method = IP_STARTING_POINT_METHOD::NOCEDAL;
@@ -135,7 +135,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     struct IPresidual_nnorm_t {
         double rp_nnorm = 1e-10;
         double rd_nnorm = 1e-10;
-        double mu = 1e-10;
+        double mu = 1e-9;
     } res_nnorm_tol;
 
 
@@ -160,7 +160,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     // Temporaries used in different functions
     mutable ChMatrixDynamic<double> vectn;  // temporary variable that has always size (#n,1)
     mutable ChMatrixDynamic<double> vectm;  // temporary variable that has always size (#m,1)
-    ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
+    mutable ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
 
 
     // MUMPS engine
@@ -187,8 +187,10 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     // Debug
     std::ofstream logfile_stream;
     std::string logfile_name{ "interior_point_log" };
-    bool print_history;
+    bool print_history = false;
     void LoadProblem();
+
+
 
 
   public:
@@ -209,19 +211,27 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void SetMaxIterations(int max_iter) { iteration_count_max = max_iter; }
 
     /// Set the tolerance over the residual of the \a primal variables (i.e. violation of constraints equations).
-    void SetPrimalResidualTolerance(double rp_tol) { rp_nnorm_tol = rp_tol; }
+    void SetPrimalResidualTolerance(double rp_tol) { res_nnorm_tol.rp_nnorm = rp_tol; }
 
     /// Set the tolerance over the residual of the \a dual variables (i.e. stationarity of the solution).
-    void SetDualResidualTolerance(double rd_tol) { rd_nnorm_tol = rd_tol; }
+    void SetDualResidualTolerance(double rd_tol) { res_nnorm_tol.rd_nnorm = rd_tol; }
 
     /// Set the tolerance over the residual of complementarity measure (i.e. violation of orthogonality of forces and contact points distance)
-    void SetComplementarityMeasureTolerance(double complementarity_tol) { mu_tol = complementarity_tol; }
+    void SetComplementarityMeasureTolerance(double complementarity_tol) { res_nnorm_tol.mu = complementarity_tol; }
+
+    /// Set the null pivot detection for the kernel solver.
+    void SetNullPivotDetection(bool on_off, double threshold) { mumps_engine.SetNullPivotDetection(on_off, threshold); }
 
     // Test
     void DumpProblem(std::string suffix = "");
     void DumpIPStatus(std::string suffix = "") const;
     void RecordHistory(bool on_off, std::string file_name = "interior_point_log");
     int GetSolverCalls() const { return solver_call; }
+    int GetIPSolverCalls() const { return ip_solver_call; }
+    int GetIPIterations() const { return iteration_count_tot; }
+    int GetMassMatrixDimension() const { return m; }
+    int GetJacobianMatrixRows() const { return n; }
+    double GetIPTimer() const { return ip_timer(); }
     //void Solve(const ChSparseMatrix& Q, const ChSparseMatrix& A, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrix<double>& var_x, ChMatrix<double>& var_y, ChMatrix<double>& var_lam );
     void Solve(const ChCOOMatrix& normal_mat, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrixDynamic<double>& var_x, ChMatrixDynamic<double>& var_y, ChMatrixDynamic<double>& var_lam);
 };

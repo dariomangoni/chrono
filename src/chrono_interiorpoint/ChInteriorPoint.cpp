@@ -8,8 +8,9 @@
 //#define DEBUG_MODE
 #define SKIP_CONTACTS_UV true
 #define ADD_COMPLIANCE false
-#define REUSE_OLD_SOLUTIONS false
+#define REUSE_OLD_SOLUTIONS true
 #define STEPLENGTH_METHOD 0
+//#define BYPASS_RESTITUTION_TERM
 
 namespace chrono {
 
@@ -112,7 +113,10 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     rhs.c.MatrScale(-1);                         // adapt to InteriorPoint convention
     rhs.b.MatrScale(-1);                         // adapt to InteriorPoint convention
 
-    //rhs.b.FillElem(0); // TODO: WARNING: removing phi/h!!!
+#ifdef BYPASS_RESTITUTION_TERM
+    rhs.b.FillElem(0); // TODO: WARNING: removing phi/h!!!
+    //rhs.b*=1e-3; // TODO: WARNING: removing phi/h!!!
+#endif
 
     /********** Check if system has constraints **********/
     if( m == 0 )  // if no constraints
@@ -145,6 +149,8 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     }
 
     /********* The system DOES have constraints! Start Interior Point ********/
+    ip_solver_call++;
+    ip_timer.start();
 
     if( ADD_COMPLIANCE && m > 0 )
     {
@@ -160,23 +166,23 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     {
 
         iterate();
+        iteration_count_tot++;
 
         /*********************************************************************************/
         /******************************** Exit conditions ********************************/
         /*********************************************************************************/
 
-        for( auto cont = 0; cont < m; cont++ )
-        {
-            if( var.y(cont, 0) < 0 || var.lam(cont, 0) < 0 )
-            {
-                std::cout << "'y' or 'lambda' have negative elements" << std::endl;
-                break;
-            }
-        }
-
 
         if( verbose )
         {
+            for (auto cont = 0; cont < m; cont++)
+            {
+                if (var.y(cont, 0) < 0 || var.lam(cont, 0) < 0)
+                {
+                    std::cout << "'y' or 'lambda' have negative elements" << std::endl;
+                    break;
+                }
+            }
             GetLog() << "InteriorPoint | Call: " << solver_call << " Iter: " << iteration_count << "/" << iteration_count_max << "\n";
             GetLog() << "Complementarity Measure: " << res.mu << "\n";
             GetLog() << "|rd|/n (stationarity): " << res.rd.NormTwo() / n << "\n";
@@ -198,6 +204,7 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
         }
     }
 
+    ip_timer.stop();
 
     // Scatter the solution into the Chrono environment
     sysd.FromVectorToUnknowns(adapt_to_Chrono(sol_chrono));
@@ -348,14 +355,14 @@ void ChInteriorPoint::iterate() {
             if( logfile_stream.is_open() )
             {
                 logfile_stream << std::scientific << std::setprecision(6);
-                logfile_stream << "res_P res_D mu obj fun";
+                logfile_stream << "res_P res_D mu objfun";
 
                 logfile_stream << std::endl << res.rp.NormTwo() / m << ", " << res.rd.NormTwo() / n << ", " << res.mu << ", " << evaluate_objective_function();
 
 #ifdef CHRONO_POSTPROCESS
                 postprocess::ChGnuPlot mplot(("__" + logfile_name + ".gpl").c_str());
 
-                auto column_number = 4;
+                auto column_number = 3;
                 mplot.SetGrid();
 
                 mplot.SetCommand("bind s 'plot_history = 0'");
@@ -370,19 +377,16 @@ void ChInteriorPoint::iterate() {
                 mplot.SetCommand("set format y \"%T\"");
                 std::stringstream comm_template;
                 comm_template << "plot ";
-                for( auto var_sel = 1; var_sel <= column_number; ++var_sel )
-                {
-                    comm_template << "'" << logfile_name << ".txt' using " << var_sel << " with linespoints";
-                    if( var_sel != column_number )
-                        comm_template << ", ";
-                }
+                comm_template << "'" << logfile_name << ".txt' using " << 1 << " with linespoints" << ",";
+                comm_template << "'" << logfile_name << ".txt' using " << 2 << " with linespoints" << ",";
+                comm_template << "'" << logfile_name << ".txt' using " << 3 << " with linespoints";
                 mplot.SetCommand(comm_template.str().c_str());
                 mplot.SetCommand("pause 0.1");
                 mplot.SetCommand("if(plot_history==1) reread");
 #endif
             }
             else
-                throw std::exception(("LogFile " + logfile_name + " cannot be opened\n").c_str());
+                throw std::exception(("Log file " + logfile_name + " cannot be opened\n").c_str());
         }
     }
 
@@ -1040,7 +1044,6 @@ void ChInteriorPoint::Solve(const ChCOOMatrix& augmented_mat, const ChMatrix<dou
 }
 
 ChInteriorPoint::ChInteriorPoint() {
-    SetVerbose(true);
     mumps_engine.SetICNTL(11, 2);
     RecordHistory(true);
 }
