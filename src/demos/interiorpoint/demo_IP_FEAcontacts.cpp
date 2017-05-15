@@ -37,6 +37,9 @@ using namespace chrono::irrlicht;
 
 using namespace irr;
 
+//#define BUILD_CABLES
+#define BUILD_TETRAHEDRONS
+
 int main(int argc, char* argv[]) {
 
     // Create a Chrono::Engine physical system
@@ -45,7 +48,7 @@ int main(int argc, char* argv[]) {
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
-    ChIrrApp application(&my_system, L"IP FEA contacts", core::dimension2d<u32>(800, 600), false, true);
+    ChIrrApp application(&my_system, L"IP FEA contacts", core::dimension2d<u32>(800, 600), false, true, true, irr::video::EDT_OPENGL);
 
     // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
     application.AddTypicalLogo();
@@ -55,7 +58,8 @@ int main(int argc, char* argv[]) {
     application.AddLightWithShadow(core::vector3df(1.5, 5.5, -2.5), core::vector3df(0, 0, 0), 3, 2.2, 7.2, 40, 512,
         video::SColorf(1, 1, 1));
 
-    application.SetContactsDrawMode(ChIrrTools::CONTACT_DISTANCES);
+	application.SetContactsDrawMode(ChIrrTools::CONTACT_NORMALS);
+	application.SetSymbolscale(0.25);
 
     //
     // CREATE THE PHYSICAL SYSTEM
@@ -63,7 +67,8 @@ int main(int argc, char* argv[]) {
 
 
     //collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.0); // not needed, already 0 when using ChSystemSMC
-    collision::ChCollisionModel::SetDefaultSuggestedMargin(0.006); // max inside penetration - if not enough stiffness in material: troubles
+	collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.001);
+	collision::ChCollisionModel::SetDefaultSuggestedMargin(0.001);
 
     // Use this value for an outward additional layer around meshes, that can improve
     // robustness of mesh-mesh collision detection (at the cost of having unnatural inflate effect)
@@ -105,7 +110,7 @@ int main(int argc, char* argv[]) {
     //msphere->SetMaterialSurface(mysurfmaterial);
     //my_system.Add(msphere);
 
-
+#ifdef BUILD_TETRAHEDRONS
     //
     // Example 1: tetrahedrons, with collisions
     // 
@@ -114,81 +119,104 @@ int main(int argc, char* argv[]) {
 
     auto my_mesh = std::make_shared<ChMesh>();
 
-    //// 1) a FEA tetahedron(s):
+    // 1) a FEA tetahedron(s):
 
-    //// Create a material, that must be assigned to each solid element in the mesh,
-    //// and set its parameters
-    //auto mmaterial = std::make_shared<ChContinuumElastic>();
-    //mmaterial->Set_E(0.01e9);  // rubber 0.01e9, steel 200e9
-    //mmaterial->Set_v(0.3);
-    //mmaterial->Set_RayleighDampingK(0.003);
-    //mmaterial->Set_density(1000);
+    // Create a material, that must be assigned to each solid element in the mesh,
+    // and set its parameters
+    auto mmaterial = std::make_shared<ChContinuumElastic>();
+    mmaterial->Set_E(0.01e9);  // rubber 0.01e9, steel 200e9
+    mmaterial->Set_v(0.3);
+    mmaterial->Set_RayleighDampingK(0.003);
+    mmaterial->Set_density(1000);
 
-    //if (false) {
-    //    for (int k = 0; k<3; ++k)
-    //        for (int j = 0; j<3; ++j)
-    //            for (int i = 0; i<3; ++i) {
-    //                // Creates the nodes for the tetahedron
-    //                ChVector<> offset(j*0.21, i*0.21, k*0.21);
-    //                auto mnode1 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0) + offset);
-    //                auto mnode2 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0.2) + offset);
-    //                auto mnode3 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.3, 0) + offset);
-    //                auto mnode4 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0.2, 0.1, 0) + offset);
+    if (false) {
+        for (int k = 0; k<3; ++k)
+            for (int j = 0; j<3; ++j)
+                for (int i = 0; i<3; ++i) {
+                    // Creates the nodes for the tetahedron
+                    ChVector<> offset(j*0.21, i*0.21, k*0.21);
+                    auto mnode1 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0) + offset);
+                    auto mnode2 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0.2) + offset);
+                    auto mnode3 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.3, 0) + offset);
+                    auto mnode4 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0.2, 0.1, 0) + offset);
 
-    //                my_mesh->AddNode(mnode1);
-    //                my_mesh->AddNode(mnode2);
-    //                my_mesh->AddNode(mnode3);
-    //                my_mesh->AddNode(mnode4);
+                    my_mesh->AddNode(mnode1);
+                    my_mesh->AddNode(mnode2);
+                    my_mesh->AddNode(mnode3);
+                    my_mesh->AddNode(mnode4);
 
-    //                auto melement1 = std::make_shared<ChElementTetra_4>();
-    //                melement1->SetNodes(mnode1,
-    //                    mnode2,
-    //                    mnode3,
-    //                    mnode4);
-    //                melement1->SetMaterial(mmaterial);
+                    auto melement1 = std::make_shared<ChElementTetra_4>();
+                    melement1->SetNodes(mnode1,
+                        mnode2,
+                        mnode3,
+                        mnode4);
+                    melement1->SetMaterial(mmaterial);
 
-    //                my_mesh->AddElement(melement1);
-    //            }
-    //}
+                    my_mesh->AddElement(melement1);
+                }
+    }
 
-    //if (true) {
-    //    for (int i = 0; i<4; ++i) {
-    //        try
-    //        {
-    //            ChCoordsys<> cdown(ChVector<>(0, -0.4, 0));
-    //            ChCoordsys<> crot(VNULL, Q_from_AngAxis(CH_C_2PI * ChRandom(), VECT_Y) * Q_from_AngAxis(CH_C_PI_2, VECT_X));
-    //            ChCoordsys<> cydisp(ChVector<>(-0.3, 0.1 + i*0.1, -0.3));
-    //            ChCoordsys<> ctot = cdown >> crot >> cydisp;
-    //            ChMatrix33<> mrot(ctot.rot);
-    //            ChMeshFileLoader::FromTetGenFile(my_mesh, GetChronoDataFile("fea/beam.node").c_str(), GetChronoDataFile("fea/beam.ele").c_str(), mmaterial, ctot.pos, mrot);
-    //        }
-    //        catch (ChException myerr) {
-    //            GetLog() << myerr.what();
-    //            return 0;
-    //        }
-    //    }
-    //}
+    if (true) {
+        for (int i = 0; i<4; ++i) {
+            try
+            {
+                ChCoordsys<> cdown(ChVector<>(0, -0.4, 0));
+                ChCoordsys<> crot(VNULL, Q_from_AngAxis(CH_C_2PI * ChRandom(), VECT_Y) * Q_from_AngAxis(CH_C_PI_2, VECT_X));
+                ChCoordsys<> cydisp(ChVector<>(-0.3, 0.1 + i*0.1, -0.3));
+                ChCoordsys<> ctot = cdown >> crot >> cydisp;
+                ChMatrix33<> mrot(ctot.rot);
+                ChMeshFileLoader::FromTetGenFile(my_mesh, GetChronoDataFile("fea/beam.node").c_str(), GetChronoDataFile("fea/beam.ele").c_str(), mmaterial, ctot.pos, mrot);
+            }
+            catch (ChException myerr) {
+                GetLog() << myerr.what();
+                return 0;
+            }
+        }
+    }
 
 
-    // Create the contact surface(s). 
-    // In this case it is a ChContactSurfaceMesh, that allows mesh-mesh collsions.
+    //Create the contact surface(s). 
+    //In this case it is a ChContactSurfaceMesh, that allows mesh-mesh collsions.
 
     auto mcontactsurf = std::make_shared<ChContactSurfaceMesh>();
     my_mesh->AddContactSurface(mcontactsurf);
     mcontactsurf->AddFacesFromBoundary(sphere_swept_thickness); // do this after my_mesh->AddContactSurface
-    mcontactsurf->SetMaterialSurface(mysurfmaterial); // use the SMC penalty contacts
-    /*
+    mcontactsurf->SetMaterialSurface(mysurfmaterial); // use the NSC penalty contacts
+    
     // Remember to add the mesh to the system!
 
-    auto mcontactclouda = std::make_shared<ChContactSurfaceNodeCloud>();
-    my_mesh->AddContactSurface(mcontactclouda);
-    mcontactclouda->AddAllNodes(0.005); // use larger point size to match beam section radius
-    mcontactclouda->SetMaterialSurface(mysurfmaterial);
-    */
+    //auto mcontactclouda = std::make_shared<ChContactSurfaceNodeCloud>();
+    //my_mesh->AddContactSurface(mcontactclouda);
+    //mcontactclouda->AddAllNodes(0.005); // use larger point size to match beam section radius
+    //mcontactclouda->SetMaterialSurface(mysurfmaterial);
+    //
 
     my_system.Add(my_mesh);
 
+	// ==Asset== attach a visualization of the FEM mesh.
+	// This will automatically update a triangle mesh (a ChTriangleMeshShape
+	// asset that is internally managed) by setting  proper
+	// coordinates and vertex colours as in the FEM elements.
+	// Such triangle mesh can be rendered by Irrlicht or POVray or whatever
+	// postprocessor that can handle a coloured ChTriangleMeshShape).
+	// Do not forget AddAsset() at the end!
 
+	auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
+	mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
+	mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
+	mvisualizemesh->SetSmoothFaces(true);
+	my_mesh->AddAsset(mvisualizemesh);
+
+	auto mvisualizemeshcoll = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
+	mvisualizemeshcoll->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_CONTACTSURFACES);
+	mvisualizemeshcoll->SetWireframe(true);
+	mvisualizemeshcoll->SetDefaultMeshColor(ChColor(1, 0.5, 0));
+	my_mesh->AddAsset(mvisualizemeshcoll);
+
+
+#endif
+
+#ifdef BUILD_CABLES
     //
     // Example 2: beams, with collisions
     // 
@@ -226,60 +254,46 @@ int main(int argc, char* argv[]) {
             ChVector<>(0.25, cable_height, -0.25));	// the 'B' point in space (end of beam)
 
         std::cout << cable_height << std::endl;
-}
+    }
 
+	// ==Asset== attach a visualization of the FEM mesh.
+	// This will automatically update a triangle mesh (a ChTriangleMeshShape
+	// asset that is internally managed) by setting  proper
+	// coordinates and vertex colours as in the FEM elements.
+	// Such triangle mesh can be rendered by Irrlicht or POVray or whatever
+	// postprocessor that can handle a coloured ChTriangleMeshShape).
+	// Do not forget AddAsset() at the end!
 
     // Create the contact surface(s). 
     // In this case it is a ChContactSurfaceNodeCloud, so just pass 
     // all nodes to it.
     auto mcontactcloud = std::make_shared<ChContactSurfaceNodeCloud>();
     my_mesh_beams->AddContactSurface(mcontactcloud);
-    mcontactcloud->AddAllNodes(0.01); // use larger point size to match beam section radius
+    mcontactcloud->AddAllNodes(0.001); // use larger point size to match beam section radius
     mcontactcloud->SetMaterialSurface(mysurfmaterial);
 
+    auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
+    mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
+    mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
+    mvisualizemesh->SetSmoothFaces(true);
+    my_mesh_beams->AddAsset(mvisualizemesh);
 
     // Remember to add the mesh to the system!
     my_system.Add(my_mesh_beams);
 
+	auto mvisualizemeshbeam = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
+	mvisualizemeshbeam->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
+	mvisualizemeshbeam->SetColorscaleMinMax(0.0, 5.50);
+	mvisualizemeshbeam->SetSmoothFaces(true);
+	my_mesh->AddAsset(mvisualizemeshbeam);
 
+	auto mvisualizemeshbeamnodes = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
+	mvisualizemeshbeamnodes->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_DOT_POS);
+	mvisualizemeshbeamnodes->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NONE);
+	mvisualizemeshbeamnodes->SetSymbolsThickness(0.008);
+	my_mesh->AddAsset(mvisualizemeshbeamnodes);
 
-    //
-    // Optional...  visualization
-    //
-
-    // ==Asset== attach a visualization of the FEM mesh.
-    // This will automatically update a triangle mesh (a ChTriangleMeshShape
-    // asset that is internally managed) by setting  proper
-    // coordinates and vertex colours as in the FEM elements.
-    // Such triangle mesh can be rendered by Irrlicht or POVray or whatever
-    // postprocessor that can handle a coloured ChTriangleMeshShape).
-    // Do not forget AddAsset() at the end!
-
-    auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
-    mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
-    mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
-    mvisualizemesh->SetSmoothFaces(true);
-    my_mesh->AddAsset(mvisualizemesh);
-
-    auto mvisualizemeshcoll = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
-    mvisualizemeshcoll->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_CONTACTSURFACES);
-    mvisualizemeshcoll->SetWireframe(true);
-    mvisualizemeshcoll->SetDefaultMeshColor(ChColor(1, 0.5, 0));
-    my_mesh->AddAsset(mvisualizemeshcoll);
-
-    auto mvisualizemeshbeam = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
-    mvisualizemeshbeam->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
-    mvisualizemeshbeam->SetColorscaleMinMax(0.0, 5.50);
-    mvisualizemeshbeam->SetSmoothFaces(true);
-    my_mesh->AddAsset(mvisualizemeshbeam);
-
-    auto mvisualizemeshbeamnodes = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
-    mvisualizemeshbeamnodes->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_DOT_POS);
-    mvisualizemeshbeamnodes->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NONE);
-    mvisualizemeshbeamnodes->SetSymbolsThickness(0.008);
-    my_mesh->AddAsset(mvisualizemeshbeamnodes);
-
-
+#endif
 
     // ==IMPORTANT!== Use this function for adding a ChIrrNodeAsset to all items
     // in the system. These ChIrrNodeAsset assets are 'proxies' to the Irrlicht meshes.
@@ -303,7 +317,6 @@ int main(int argc, char* argv[]) {
     //
     // THE SOFT-REAL-TIME CYCLE
     //
-
     my_system.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT_LINEARIZED);
 
     // Change solver to IP
