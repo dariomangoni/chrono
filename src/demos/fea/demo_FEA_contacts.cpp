@@ -30,6 +30,7 @@
 #include "chrono_fea/ChBuilderBeam.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
+#include <bitset>
 
 
 using namespace chrono;
@@ -38,6 +39,7 @@ using namespace chrono::fea;
 using namespace chrono::irrlicht;
 
 using namespace irr;
+
 
 int main(int argc, char* argv[]) {
 
@@ -56,7 +58,9 @@ int main(int argc, char* argv[]) {
     application.AddLightWithShadow(core::vector3df(1.5, 5.5, -2.5), core::vector3df(0, 0, 0), 3, 2.2, 7.2, 40, 512,
                                    video::SColorf(1, 1, 1));
 
-    application.SetContactsDrawMode(ChIrrTools::CONTACT_DISTANCES);
+    application.SetContactsDrawMode(ChIrrTools::CONTACT_NORMALS);
+	application.SetSymbolscale(0.25);
+	application.SetContactsLabelMode(ChIrrTools::CONTACT_DISTANCES_VAL);
 
 
     //
@@ -158,31 +162,32 @@ int main(int argc, char* argv[]) {
     mmaterial->Set_RayleighDampingK(0.003);
     mmaterial->Set_density(1000);
 
-    if (false) {
-        for (int k=0; k<3; ++k)
-        for (int j=0; j<3; ++j)
-        for (int i=0; i<3; ++i) {
-            // Creates the nodes for the tetahedron
-            ChVector<> offset(j*0.21, i*0.21, k*0.21);
-            auto mnode1 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0) + offset);
-            auto mnode2 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0.2) + offset);
-            auto mnode3 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.3, 0) + offset);
-            auto mnode4 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0.2, 0.1, 0) + offset);
+	if (true) {
+		for (int k = 0; k < 3; ++k)
+			for (int j = 0; j < 3; ++j)
+				for (int i = 0; i < 3; ++i) {
+					// Creates the nodes for the tetahedron
+					ChVector<> offset(j*0.21, i*0.21, k*0.21);
+					auto mnode1 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0) + offset);
+					auto mnode2 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0.2) + offset);
+					auto mnode3 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.3, 0) + offset);
+					auto mnode4 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0.2, 0.1, 0) + offset);
 
-            my_mesh->AddNode(mnode1);
-            my_mesh->AddNode(mnode2);
-            my_mesh->AddNode(mnode3);
-            my_mesh->AddNode(mnode4);
+					my_mesh->AddNode(mnode1);
+					my_mesh->AddNode(mnode2);
+					my_mesh->AddNode(mnode3);
+					my_mesh->AddNode(mnode4);
 
-            auto melement1 = std::make_shared<ChElementTetra_4>();
-            melement1->SetNodes(mnode1,
-                                mnode2, 
-                                mnode3, 
-                                mnode4);
-            melement1->SetMaterial(mmaterial);
+					auto melement1 = std::make_shared<ChElementTetra_4>();
+					melement1->SetNodes(mnode1,
+						mnode2,
+						mnode3,
+						mnode4);
+					melement1->SetMaterial(mmaterial);
 
-            my_mesh->AddElement(melement1);
-        }
+					my_mesh->AddElement(melement1);
+				}
+	
     }
 
     if (true) {

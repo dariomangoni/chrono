@@ -5,7 +5,8 @@ SET(IP_DEMOS
     demo_IP_bricks
     demo_IP_convergence
 	demo_IP_trivial
-	demo_IP_FEAcontacts
+	demo_IP_FEA_contacts
+	demo_IP_FEA_threepointbending
 )
 
 INCLUDE_DIRECTORIES( ${CH_IRRLICHTINC} )
