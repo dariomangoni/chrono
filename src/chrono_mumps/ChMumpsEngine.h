@@ -34,9 +34,6 @@
 #include "chrono_mumps/ChCOOMatrix.h"
 
 #include <dmumps_c.h>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 #define USE_COMM_WORLD -987654
 
 /* macro s.t. indices match documentation */
