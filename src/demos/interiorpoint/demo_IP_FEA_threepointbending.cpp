@@ -63,7 +63,7 @@ private:
 	ChQuaternion<double> rotation_offset = { 1.0, 0.0, 0.0, 0.0 };
 	double cube_edge = 1;
 
-	static const std::array<ChVector<int>, 8> cube_nodes_order;
+	static const std::array<ChVector<int>, 8> cube_nodes_position;
 	static const std::array<std::array<int, 4>, 6> tetahedra_nodes_order;
 
 	std::vector<std::shared_ptr<ChNodeFEAxyz>> nodes_list; // not needed if mesh returns a non-const vector of nodes...
@@ -71,7 +71,7 @@ private:
 	std::shared_ptr<ChNodeFEAxyz>& getNode(ChVector<int> element_position, int node_local_id)
 	{
 		auto num_nodes = num_elements + ChVector<int>{1, 1, 1};
-		element_position += cube_nodes_order[node_local_id];
+		element_position += cube_nodes_position[node_local_id];
 		return nodes_list[element_position.x() + element_position.y()*num_nodes.x() + element_position.z()*num_nodes.x()*num_nodes.y()];
 	}
 
@@ -146,8 +146,8 @@ public:
 
 };
 
-const std::array<ChVector<int>, 8> BuildTetrahedronBeam::cube_nodes_order = { { {0,0,0}, {1,0,0}, {1,1,0}, {0,1,0}, {0,0,1}, {1,0,1}, {1,1,1}, {0,1,1} } };
-const std::array<std::array<int,4>, 6> BuildTetrahedronBeam::tetahedra_nodes_order = {{ { 0,1,3,7 }, { 0,1,4,7 },{ 1,2,3,7 },{ 1,2,6,7 },{ 1,4,5,7 },{ 1,5,6,7 } }};
+const std::array<ChVector<int>, 8> BuildTetrahedronBeam::cube_nodes_position = { { {0,0,1}, {1,0,1}, {1,0,0}, {0,0,0}, {0,1,1}, {1,1,1}, {1,1,0}, {0,1,0} } };
+const std::array<std::array<int,4>, 6> BuildTetrahedronBeam::tetahedra_nodes_order = {{ { 0,3,1,7 }, { 0,1,4,7 },{ 1,3,2,7 },{ 1,2,6,7 },{ 1,5,4,7 },{ 1,6,5,7 } }};
 
 
 
