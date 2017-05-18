@@ -245,7 +245,7 @@ int main(int argc, char* argv[]) {
     mcontactsurf->AddFacesFromBoundary(sphere_swept_thickness); // do this after my_mesh->AddContactSurface
     mcontactsurf->SetMaterialSurface(mysurfmaterial); // use the NSC penalty contacts
 
-    my_system.Add(tetra_mesh);
+    //my_system.Add(tetra_mesh);
 
 	// Add cylinders
 
