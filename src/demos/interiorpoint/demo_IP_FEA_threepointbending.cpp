@@ -22,13 +22,11 @@
 #include "chrono_fea/ChMesh.h"
 #include "chrono_fea/ChMeshFileLoader.h"
 #include "chrono_fea/ChContactSurfaceMesh.h"
-#include "chrono_fea/ChContactSurfaceNodeCloud.h"
 #include "chrono_fea/ChVisualizationFEAmesh.h"
-#include "chrono_fea/ChElementCableANCF.h"
-#include "chrono_fea/ChBuilderBeam.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
 #include <chrono_interiorpoint/ChInteriorPoint.h>
+#include <functional>
 
 using namespace chrono;
 using namespace chrono::geometry;
@@ -98,12 +96,33 @@ public:
 		rotation_offset = rot;
 	}
 
+	std::list<std::shared_ptr<ChNodeFEAbase>> GetNodes(std::function<bool(int,int,int)> choose_fnc ) const
+	{
+		auto num_nodes = num_elements + ChVector<int>{1, 1, 1};
+		std::list<std::shared_ptr<ChNodeFEAbase>> nodes_list_export;
+		// create nodes
+		for (auto node_sel_z = 0; node_sel_z< num_nodes.z(); ++node_sel_z)
+		{
+			for (auto node_sel_y = 0; node_sel_y < num_nodes.y(); ++node_sel_y)
+			{
+				for (auto node_sel_x = 0; node_sel_x < num_nodes.x(); ++node_sel_x)
+				{
+					if (choose_fnc(node_sel_x, node_sel_y, node_sel_z))
+						nodes_list_export.push_back(nodes_list[node_sel_x + node_sel_y*num_nodes.x() + node_sel_z*num_nodes.x()*num_nodes.y()]);
+				}
+			}
+		}
+
+		return nodes_list_export;
+	}
+
+
 	void CreateBeam(std::shared_ptr<ChMesh> mesh, std::shared_ptr<ChContinuumElastic> tetra_material)
 	{
 		auto num_nodes = num_elements + ChVector<int>{1,1,1};
 
 		// create nodes
-		nodes_list.resize((num_elements.x() + 1)*(num_elements.y() + 1)*(num_elements.z() + 1));
+		nodes_list.resize(num_nodes.x()*num_nodes.y()*num_nodes.z());
 		for (auto node_sel_z = 0; node_sel_z< num_nodes.z(); ++node_sel_z)
 		{
 			for (auto node_sel_y = 0; node_sel_y < num_nodes.y(); ++node_sel_y)
@@ -146,7 +165,7 @@ public:
 
 };
 
-const std::array<ChVector<int>, 8> BuildTetrahedronBeam::cube_nodes_position = { { {0,0,1}, {1,0,1}, {1,0,0}, {0,0,0}, {0,1,1}, {1,1,1}, {1,1,0}, {0,1,0} } };
+const std::array<ChVector<int>, 8> BuildTetrahedronBeam::cube_nodes_position = { { {0,0,1}, {1,0,1}, {1,0,0}, {0,0,0}, {0,1,1}, {1,1,1}, {1,1,0}, {0,1,0} } }; // the 1st node is on the origin
 const std::array<std::array<int,4>, 6> BuildTetrahedronBeam::tetahedra_nodes_order = {{ { 0,3,1,7 }, { 0,1,4,7 },{ 1,3,2,7 },{ 1,2,6,7 },{ 1,5,4,7 },{ 1,6,5,7 } }};
 
 
@@ -172,10 +191,12 @@ int main(int argc, char* argv[]) {
     application.AddTypicalLogo();
     application.AddTypicalSky();
     application.AddTypicalLights();
-    application.AddTypicalCamera(core::vector3df(0, (f32)0.6, -1));
-    application.AddLightWithShadow(core::vector3df(1.5, 5.5, -2.5), core::vector3df(0, 0, 0), 3, 2.2, 7.2, 40, 512, video::SColorf(1, 1, 1));
+    application.AddTypicalCamera(core::vector3df(0.6f,0.2f,0.4f));
+    application.AddLightWithShadow(core::vector3df(1.5, -5.5, -2.5), core::vector3df(0, 0, 0), 3, 2.2, 7.2, 40, 512, video::SColorf(1, 1, 1));
+
 
 	application.SetContactsDrawMode(ChIrrTools::CONTACT_NORMALS);
+	application.SetPlotLinkFrames(true);
 	application.SetSymbolscale(0.25);
 
     //
@@ -250,31 +271,37 @@ int main(int argc, char* argv[]) {
 
 	auto fixed_truss = std::make_shared<ChBodyEasyBox>(0.1, 0.1, 0.1, 1000, false, true, ChMaterialSurface::NSC);
 	fixed_truss->SetBodyFixed(true);
-	fixed_truss->SetPos(cylinder_up->GetPos());
+	fixed_truss->SetPos(cylinder_up->GetPos() + ChVector<>(0.0,clearance,0.0));
 	my_system.Add(fixed_truss);
 
+	if (true)
+	{
+		// Impose motion to upper cylinder
+		auto cylinder_motionlink = std::make_shared<ChLinkLockPrismatic>();
+		cylinder_motionlink->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(fixed_truss->GetPos(), chrono::Q_from_AngAxis(-CH_C_PI / 2, VECT_X)));  // set prism as vertical (default would be aligned to z, horizontal
+		my_system.AddLink(cylinder_motionlink);
 
-	//auto cyl_motion = std::make_shared<ChLinkLockPrismatic>();
-	////cyl_motion->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(ChVector<>(0.0,0.0,0.0), ChQuaternion<>(1.0,0.0,0.0,0.0)));
-	//cyl_motion->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(ChVector<>(0.0,0.0,0.0), Q_from_AngX(CH_C_PI_2)) );
-	//auto cyl_motion_function = std::make_shared<ChFunction_Poly>();
-	//cyl_motion_function->Set_order(1);
-	//cyl_motion_function->Set_coeff(+0.1, 1);
-	//cyl_motion_function->Set_coeff(0.0, 0);
-	//cyl_motion->SetMotion_Z(cyl_motion_function);
-	//my_system.AddLink(cyl_motion);
-
-	// .. create the prismatic joint between the fork and arm
-	auto cylinder_motionlink = std::make_shared<ChLinkLockPrismatic>();
-	cylinder_motionlink->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(ChVector<>(0.0, 0.0, 0.0), chrono::Q_from_AngAxis(CH_C_PI / 2, VECT_X)));  // set prism as vertical (default would be aligned to z, horizontal
-	my_system.AddLink(cylinder_motionlink);
-
-	// .. create the linear actuator that pushes upward the fork
-	auto cylinder_actuatorlink = std::make_shared<ChLinkLinActuator>();
-	cylinder_actuatorlink->Initialize(cylinder_up, fixed_truss, false,
-		ChCoordsys<>(ChVector<>(0, -0.01, 0), QUNIT),
-		ChCoordsys<>(VNULL, QUNIT));
-	my_system.AddLink(cylinder_actuatorlink);
+		auto cylinder_actuatorlink = std::make_shared<ChLinkLinActuator>();
+		cylinder_actuatorlink->Initialize(cylinder_up, fixed_truss, false, ChCoordsys<>(ChVector<>(0, -clearance, 0), QUNIT), ChCoordsys<>(VNULL, QUNIT));
+		auto lin_fx = std::make_shared<ChFunction_Ramp>();
+		lin_fx->Set_ang(+0.5);
+		lin_fx->Set_y0(0.0);
+		cylinder_actuatorlink->Set_dist_funct(lin_fx); // set the L=L(t)
+		cylinder_actuatorlink->Set_lin_offset(0.01);  // initial offset distance between the two connected csys
+		my_system.AddLink(cylinder_actuatorlink);
+	}
+	else
+	{
+		auto cyl_motion = std::make_shared<ChLinkLockLock>();
+		//cyl_motion->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(ChVector<>(0.0,0.0,0.0), ChQuaternion<>(1.0,0.0,0.0,0.0)));
+		cyl_motion->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(VNULL, Q_from_AngX(-CH_C_PI_2)));
+		auto cyl_motion_function = std::make_shared<ChFunction_Ramp>();
+		cyl_motion_function->Set_ang(-1);
+		cyl_motion_function->Set_y0(0.0);
+		cyl_motion->SetMotion_Z(cyl_motion_function);
+		my_system.AddLink(cyl_motion);
+	}
+	
 
 	// ==Asset== attach a visualization of the FEM mesh.
 	// This will automatically update a triangle mesh (a ChTriangleMeshShape
@@ -285,7 +312,7 @@ int main(int argc, char* argv[]) {
 	// Do not forget AddAsset() at the end!
 
 	auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*tetra_mesh.get());
-	mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
+	mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
 	mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
 	mvisualizemesh->SetSmoothFaces(true);
 	tetra_mesh->AddAsset(mvisualizemesh);
@@ -328,7 +355,7 @@ int main(int argc, char* argv[]) {
     my_system.SetSolver(ip_solver_speed);
     ip_solver_speed->RecordHistory(false);
     ip_solver_speed->SetNullPivotDetection(true, 1e-18);
-    ip_solver_speed->SetVerbose(true);
+    ip_solver_speed->SetVerbose(false);
 
     application.GetSystem()->Update();
     application.SetPaused(true);
