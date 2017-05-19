@@ -189,8 +189,8 @@ void create_jengatower_bodies(ChSystemNSC& mphysicalSystem) {
     mrigidBall->SetPos(ChVector<>(0, 3, -8));
     mrigidBall->SetPos_dt(ChVector<>(0, 0, 2));           // set initial speed
     mrigidBall->GetMaterialSurfaceNSC()->SetFriction(0.4f);  // use own (not shared) matrial properties
-    mrigidBall->GetMaterialSurfaceNSC()->SetCompliance(0.005);
-    mrigidBall->GetMaterialSurfaceNSC()->SetComplianceT(0.005);
+    mrigidBall->GetMaterialSurfaceNSC()->SetCompliance(0.005f);
+    mrigidBall->GetMaterialSurfaceNSC()->SetComplianceT(0.005f);
     mrigidBall->GetMaterialSurfaceNSC()->SetDampingF(0.2f);
 
     mphysicalSystem.Add(mrigidBall);

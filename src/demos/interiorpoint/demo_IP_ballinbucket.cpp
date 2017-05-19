@@ -218,7 +218,7 @@ int main(int argc, char* argv[]) {
 
     }
     std::cout << "Time spent: " << ip_solver_speed->GetIPTimer() << "; IP calls: " << ip_solver_speed->GetIPSolverCalls() << "; IP iterations: " << ip_solver_speed->GetIPIterations() << std::endl;
-    std::cout << "Mass matrix size: " << ip_solver_speed->GetMassMatrixDimension() << "; Jacobian rows: " << ip_solver_speed->GetJacobianMatrixRows() << std::endl;
+    std::cout << "Mass matrix size: " << ip_solver_speed->GetMassMatrixDimension() << "; Inequalities: " << ip_solver_speed->GetUnilateralConstraintsMatrixRows()<< "; Equalities: " << ip_solver_speed->GetBilateralConstraintsMatrixRows() <<std::endl;
     getchar();
 
     return 0;

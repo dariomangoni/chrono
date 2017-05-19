@@ -115,7 +115,7 @@ void create_system(ChSystemNSC& mphysicalSystem) {
 			true);  // visualization?
 		mrigidBall->SetMaterialSurface(mmaterial);
 		mrigidBall->SetMass(10);
-		mrigidBall->SetPos(ChVector<>(0, 3, 0));
+		mrigidBall->SetPos(ChVector<>(0, 1.5, 0));
 		mrigidBall->SetPos_dt(ChVector<>(0, -1, 0));          // set initial speed
 
 		mphysicalSystem.Add(mrigidBall);
@@ -180,6 +180,7 @@ int main(int argc, char* argv[]) {
     mphysicalSystem.SetStabSolver(ip_solver_stab);
     mphysicalSystem.SetSolver(ip_solver_speed);
     ip_solver_speed->RecordHistory(false);
+    ip_solver_speed->SetVerbose(true);
     application.GetSystem()->Update();
 
     //// Change solver to Matlab external linear solver, for max precision in benchmarks
@@ -198,6 +199,7 @@ int main(int argc, char* argv[]) {
     application.SetStepManage(true);
     application.SetTimestep(0.02);
     //application.SetTryRealtime(true);
+	application.SetPaused(true);
 
     int step_counter = 0;
     while (application.GetDevice()->run()) {
@@ -222,8 +224,8 @@ int main(int argc, char* argv[]) {
 
         application.GetVideoDriver()->endScene();
 
-        if (ip_solver_speed->GetSolverCalls() > 100)
-            break;
+        //if (ip_solver_speed->GetSolverCalls() > 100)
+        //    break;
     }
 
     std::cout << "Time spent: " << ip_solver_speed->GetIPTimer() << "; IP calls: " << ip_solver_speed->GetIPSolverCalls() << "; IP iterations: " << ip_solver_speed->GetIPIterations() << std::endl;

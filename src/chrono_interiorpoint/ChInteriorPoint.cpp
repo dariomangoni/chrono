@@ -146,9 +146,9 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 	else
 		rhs.b_ineq = rhs.b;
 
+
     ip_solver_call++;
     ip_timer.start();
-
 
 
     if( ADD_COMPLIANCE && m_ineq > 0 )
@@ -199,9 +199,6 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 }
 
 // Iterating function
-// output: (v, y, lambda) are computed
-// (res.rp_lambda, res.rd, res.mu) are updated based on most recent (v, y, lambda)
-// (res.rp_lambda, res.rd, res.mu, v, y, lambda) are taken as they are
 void ChInteriorPoint::iterate() {
     /*********************************************************************************/
     /***************************** Prediction Phase **********************************/
@@ -235,6 +232,7 @@ void ChInteriorPoint::iterate() {
 
 
     /*** make the prediction step ***/
+	// update only variables needed for complementarity measure
     IPvariables_t var_pred(n, m_eq, m_ineq);
 
     var_pred.y = Dvar_pred.y;
@@ -780,13 +778,15 @@ void ChInteriorPoint::reset_internal_dimensions(int n_new, int m_eq_new, int m_i
 }
 
 void ChInteriorPoint::DumpProblem(std::string suffix) {
-    CreateDirectory("dump", nullptr);
-    ExportArrayToFile(var.y, "dump/y" + suffix + ".txt");
-    ExportArrayToFile(var.v, "dump/v" + suffix + ".txt");
-    ExportArrayToFile(var.lambda, "dump/lambda" + suffix + ".txt");
+	CreateDirectory("dump", nullptr);
+    ExportArrayToFile(var.y, "dump/var_y" + suffix + ".txt");
+    ExportArrayToFile(var.v, "dump/var_v" + suffix + ".txt");
+    ExportArrayToFile(var.gamma, "dump/var_gamma" + suffix + ".txt");
+    ExportArrayToFile(var.lambda, "dump/var_lambda" + suffix + ".txt");
 
-    ExportArrayToFile(rhs.b, "dump/b" + suffix + ".txt");
-    ExportArrayToFile(rhs.c, "dump/c" + suffix + ".txt");
+    ExportArrayToFile(rhs.b_eq, "dump/rhs_b_eq" + suffix + ".txt");
+    ExportArrayToFile(rhs.b_ineq, "dump/rhs_b_ineq" + suffix + ".txt");
+    ExportArrayToFile(rhs.c, "dump/rhs_c" + suffix + ".txt");
 
     BigMat.Compress();
     BigMat.ExportToDatFile("dump/", 8);
