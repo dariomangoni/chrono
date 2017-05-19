@@ -112,13 +112,62 @@ int ChSystemDescriptor::CountActiveConstraints(bool only_bilaterals, bool skip_c
     int n_c_mod = 0;
     for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive())
-            if (!((vconstraints[ic]->GetMode() == CONSTRAINT_FRIC) && only_bilaterals))
-                if (!((dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(vconstraints[ic])) && skip_contacts_uv)) {
+            if (!(vconstraints[ic]->GetMode() == CONSTRAINT_FRIC && only_bilaterals))
+                if (!(dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(vconstraints[ic]) && skip_contacts_uv)) {
                     n_c_mod++;
                 }
     }
 
     return n_c_mod;
+}
+
+
+void ChSystemDescriptor::SortActiveConstraints() {
+	
+	// first put equalities
+	auto counter = 0; // can be #n_c if wanted;
+	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+		if (vconstraints[ic]->IsActive() && !(vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL))
+		{
+			vconstraints[ic]->SetOffset(counter);
+			counter++;
+		}
+	}
+
+	// then put inequalities
+	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+		if (vconstraints[ic]->IsActive() && (vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL))
+		{
+			vconstraints[ic]->SetOffset(counter);
+			counter++;
+		}
+
+	}
+
+}
+
+std::tuple<unsigned int, unsigned int, unsigned int> ChSystemDescriptor::CountActiveConstraintsSorted(bool skip_contacts_uv) {
+
+	n_c = 0;
+	unsigned int n_c_ineq_nouv = 0;
+	unsigned int n_c_ineq_full = 0;
+	unsigned int n_c_eq = 0;
+	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+		if (vconstraints[ic]->IsActive())
+		{
+			++n_c;
+			if (vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL || vconstraints[ic]->GetMode() == CONSTRAINT_FRIC)
+			{
+				++n_c_ineq_full;
+				if (!(skip_contacts_uv && dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(vconstraints[ic])))
+					++n_c_ineq_nouv;
+			}
+			else
+				++n_c_eq;
+		}
+	}
+
+	return std::tuple<unsigned int, unsigned int, unsigned int>(n_c_eq, n_c_ineq_full, n_c_ineq_nouv);
 }
 
 void ChSystemDescriptor::UpdateCountsAndOffsets() {
@@ -234,33 +283,23 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Cq,
 
 void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z,
                                              ChMatrix<>* rhs,
-                                             bool only_bilaterals,
                                              bool skip_contacts_uv,
-                                             int format)
+											 bool add_compliance)
 
 {
-    std::vector<ChConstraint*>& mconstraints = this->GetConstraintsList();
-    std::vector<ChVariables*>& mvariables = this->GetVariablesList();
+    auto& mconstraints = this->GetConstraintsList();
+    auto& mvariables = this->GetVariablesList();
 
     // Count bilateral and other constraints.. (if wanted, bilaterals only)
-    int mn_c = this->CountActiveConstraints(only_bilaterals, skip_contacts_uv);
-
-    // for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-    // if (mconstraints[ic]->IsActive())
-    // mn_c++;
-    // }
+    auto mn_c_tuple = this->CountActiveConstraintsSorted(skip_contacts_uv);
+	auto mn_c = std::get<0>(mn_c_tuple) + std::get<2>(mn_c_tuple);
 
     // Count active variables, by scanning through all variable blocks, and set offsets.
     n_q = this->CountActiveVariables();
 
     // Reset and resize (if needed) auxiliary vectors. Most of the times the matrix will be only erased
     if (Z)
-    {
-        if (format == 0 || format == 1)
-            Z->Reset(n_q + mn_c, n_q + mn_c);
-        else if (format == 2)
-            Z->Reset(n_q + 2 * mn_c, n_q + 2 * mn_c);
-    }
+		Z->Reset(n_q + mn_c, n_q + mn_c);
 
     if (rhs)
         rhs->Reset(n_q + mn_c, 1);
@@ -286,27 +325,24 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z,
     }
 
     // Fills Z and rhs by looping on constraints
-    int offset_AT_col = 0;
-    if (format == 2)
-        offset_AT_col = mn_c;
 
 
     int s_c = 0;
     for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-        if (mconstraints[ic]->IsActive())
-            if (!((mconstraints[ic]->GetMode() == CONSTRAINT_FRIC) && only_bilaterals))
-                if (!((dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(mconstraints[ic])) && skip_contacts_uv)) {
-                    if (Z)
-                    {
-                        mconstraints[ic]->Build_Cq(*Z, n_q + s_c);   // .. fills Z with constraints (lower left corner)
-                        mconstraints[ic]->Build_CqT(*Z, n_q + offset_AT_col + s_c);  // .. fills Z with constraints (upper right corner)
-                        if (format == 0)
-                            Z->SetElement(n_q + s_c, n_q + s_c, mconstraints[ic]->Get_cfm_i());  // .. fills Z with -E ( = cfm ) (lower right corner)
-                    }
-                    if (rhs)
-                        (*rhs)(n_q + s_c) = -(mconstraints[ic]->Get_b_i());  // .. fills 'rhs' with '-b' in the lower section
-                    s_c++;
-                }
+		if (mconstraints[ic]->IsActive())
+			if (mconstraints[ic]->GetMode() == CONSTRAINT_FRIC && skip_contacts_uv && dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(mconstraints[ic]))
+				continue;
+
+            if (Z)
+            {
+                mconstraints[ic]->Build_Cq(*Z, n_q + s_c);   // .. fills Z with constraints (lower left corner)
+                mconstraints[ic]->Build_CqT(*Z, n_q + s_c);  // .. fills Z with constraints (upper right corner)
+                if (add_compliance)
+					Z->SetElement(n_q + s_c, n_q + s_c, mconstraints[ic]->Get_cfm_i());  // .. fills Z with -E ( = cfm ) (lower right corner) //TODO: is putting something or not?
+            }
+            if (rhs)
+                (*rhs)(n_q + s_c) = -(mconstraints[ic]->Get_b_i());  // .. fills 'rhs' with '-b' in the lower section
+            s_c++;
     }
 
 }

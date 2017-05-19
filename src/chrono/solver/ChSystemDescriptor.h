@@ -133,8 +133,10 @@ public:
 
     /// Test function that takes into account the possibility that some rows of Cq are skipped
     virtual int CountActiveConstraints(bool only_bilaterals, bool skip_contacts_uv);
+	void SortActiveConstraints();
+	std::tuple<unsigned, unsigned, unsigned> CountActiveConstraintsSorted(bool skip_contacts_uv);
 
-    /// Updates counts of scalar variables and scalar constraints,
+	/// Updates counts of scalar variables and scalar constraints,
     /// if you added/removed some item or if you switched some active state,
     /// otherwise CountActiveVariables() and CountActiveConstraints() might fail.
     virtual void UpdateCountsAndOffsets();
@@ -359,11 +361,10 @@ public:
                                      bool only_bilaterals = false,
                                      bool skip_contacts_uv = false);
 
-    virtual void ConvertToMatrixForm(ChSparseMatrix* Z,
-                                     ChMatrix<>* rhs,
-                                     bool only_bilaterals = false,
-                                     bool skip_contacts_uv = false,
-                                     int format = 0);
+	virtual void ConvertToMatrixForm(ChSparseMatrix* Z,
+	                                 ChMatrix<>* rhs,
+	                                 bool skip_contacts_uv = false,
+		                             bool add_compliance = false);
 
 
     /// Saves to disk the LAST used matrices of the problem.
