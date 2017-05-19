@@ -10,10 +10,10 @@
 // and at http://projectchrono.org/license-chrono.txt.
 //
 
-#include "chrono/solver/ChSystemDescriptor.h"
+#include "chrono/core/ChLinkedListMatrix.h"
 #include "chrono/solver/ChConstraintTwoTuplesContactN.h"
 #include "chrono/solver/ChConstraintTwoTuplesFrictionT.h"
-#include "chrono/core/ChLinkedListMatrix.h"
+#include "chrono/solver/ChSystemDescriptor.h"
 
 namespace chrono {
 
@@ -52,7 +52,7 @@ ChSystemDescriptor::~ChSystemDescriptor() {
 void ChSystemDescriptor::ComputeFeasabilityViolation(
     double& resulting_maxviolation,  ///< gets the max constraint violation (either bi- and unilateral.)
     double& resulting_feasability    ///< gets the max feasability as max |l*c|, for unilateral only
-    ) {
+) {
     resulting_maxviolation = 0;
     resulting_feasability = 0;
 
@@ -99,6 +99,69 @@ int ChSystemDescriptor::CountActiveConstraints() {
         }
     }
     return n_c;
+}
+
+int ChSystemDescriptor::CountActiveConstraints(bool only_bilaterals, bool skip_contacts_uv) {
+    // if (this->freeze_count)  // optimization, avoid list count all times
+    //	return n_c;
+
+    // Count bilateral and other constraints.. (if wanted, bilaterals only)
+
+    n_c = CountActiveConstraints();  // this has to be done since the call to CountActiveConstraints(bool, bool) must
+                                     // emulated CountActiveConstraints()
+    int n_c_mod = 0;
+    for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+        if (vconstraints[ic]->IsActive())
+            if (!(vconstraints[ic]->GetMode() == CONSTRAINT_FRIC && only_bilaterals))
+                if (!(dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(vconstraints[ic]) && skip_contacts_uv)) {
+                    n_c_mod++;
+                }
+    }
+
+    return n_c_mod;
+}
+
+void ChSystemDescriptor::SortActiveConstraints() {
+    // first put equalities
+    auto counter = 0;  // can be #n_c if wanted;
+    for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+        if (vconstraints[ic]->IsActive() &&
+            !(vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL)) {
+            vconstraints[ic]->SetOffset(counter);
+            counter++;
+        }
+    }
+
+    // then put inequalities
+    for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+        if (vconstraints[ic]->IsActive() &&
+            (vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL)) {
+            vconstraints[ic]->SetOffset(counter);
+            counter++;
+        }
+    }
+}
+
+std::tuple<unsigned int, unsigned int, unsigned int> ChSystemDescriptor::CountActiveConstraintsSorted(
+    bool skip_contacts_uv) {
+    n_c = 0;
+    unsigned int n_c_ineq_nouv = 0;
+    unsigned int n_c_ineq_full = 0;
+    unsigned int n_c_eq = 0;
+    for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
+        if (vconstraints[ic]->IsActive()) {
+            ++n_c;
+            if (vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL ||
+                vconstraints[ic]->GetMode() == CONSTRAINT_FRIC) {
+                ++n_c_ineq_full;
+                if (!(skip_contacts_uv && dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(vconstraints[ic])))
+                    ++n_c_ineq_nouv;
+            } else
+                ++n_c_eq;
+        }
+    }
+
+    return std::tuple<unsigned int, unsigned int, unsigned int>(n_c_eq, n_c_ineq_full, n_c_ineq_nouv);
 }
 
 void ChSystemDescriptor::UpdateCountsAndOffsets() {
@@ -201,88 +264,82 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Cq,
     }
 }
 
-void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z, ChMatrix<>* rhs) {
+// Convert to different formats:
+// format = 0; | M  Cq'|*| q|-| f|=|0|
+//             | Cq  E | |-l| |-b| |c|
+//
+// format = 1; | M  Cq'|
+//             | Cq  0 |
+//
+// format = 2; | M   0  Cq'|
+//             | Cq  0   0 |
+//             | 0   0   0 |
 
-    std::vector<ChConstraint*>& mconstraints = this->GetConstraintsList();
-    std::vector<ChVariables*>& mvariables = this->GetVariablesList();
+void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z,
+                                             ChMatrix<>* rhs,
+                                             bool skip_contacts_uv,
+                                             bool add_compliance)
 
-    // Count constraints.
-    int mn_c = 0;
-    for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-        if (mconstraints[ic]->IsActive())
-            mn_c++;
-    }
+{
+    auto& mconstraints = this->GetConstraintsList();
+    auto& mvariables = this->GetVariablesList();
+
+    // Count bilateral and other constraints.. (if wanted, bilaterals only)
+    auto mn_c_tuple = this->CountActiveConstraintsSorted(skip_contacts_uv);
+    auto mn_c = std::get<0>(mn_c_tuple) + std::get<2>(mn_c_tuple);
 
     // Count active variables, by scanning through all variable blocks, and set offsets.
     n_q = this->CountActiveVariables();
 
-   
-	if (Z)
-	{
-		Z->Reset(n_q + mn_c, n_q + mn_c);
+    // Reset and resize (if needed) auxiliary vectors. Most of the times the matrix will be only erased
+    if (Z)
+        Z->Reset(n_q + mn_c, n_q + mn_c);
 
-		// Fill Z with masses and inertias.
-		int s_q = 0;
-		for (unsigned int iv = 0; iv < mvariables.size(); iv++) {
-			if (mvariables[iv]->IsActive()) {
-				// Masses and inertias in upper-left block of Z
-				mvariables[iv]->Build_M(*Z, s_q, s_q, this->c_a);
-				s_q += mvariables[iv]->Get_ndof();
-			}
-		}
+    if (rhs)
+        rhs->Reset(n_q + mn_c, 1);
 
-		// If present, add stiffness matrix K to upper-left block of Z.
-		int s_k = 0;
-		for (unsigned int ik = 0; ik < this->vstiffness.size(); ik++) {
-			this->vstiffness[ik]->Build_K(*Z, true);
-		}
+    // Fills Z and rhs with masses and inertias, fills rhs with 'f'
+    int s_q = 0;
+    for (unsigned int iv = 0; iv < mvariables.size(); iv++) {
+        if (mvariables[iv]->IsActive()) {
+            if (Z)
+                mvariables[iv]->Build_M(*Z, s_q, s_q,
+                                        this->c_a);  // .. fills Z with masses and inertias in the upper left corner
+            if (rhs)
+                rhs->PasteMatrix(vvariables[iv]->Get_fb(), s_q, 0);  // .. fills 'rhs' with 'f' in the upper section
+            s_q += mvariables[iv]->Get_ndof();
+        }
+    }
 
-		// Fill Z by looping over constraints.
-		int s_c = 0;
-		for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-			if (mconstraints[ic]->IsActive()) {
-				// Constraint Jacobian in lower-left block of Z
-				mconstraints[ic]->Build_Cq(*Z, n_q + s_c);
-				// Transposed constraint Jacobian in upper-right block of Z
-				mconstraints[ic]->Build_CqT(*Z, n_q + s_c);
-				// -E ( = cfm ) in lower-right block of Z
-				Z->SetElement(n_q + s_c, n_q + s_c, mconstraints[ic]->Get_cfm_i());
-				//Z->Element(n_q + s_c, n_q + s_c) = mconstraints[ic]->Get_cfm_i();
-				s_c++;
-			}
-		}
-	}
-    
+    // If some stiffness / hessian matrix has been added, add it to the sparse Z
+    int s_k = 0;
+    for (unsigned int ik = 0; ik < this->vstiffness.size(); ik++) {
+        if (Z)
+            this->vstiffness[ik]->Build_K(*Z, true);  // add K matrix in the upper left corner of Z
+    }
 
-	if (rhs)
-	{
-		rhs->Reset(n_q + mn_c, 1);
+    // Fills Z and rhs by looping on constraints
 
-		// Fill rhs with forces.
-		int s_q = 0;
-		for (unsigned int iv = 0; iv < mvariables.size(); iv++) {
-			if (mvariables[iv]->IsActive()) {
-				// Forces in upper section of rhs
-				rhs->PasteMatrix(vvariables[iv]->Get_fb(), s_q, 0);
-				s_q += mvariables[iv]->Get_ndof();
-			}
-		}
+    int s_c = 0;
+    for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
+        if (mconstraints[ic]->IsActive())
+            if (mconstraints[ic]->GetMode() == CONSTRAINT_FRIC && skip_contacts_uv &&
+                dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(mconstraints[ic]))
+                continue;
 
-
-		// Fill rhs by looping over constraints.
-		int s_c = 0;
-		for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-			if (mconstraints[ic]->IsActive()) {
-				// -b term in lower section of rhs
-				(*rhs)(n_q + s_c) = -(mconstraints[ic]->Get_b_i());
-				s_c++;
-			}
-		}
-	}
-	
-
+        if (Z) {
+            mconstraints[ic]->Build_Cq(*Z, n_q + s_c);   // .. fills Z with constraints (lower left corner)
+            mconstraints[ic]->Build_CqT(*Z, n_q + s_c);  // .. fills Z with constraints (upper right corner)
+            if (add_compliance)
+                Z->SetElement(n_q + s_c, n_q + s_c, mconstraints[ic]->Get_cfm_i());  // .. fills Z with -E ( = cfm )
+                                                                                     // (lower right corner) //TODO: is
+                                                                                     // putting something or not?
+        }
+        if (rhs)
+            (*rhs)(n_q + s_c) = -(mconstraints[ic]->Get_b_i());  // .. fills 'rhs' with '-b' in the lower section
+        s_c++;
+    }
 }
-
 
 void ChSystemDescriptor::DumpLastMatrices(bool assembled, const char* path) {
     char filename[300];
@@ -318,27 +375,27 @@ void ChSystemDescriptor::DumpLastMatrices(bool assembled, const char* path) {
             mdM.StreamOUTsparseMatlabFormat(file_M);
 
             sprintf(filename, "%s%s", path, "Cq.dat");
-                ChStreamOutAsciiFile file_Cq(filename);
+            ChStreamOutAsciiFile file_Cq(filename);
             file_Cq.SetNumFormat(numformat);
             mdCq.StreamOUTsparseMatlabFormat(file_Cq);
 
             sprintf(filename, "%s%s", path, "E.dat");
-                ChStreamOutAsciiFile file_E(filename);
+            ChStreamOutAsciiFile file_E(filename);
             file_E.SetNumFormat(numformat);
             mdE.StreamOUTsparseMatlabFormat(file_E);
 
             sprintf(filename, "%s%s", path, "f.dat");
-                ChStreamOutAsciiFile file_f(filename);
+            ChStreamOutAsciiFile file_f(filename);
             file_f.SetNumFormat(numformat);
             mdf.StreamOUTdenseMatlabFormat(file_f);
 
             sprintf(filename, "%s%s", path, "b.dat");
-                ChStreamOutAsciiFile file_b(filename);
+            ChStreamOutAsciiFile file_b(filename);
             file_b.SetNumFormat(numformat);
             mdb.StreamOUTdenseMatlabFormat(file_b);
 
             sprintf(filename, "%s%s", path, "fric.dat");
-                ChStreamOutAsciiFile file_fric(filename);
+            ChStreamOutAsciiFile file_fric(filename);
             file_fric.SetNumFormat(numformat);
             mdfric.StreamOUTdenseMatlabFormat(file_fric);
         }
@@ -348,11 +405,11 @@ void ChSystemDescriptor::DumpLastMatrices(bool assembled, const char* path) {
 }
 
 int ChSystemDescriptor::BuildFbVector(ChMatrix<>& Fvector  ///< matrix which will contain the entire vector of 'f'
-                                         ) {
+) {
     n_q = CountActiveVariables();
     Fvector.Reset(n_q, 1);  // fast! Reset() method does not realloc if size doesn't change
 
-// Fills the 'f' vector
+    // Fills the 'f' vector
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive()) {
             Fvector.PasteMatrix(vvariables[iv]->Get_fb(), vvariables[iv]->GetOffset(), 0);
@@ -362,11 +419,11 @@ int ChSystemDescriptor::BuildFbVector(ChMatrix<>& Fvector  ///< matrix which wil
 }
 
 int ChSystemDescriptor::BuildBiVector(ChMatrix<>& Bvector  ///< matrix which will contain the entire vector of 'b'
-                                         ) {
+) {
     n_c = CountActiveConstraints();
     Bvector.Resize(n_c, 1);
 
-// Fill the 'b' vector
+    // Fill the 'b' vector
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             Bvector(vconstraints[ic]->GetOffset()) = vconstraints[ic]->Get_b_i();
@@ -382,13 +439,13 @@ int ChSystemDescriptor::BuildDiVector(ChMatrix<>& Dvector) {
 
     Dvector.Reset(n_q + n_c, 1);  // fast! Reset() method does not realloc if size doesn't change
 
-// Fills the 'f' vector part
+    // Fills the 'f' vector part
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive()) {
             Dvector.PasteMatrix(vvariables[iv]->Get_fb(), vvariables[iv]->GetOffset(), 0);
         }
     }
-// Fill the '-b' vector (with flipped sign!)
+    // Fill the '-b' vector (with flipped sign!)
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             Dvector(vconstraints[ic]->GetOffset() + n_q) = -vconstraints[ic]->Get_b_i();
@@ -400,7 +457,7 @@ int ChSystemDescriptor::BuildDiVector(ChMatrix<>& Dvector) {
 
 int ChSystemDescriptor::BuildDiagonalVector(
     ChMatrix<>& Diagonal_vect  ///< matrix which will contain the entire vector of terms on M and E diagonal
-    ) {
+) {
     n_q = CountActiveVariables();
     n_c = CountActiveConstraints();
 
@@ -419,7 +476,7 @@ int ChSystemDescriptor::BuildDiagonalVector(
         }
     }
 
-// Get the 'E' diagonal terms (note the sign: E_i = -cfm_i )
+    // Get the 'E' diagonal terms (note the sign: E_i = -cfm_i )
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             Diagonal_vect(vconstraints[ic]->GetOffset() + n_q) = -vconstraints[ic]->Get_cfm_i();
@@ -435,7 +492,7 @@ int ChSystemDescriptor::FromVariablesToVector(ChMatrix<>& mvector, bool resize_v
         mvector.Resize(n_q, 1);
     }
 
-// Fill the vector
+    // Fill the vector
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive()) {
             mvector.PasteMatrix(vvariables[iv]->Get_qb(), vvariables[iv]->GetOffset(), 0);
@@ -449,7 +506,7 @@ int ChSystemDescriptor::FromVectorToVariables(ChMatrix<>& mvector) {
     assert(CountActiveVariables() == mvector.GetRows());
     assert(mvector.GetColumns() == 1);
 
-// fetch from the vector
+    // fetch from the vector
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive()) {
             vvariables[iv]->Get_qb().PasteClippedMatrix(mvector, vvariables[iv]->GetOffset(), 0,
@@ -467,7 +524,7 @@ int ChSystemDescriptor::FromConstraintsToVector(ChMatrix<>& mvector, bool resize
         mvector.Resize(n_c, 1);
     }
 
-// Fill the vector
+    // Fill the vector
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             mvector(vconstraints[ic]->GetOffset()) = vconstraints[ic]->Get_l_i();
@@ -483,7 +540,7 @@ int ChSystemDescriptor::FromVectorToConstraints(ChMatrix<>& mvector) {
     assert(n_c == mvector.GetRows());
     assert(mvector.GetColumns() == 1);
 
-// Fill the vector
+    // Fill the vector
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             vconstraints[ic]->Set_l_i(mvector(vconstraints[ic]->GetOffset()));
@@ -502,13 +559,13 @@ int ChSystemDescriptor::FromUnknownsToVector(ChMatrix<>& mvector, bool resize_ve
         mvector.Resize(n_q + n_c, 1);
     }
 
-// Fill the first part of vector, x.q ,with variables q
+    // Fill the first part of vector, x.q ,with variables q
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive()) {
             mvector.PasteMatrix(vvariables[iv]->Get_qb(), vvariables[iv]->GetOffset(), 0);
         }
     }
-// Fill the second part of vector, x.l, with constraint multipliers -l (with flipped sign!)
+    // Fill the second part of vector, x.l, with constraint multipliers -l (with flipped sign!)
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             mvector(vconstraints[ic]->GetOffset() + n_q) = -vconstraints[ic]->Get_l_i();
@@ -525,14 +582,14 @@ int ChSystemDescriptor::FromVectorToUnknowns(ChMatrix<>& mvector) {
     assert((n_q + n_c) == mvector.GetRows());
     assert(mvector.GetColumns() == 1);
 
-// fetch from the first part of vector (x.q = q)
+    // fetch from the first part of vector (x.q = q)
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive()) {
             vvariables[iv]->Get_qb().PasteClippedMatrix(mvector, vvariables[iv]->GetOffset(), 0,
                                                         vvariables[iv]->Get_ndof(), 1, 0, 0);
         }
     }
-// fetch from the second part of vector (x.l = -l), with flipped sign!
+    // fetch from the second part of vector (x.l = -l), with flipped sign!
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             vconstraints[ic]->Set_l_i(-mvector(vconstraints[ic]->GetOffset() + n_q));
@@ -543,16 +600,17 @@ int ChSystemDescriptor::FromVectorToUnknowns(ChMatrix<>& mvector) {
 }
 
 void ChSystemDescriptor::ShurComplementProduct(ChMatrix<>& result, ChMatrix<>* lvector, std::vector<bool>* enabled) {
-    assert(this->vstiffness.size() == 0); // currently, the case with ChKblock items is not supported (only diagonal M is supported, no K)
+    assert(this->vstiffness.size() ==
+           0);  // currently, the case with ChKblock items is not supported (only diagonal M is supported, no K)
     assert(lvector->GetRows() == CountActiveConstraints());
     assert(lvector->GetColumns() == 1);
 
     result.Reset(n_c, 1);  // fast! Reset() method does not realloc if size doesn't change
 
-// Performs the sparse product    result = [N]*l = [ [Cq][M^(-1)][Cq'] - [E] ] *l
-// in different phases:
+    // Performs the sparse product    result = [N]*l = [ [Cq][M^(-1)][Cq'] - [E] ] *l
+    // in different phases:
 
-// 1 - set the qb vector (aka speeds, in each ChVariable sparse data) as zero
+    // 1 - set the qb vector (aka speeds, in each ChVariable sparse data) as zero
 
     for (int iv = 0; iv < (int)vvariables.size(); iv++) {
         if (vvariables[iv]->IsActive())
@@ -591,8 +649,8 @@ void ChSystemDescriptor::ShurComplementProduct(ChMatrix<>& result, ChMatrix<>* l
         }
     }
 
-// 3 - performs    result=[Cq']*qb    by
-//     iterating over all constraints
+    // 3 - performs    result=[Cq']*qb    by
+    //     iterating over all constraints
 
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
@@ -610,12 +668,13 @@ void ChSystemDescriptor::ShurComplementProduct(ChMatrix<>& result, ChMatrix<>* l
     }
 }
 
-void ChSystemDescriptor::SystemProduct(
-    ChMatrix<>& result,  ///< matrix which contains the result of matrix by x
-    ChMatrix<>* x        ///< optional matrix with the vector to be multiplied (if null, use current l_i and q)
-    // std::vector<bool>* enabled=0 ///< optional: vector of enable flags, one per scalar constraint. true=enable,
-    // false=disable (skip)
-    ) {
+void ChSystemDescriptor::SystemProduct(ChMatrix<>& result,  ///< matrix which contains the result of matrix by x
+                                       ChMatrix<>* x        ///< optional matrix with the vector to be multiplied (if null,
+                                                            ///use current l_i and q)
+                                                            // std::vector<bool>* enabled=0 ///< optional: vector of enable
+                                                      // flags, one per scalar constraint. true=enable, false=disable
+                                                      // (skip)
+) {
     n_q = this->CountActiveVariables();
     n_c = this->CountActiveConstraints();
 
@@ -636,9 +695,9 @@ void ChSystemDescriptor::SystemProduct(
 
     result.Reset(n_q + n_c, 1);  // fast! Reset() method does not realloc if size doesn't change
 
-// 1) First row: result.q part =  [M + K]*x.q + [Cq']*x.l
+    // 1) First row: result.q part =  [M + K]*x.q + [Cq']*x.l
 
-// 1.1)  do  M*x.q
+    // 1.1)  do  M*x.q
     for (int iv = 0; iv < (int)vvariables.size(); iv++)
         if (vvariables[iv]->IsActive()) {
             vvariables[iv]->MultiplyAndAdd(result, *x, this->c_a);
@@ -656,7 +715,7 @@ void ChSystemDescriptor::SystemProduct(
         }
     }
 
-// 2) Second row: result.l part =  [C_q]*x.q + [E]*x.l
+    // 2) Second row: result.l part =  [C_q]*x.q + [E]*x.l
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             int s_c = vconstraints[ic]->GetOffset() + n_q;
@@ -672,7 +731,7 @@ void ChSystemDescriptor::SystemProduct(
 
 void ChSystemDescriptor::ConstraintsProject(
     ChMatrix<>& multipliers  ///< matrix which contains the entire vector of 'l_i' multipliers to be projected
-    ) {
+) {
     this->FromVectorToConstraints(multipliers);
 
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
@@ -685,25 +744,25 @@ void ChSystemDescriptor::ConstraintsProject(
 
 void ChSystemDescriptor::UnknownsProject(
     ChMatrix<>& mx  ///< matrix which contains the entire vector of unknowns x={q,-l} (only the l part is projected)
-    ) {
+) {
     n_q = this->CountActiveVariables();
 
-// vector -> constraints
-// Fetch from the second part of vector (x.l = -l), with flipped sign!
+    // vector -> constraints
+    // Fetch from the second part of vector (x.l = -l), with flipped sign!
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             vconstraints[ic]->Set_l_i(-mx(vconstraints[ic]->GetOffset() + n_q));
         }
     }
 
-// constraint projection!
+    // constraint projection!
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive())
             vconstraints[ic]->Project();
     }
 
-// constraints -> vector
-// Fill the second part of vector, x.l, with constraint multipliers -l (with flipped sign!)
+    // constraints -> vector
+    // Fill the second part of vector, x.l, with constraint multipliers -l (with flipped sign!)
     for (int ic = 0; ic < (int)vconstraints.size(); ic++) {
         if (vconstraints[ic]->IsActive()) {
             mx(vconstraints[ic]->GetOffset() + n_q) = -vconstraints[ic]->Get_l_i();
