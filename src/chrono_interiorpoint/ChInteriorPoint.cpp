@@ -73,9 +73,7 @@ void ImportArrayFromFile(ChMatrix<>& output_mat, std::string filename) {
 double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     solver_call++;
 
-    // The problem to be solved is loaded into the main matrix that will be used to solve the various step of the IP
-    // method The initial guess is modified in order to be feasible The residuals are computed
-
+	ip_timer_solve_assembly.start();
     /********** Load system **********/
 	// for optimization of the starting point
     auto n_old = n;
@@ -91,15 +89,13 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 	if (!leverage_symmetry)
 		make_positive_definite();
 
-
     sysd.ConvertToMatrixForm(nullptr, nullptr, nullptr, &rhs.c, &rhs.b, nullptr, false, SKIP_CONTACTS_UV);  // load f->c and b->b
     rhs.c.MatrScale(-1); // adapt to InteriorPoint convention
     rhs.b.MatrScale(-1); // adapt to InteriorPoint convention
 
-
+	ip_timer_solve_assembly.stop();
 #ifdef BYPASS_RESTITUTION_TERM
-    rhs.b.FillElem(0); // TODO: WARNING: removing phi/h!!!
-    //rhs.b*=1e-3; // TODO: WARNING: removing phi/h!!!
+    rhs.b.FillElem(0);
 #endif
 
     /********** Check if system has inequality constraints **********/
@@ -143,6 +139,9 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     }
 
     /********* The system DOES have constraints! Start Interior Point ********/
+	ip_solver_call++;
+	ip_timer_solver_solvercall.start();
+
 	if (m_eq > 0)
 	{
 		rhs.b_eq.PasteClippedMatrix(rhs.b, 0, 0, m_eq, 1, 0, 0);
@@ -150,10 +149,6 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 	}
 	else
 		rhs.b_ineq = rhs.b;
-
-
-    ip_solver_call++;
-    ip_timer.start();
 
 
     if( ADD_COMPLIANCE && m_ineq > 0 )
@@ -170,32 +165,19 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
         iterate();
         iteration_count_tot++;
 
-        /*********************************************************************************/
-        /******************************** Exit conditions ********************************/
-        /*********************************************************************************/
-
-
         if( verbose )
-        {
 			PrintIPStatus();
-			residual_fullupdate(res, var);
-			PrintIPStatus();
-        }
 
-        //DumpProblem("_end");
-
-        if( res <= res_nnorm_tol )
+        if( res <= res_nnorm_tol ) // check for exit conditions (less OR EQUAL in order to catch zero residual (for example, no bilateral))
         {
             if( verbose )
-                std::cout << "IP call: " << solver_call << "; iter: " << iteration_count << "/" << iteration_count_max
-                << std::endl;
-
+                std::cout << "IP call: " << solver_call << "; iter: " << iteration_count << "/" << iteration_count_max << std::endl;
 
             break;
         }
     }
 
-    ip_timer.stop();
+    ip_timer_solver_solvercall.stop();
 
     // Scatter the solution into the Chrono environment
     sysd.FromVectorToUnknowns(adapt_to_Chrono(sysd, sol_chrono));
@@ -255,7 +237,7 @@ void ChInteriorPoint::iterate() {
 	if (mu_pred == 0)
 		std::cout << "IP warning: complementarity measure is 0, but probably we are not at the optimal solution." << std::endl;
 
-    if( ONLY_PREDICT )
+    if( ONLY_PREDICT)
     {
 		// update remaining variables (v, gamma)
         var_pred.v = Dvar_pred.v;
@@ -263,7 +245,7 @@ void ChInteriorPoint::iterate() {
     	var_pred.v += var.v;
 
 		var_pred.gamma = Dvar_pred.gamma;
-		var_pred.gamma.MatrScale(alfa_pred_dual); //TODO: check if dual or primal
+		var_pred.gamma.MatrScale(alfa_pred_dual);
 		var_pred.gamma += var.gamma;
 
 		// store in global variables
@@ -347,7 +329,7 @@ void ChInteriorPoint::iterate() {
     {
         if( logfile_stream.is_open() )
         {
-            logfile_stream << std::endl << res.rp_lambda.NormTwo() / m_ineq << ", " << res.rd.NormTwo() / n << ", " << res.mu << ", " << evaluate_objective_function();
+            logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / m_eq << ", " << res.rp_lambda.NormTwo() / m_ineq  << ", " << res.mu << ", " << evaluate_objective_function();
         }
         else
         {
@@ -356,14 +338,12 @@ void ChInteriorPoint::iterate() {
             if( logfile_stream.is_open() )
             {
                 logfile_stream << std::scientific << std::setprecision(6);
-                logfile_stream << "res_P res_D mu objfun";
+                logfile_stream << "r_{D} r_{P_{\\gamma}} r_{P_{\\lambda}} \\mu objfun";
 
-                logfile_stream << std::endl << res.rp_lambda.NormTwo() / m_ineq << ", " << res.rd.NormTwo() / n << ", " << res.mu << ", " << evaluate_objective_function();
+				logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / m_eq << ", " << res.rp_lambda.NormTwo() / m_ineq << ", " << res.mu << ", " << evaluate_objective_function();
 
 #ifdef CHRONO_POSTPROCESS
                 postprocess::ChGnuPlot mplot(("__" + logfile_name + ".gpl").c_str());
-
-                auto column_number = 3;
                 mplot.SetGrid();
 
                 mplot.SetCommand("bind s 'plot_history = 0'");
@@ -419,10 +399,14 @@ void ChInteriorPoint::setup_system_matrix(const IPvariables_t& vars) {
     mumps_engine.SetMatrix(BigMat);
     for (auto loop_expand_workspace_size = 0; loop_expand_workspace_size < 5; ++loop_expand_workspace_size)
     {
-        if (!mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE))
-            break;
-        mumps_engine.SetICNTL(14, static_cast<int>(round(mumps_engine.GetICNTL(14)*1.5)));
-        std::cout << "MUMPS work space will be allocated overestimating the estimate by " << mumps_engine.GetICNTL(14) << "%" << std::endl;
+        if (mumps_engine.MumpsCall(ChMumpsEngine::ANALYZE_FACTORIZE) == 9)
+        {
+			mumps_engine.SetICNTL(14, static_cast<int>(round(mumps_engine.GetICNTL(14)*1.5)));
+			std::cout << "MUMPS work space will be allocated overestimating the estimate by " << mumps_engine.GetICNTL(14) << "%" << std::endl;
+        }
+		else
+			break;
+
     }
 
 
@@ -570,11 +554,12 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
 
         case IP_STARTING_POINT_METHOD::NOCEDAL_WS:
         { /*Backup vectors*/
-            ChMatrixDynamic<double> x_bkp(var.v);
-            ChMatrixDynamic<double> y_bkp(var.y);
-            ChMatrixDynamic<double> lam_bkp(var.lambda);
+            auto x_bkp(var.v);
+            auto y_bkp(var.y);
+            auto gamma_bkp(var.gamma);
+            auto lam_bkp(var.lambda);
             residual_fullupdate(res, var);
-            auto residual_value_bkp = res.rp_lambda.NormTwo() + res.rd.NormTwo() + res.mu;
+            auto residual_value_bkp = res.rp_lambda.NormTwo() + res.rp_gamma.NormTwo()  + res.rd.NormTwo() + res.mu;
 
             /********** Initialize IP algorithm **********/
             // Initial guess

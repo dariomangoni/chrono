@@ -35,45 +35,48 @@
 // Further references: (all pages number refers to [1] if not otherwise specified)
 // [1] Nocedal&Wright - Numerical Optimization, 2nd edition
 // [2] D'Apuzzo et al. - Starting-point strategies for an infeasible potential reduction method
-// [3] Mangoni D., Tasora IneqCon. - Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
+// [3] Mangoni D., Tasora A. - Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
+// [3] Mangoni D., Tasora A., R. Garziera - A Primal-Dual Predictor-Corrector Interior Point Method for Non-Smooth Contact Dynamics
 // [4] Meszaros - Steplengths in interior-point algorithms of quadratic programming
+// [5] Vanderberghe - The CVXOPT linear and quadratic cone solvers
 
 // Symbol conversion table from [1] to [2]
-// [2] | [1]
-//  z  |  y
-//  y  | lambda
-//  Q  |  G
-// lambda |  -
-//  b  |  b
-//  s  |  -
-//  u  |  -
-//  v  |  -
-//  d  |  -
-//  t  |  -
-//  G  |  -
+// [2]    | [1]    |
+//  z     |  y     |
+//  y     | lambda |
+//  Q     |  H     |
+// lambda |  -     |
+//  b     |  b     |
+//  s     |  -     |
+//  u     |  -     |
+//  v     |  -     |
+//  d     |  -     |
+//  t     |  -     |
+//  H     |  -     |
 
 // Symbol conversion table from [1] to Chrono
 //                          | Chr | [1]
-// Mass/Stiffness           |  H  |  G
+// Mass/Stiffness           |  H  |  H
 // Acceleration/DSpeed      |  q  |  v
-// Constraints              | Cq  |  IneqCon
+// Constraints              | Cq  |  EqCon + IneqCon
 // Forces(internal)         |  l  |  lambda
 // Forces(external)         |  f  |  -c
 // Constr. compliance       |  ?  |  E (+ o - ?)
 // Slack (contact distance) |  c  |  y
 // Constraint rhs           |  b  |  -b
 
-// KKT conditions (16.55 pag.481)
-// H*v-AT*lambda+c = 0; (dual)
-// IneqCon*v-y-b = 0; (primal)
-// y.*lambda = 0 (mixed)
+// KKT conditions [4]
+// H*v - EqCon^T*gamma - IneqCon^T*lambda + c = 0; (dual)
+// EqCon*v - b_eq = 0; (primal)
+// IneqCon*v - y - b_ineq = 0; (primal)
+// y.*lambda = 0
 // y>=0
 // lambda>=0
 
-// In order to run the ChInteriorPoint solver needs:
-// - ChCOOMatrix BigMat
+// In order to run, the ChInteriorPoint solver needs:
+// - ChCOOMatrix BigMat (so it needs H, IneqCon, EqCon)
 // - IPrhs_t rhs
-// everything else is computed from this two elements.
+// everything else is computed from these two elements.
 
 
 namespace chrono {
@@ -89,12 +92,12 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
   public:
     enum class IP_KKT_SOLUTION_METHOD { STANDARD, AUGMENTED, NORMAL };
-    enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS };
+    enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS, VANDERBERGHE };
 
   private:
-	int n = 0;  // size of #v, #G, #IneqCon columns
-    int m_eq = 0;  // size of #gamma, #IneqCon rows
-    int m_ineq = 0;  // size of #lambda, #y, #IneqCon rows
+	int n = 0;  ///< size of #v, #H, #IneqCon columns, #EqCon columns
+    int m_eq = 0;  ///< size of #gamma, #EqCon rows
+    int m_ineq = 0;  ///< size of #lambda, #y, #IneqCon rows
     int solver_call = 0;
     int iteration_count = 0;
     int iteration_count_max = 50;
@@ -106,7 +109,8 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     bool warm_start = true;
 	bool leverage_symmetry = false;
 
-    ChTimer<> ip_timer;
+    ChTimer<> ip_timer_solver_solvercall;
+    ChTimer<> ip_timer_solve_assembly;
     int ip_solver_call = 0;
     int iteration_count_tot = 0;
 
@@ -114,8 +118,8 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     IP_STARTING_POINT_METHOD starting_point_method = IP_STARTING_POINT_METHOD::NOCEDAL;
 
     // Problem matrices and vectors
-    ChCOOMatrix BigMat;
-    ChCOOMatrix E;  // compliance matrix
+    ChCOOMatrix BigMat;	///< Global sparse matrix
+    ChCOOMatrix E;  ///< Compliance matrix
 
     // Known terms
     struct IPrhs_t {
@@ -212,7 +216,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void reset_internal_dimensions(int n_old, int m_eq_new, int m_ineq_new, int m_ineq_full);
     ChMatrix<>& adapt_to_Chrono(ChSystemDescriptor& sysd, ChMatrix<>& solution_vect) const;
     void residual_fullupdate(IPresidual_t& residuals, const IPvariables_t& variables) const;
-    void make_positive_definite();  ///< Change IneqCon^T to -IneqCon^T in the current system matrix.
+    void make_positive_definite();  ///< Change EQ|IneqCon^T to -Eq|IneqCon^T in the current system matrix.
     void multiplyIneqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 	void multiplyEqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 	void multiplyNegIneqConT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
@@ -247,13 +251,10 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     /// Set the tolerance over the residual of the \e primal unilateral variables (i.e. violation of constraints equations).
     void SetPrimalUnilateralResidualTolerance(double rp_tol) { res_nnorm_tol.rp_lambda_nnorm = rp_tol; }
-
     /// Set the tolerance over the residual of the \e primal bilateral variables (i.e. violation of constraints equations).
     void SetPrimalBilateralResidualTolerance(double rp_tol) { res_nnorm_tol.rp_lambda_nnorm = rp_tol; }
-
     /// Set the tolerance over the residual of the \e dual variables (i.e. stationarity of the solution).
     void SetDualResidualTolerance(double rd_tol) { res_nnorm_tol.rd_nnorm = rd_tol; }
-
     /// Set the tolerance over the residual of complementarity measure (i.e. violation of orthogonality of forces and contact points distance)
     void SetComplementarityMeasureTolerance(double complementarity_tol) { res_nnorm_tol.mu = complementarity_tol; }
 
@@ -263,20 +264,22 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     /// Leverage matrix symmetry
 	void SetUseSymmetry(bool val);
 
+	/// Get cumulative time for assembly operations in Solve phase.
+	double GetTimeSolve_Assembly() const { return ip_timer_solve_assembly(); }
+	/// Get cumulative time for Pardiso calls in Solve phase.
+	double GetTimeSolve_SolverCall() const { return ip_timer_solver_solvercall(); }
+
     // Test
     void DumpProblem(std::string suffix = "");
     void DumpIPStatus(std::string suffix = "") const;
     void RecordHistory(bool on_off, std::string file_name = "interior_point_log");
 	void PrintIPStatus() const;
     int GetSolverCalls() const { return solver_call; }
-    int GetIPSolverCalls() const { return ip_solver_call; }
-    int GetIPIterations() const { return iteration_count_tot; }
+    int GetIPSolverCalls() const { return ip_solver_call; } ///< it may differ from GetSolverCalls() in case no inequality constraint is found
+    int GetIPIterations() const { return iteration_count_tot; } ///< total number of iterations of the IP
     int GetMassMatrixDimension() const { return n; }
     int GetUnilateralConstraintsMatrixRows() const { return m_ineq; }
     int GetBilateralConstraintsMatrixRows() const { return m_eq; }
-    int GetConstraintsMatrixRows() const { return m_ineq + m_eq; }
-    double GetIPTimer() const { return ip_timer(); }
-    //void Solve(const ChSparseMatrix& Q, const ChSparseMatrix& IneqCon, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrix<double>& var_x, ChMatrix<double>& var_y, ChMatrix<double>& var_lam );
     void Solve(const ChCOOMatrix& normal_mat, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrixDynamic<double>& var_x, ChMatrixDynamic<double>& var_y, ChMatrixDynamic<double>& var_gamma, ChMatrixDynamic<double>& var_lambda);
 };
 
