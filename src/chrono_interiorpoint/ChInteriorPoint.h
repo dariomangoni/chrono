@@ -104,6 +104,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     const bool ONLY_PREDICT = false;
     bool warm_start_broken = false;
     bool warm_start = true;
+	bool leverage_symmetry = false;
 
     ChTimer<> ip_timer;
     int ip_solver_call = 0;
@@ -244,13 +245,13 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     /// Set the maximum number of iterations after which the iteration loop will be stopped.
     void SetMaxIterations(int max_iter) { iteration_count_max = max_iter; }
 
-    /// Set the tolerance over the residual of the \a primal unilateral variables (i.e. violation of constraints equations).
+    /// Set the tolerance over the residual of the \e primal unilateral variables (i.e. violation of constraints equations).
     void SetPrimalUnilateralResidualTolerance(double rp_tol) { res_nnorm_tol.rp_lambda_nnorm = rp_tol; }
 
-    /// Set the tolerance over the residual of the \a primal bilateral variables (i.e. violation of constraints equations).
+    /// Set the tolerance over the residual of the \e primal bilateral variables (i.e. violation of constraints equations).
     void SetPrimalBilateralResidualTolerance(double rp_tol) { res_nnorm_tol.rp_lambda_nnorm = rp_tol; }
 
-    /// Set the tolerance over the residual of the \a dual variables (i.e. stationarity of the solution).
+    /// Set the tolerance over the residual of the \e dual variables (i.e. stationarity of the solution).
     void SetDualResidualTolerance(double rd_tol) { res_nnorm_tol.rd_nnorm = rd_tol; }
 
     /// Set the tolerance over the residual of complementarity measure (i.e. violation of orthogonality of forces and contact points distance)
@@ -258,6 +259,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     /// Set the null pivot detection for the kernel solver.
     void SetNullPivotDetection(bool on_off, double threshold) { mumps_engine.SetNullPivotDetection(on_off, threshold); }
+
+    /// Leverage matrix symmetry
+	void SetUseSymmetry(bool val);
 
     // Test
     void DumpProblem(std::string suffix = "");

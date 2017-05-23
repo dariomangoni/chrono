@@ -88,7 +88,8 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     reset_internal_dimensions(sysd.CountActiveVariables(), std::get<0>(m_tuple), std::get<2>(m_tuple), std::get<1>(m_tuple));
     sysd.ConvertToMatrixForm(&BigMat, nullptr, SKIP_CONTACTS_UV, false);
 
-    make_positive_definite(); //TODO: make it an option
+	if (!leverage_symmetry)
+		make_positive_definite();
 
 
     sysd.ConvertToMatrixForm(nullptr, nullptr, nullptr, &rhs.c, &rhs.b, nullptr, false, SKIP_CONTACTS_UV);  // load f->c and b->b
@@ -121,6 +122,10 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
         if( verbose && mumps_engine.GetRINFOG(6) > 1e-6 )
             std::cout << "MUMPS scaled residual: " << mumps_engine.GetRINFOG(6) << std::endl;
 
+		if (!leverage_symmetry)
+			for (auto row_sel = 0; row_sel < m_eq; row_sel++)
+				mumps_rhs(row_sel,0) *= 1;
+
         sysd.FromVectorToUnknowns(mumps_rhs);
 
         // Export variable so that can be used in the next iteration as starting point
@@ -129,7 +134,7 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 		for (auto row_sel = 0; row_sel < n; row_sel++)
 			var.v.SetElement(row_sel, 0, mumps_rhs.GetElement(row_sel, 0));
 		for (auto row_sel = 0; row_sel < m_eq; row_sel++)
-			var.gamma.SetElement(row_sel, 0, mumps_rhs.GetElement( n + row_sel, 0));
+			var.gamma.SetElement(row_sel, 0, leverage_symmetry ? -mumps_rhs.GetElement(n + row_sel, 0) : mumps_rhs.GetElement( n + row_sel, 0));
 
         if( verbose )
             std::cout << "IP call: " << solver_call << "; No inequality constraints." << std::endl;
@@ -393,15 +398,19 @@ void ChInteriorPoint::iterate() {
 void ChInteriorPoint::setup_system_matrix(const IPvariables_t& vars) {
     // update y/lambda diagonal submatrix
     if( ADD_COMPLIANCE )
-		for (auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel)
-		{
-			BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0) + E.GetElement(diag_sel - n + m_eq, diag_sel - n + m_eq));
-		}
+		if (leverage_symmetry)
+			for (auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel)
+				BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, -(vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0) + E.GetElement(diag_sel - n + m_eq, diag_sel - n + m_eq)));
+		else
+			for (auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel)
+				BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0) + E.GetElement(diag_sel - n + m_eq, diag_sel - n + m_eq));
     else
-        for( auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel )
-        {
-            BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0));
-        }
+        if (leverage_symmetry)
+			for (auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel)
+				BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, -vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0));
+		else
+			for( auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel )
+				BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0));
 
 	
 
@@ -431,9 +440,18 @@ void ChInteriorPoint::makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rh
     const ChMatrixDynamic<double>& sol = rhs;
 
     // Extract 'v' and 'lambda' from 'sol'
-    for( auto row_sel = 0; row_sel < n;      row_sel++ ) Dvar_unknown.v.SetElement(row_sel, 0, sol.GetElement(row_sel, 0));
-	for (auto row_sel = 0; row_sel < m_eq;   row_sel++ ) Dvar_unknown.gamma.SetElement(row_sel, 0, sol.GetElement(row_sel + n, 0));
-    for( auto row_sel = 0; row_sel < m_ineq; row_sel++ ) Dvar_unknown.lambda.SetElement(row_sel, 0, sol.GetElement(row_sel + n + m_eq, 0));
+    for (auto row_sel = 0; row_sel < n;      row_sel++ ) Dvar_unknown.v.SetElement(row_sel, 0, sol.GetElement(row_sel, 0));
+	if (leverage_symmetry)
+	{
+		for (auto row_sel = 0; row_sel < m_eq; row_sel++) Dvar_unknown.gamma.SetElement(row_sel, 0, -sol.GetElement(row_sel + n, 0));
+		for (auto row_sel = 0; row_sel < m_ineq; row_sel++) Dvar_unknown.lambda.SetElement(row_sel, 0, -sol.GetElement(row_sel + n + m_eq, 0));
+	}
+	else
+	{
+		for (auto row_sel = 0; row_sel < m_eq; row_sel++) Dvar_unknown.gamma.SetElement(row_sel, 0, sol.GetElement(row_sel + n, 0));
+		for (auto row_sel = 0; row_sel < m_ineq; row_sel++) Dvar_unknown.lambda.SetElement(row_sel, 0, sol.GetElement(row_sel + n + m_eq, 0));
+	}
+
 
     // Calc 'y' (it is also possible to evaluate y as (-lambda°y+sigma*res.mu*e-y°lambda)./lambda )
     multiplyIneqCon(Dvar_unknown.v, Dvar_unknown.y);  // Dy = IneqCon*Dv
@@ -777,7 +795,14 @@ void ChInteriorPoint::reset_internal_dimensions(int n_new, int m_eq_new, int m_i
 	m_ineq = m_ineq_new; // constraints inequalities lines (eventually excluding tangential contact forces)
 }
 
-void ChInteriorPoint::DumpProblem(std::string suffix) {
+	void ChInteriorPoint::SetUseSymmetry(bool val)
+	{
+		leverage_symmetry = val;
+		BigMat.SetType(val ? ChSparseMatrix::SYMMETRIC_INDEF : ChSparseMatrix::GENERAL);
+		mumps_engine.SetMatrixSymmetry(val ? ChMumpsEngine::mumps_SYM::SYMMETRIC_GENERAL : ChMumpsEngine::mumps_SYM::UNSYMMETRIC);
+	}
+
+	void ChInteriorPoint::DumpProblem(std::string suffix) {
 	CreateDirectory("dump", nullptr);
     ExportArrayToFile(var.y, "dump/var_y" + suffix + ".txt");
     ExportArrayToFile(var.v, "dump/var_v" + suffix + ".txt");
@@ -863,8 +888,10 @@ void ChInteriorPoint::multiplyNegEqConT(const ChMatrix<double>& vect_in, ChMatri
 		break;
 	case IP_KKT_SOLUTION_METHOD::AUGMENTED:
 		BigMat.MatrMultiplyClipped(vect_in, vect_out, 0, n - 1,
-			                                          n, n + m_eq - 1,
-			                                          0, 0);
+			                                            n, n + m_eq - 1,
+			                                            0, 0);
+		if (leverage_symmetry)
+			vect_out.MatrScale(-1);
 		break;
 	case IP_KKT_SOLUTION_METHOD::NORMAL:
 		std::cout << std::endl << "NegEqCon multiplication is not implemented in 'NORMAL' method yet.";
@@ -884,6 +911,8 @@ void ChInteriorPoint::multiplyNegIneqConT(const ChMatrix<double>& vect_in, ChMat
 		BigMat.MatrMultiplyClipped(vect_in, vect_out, 0,        n - 1,
 													  n + m_eq, n + m_eq + m_ineq - 1,
 													  0, 0);
+		if (leverage_symmetry)
+			vect_out.MatrScale(-1);
 		break;
 	case IP_KKT_SOLUTION_METHOD::NORMAL:
 		std::cout << std::endl << "NegIneqCon multiplication is not implemented in 'NORMAL' method yet.";
