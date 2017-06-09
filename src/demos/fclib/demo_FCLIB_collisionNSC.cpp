@@ -25,6 +25,7 @@
 
 #include "chrono_irrlicht/ChIrrApp.h"
 #include "core/ChCSR3Matrix.h"
+#include <fclib.h>
 
 
 // Use the namespaces of Chrono
@@ -215,9 +216,66 @@ int main(int argc, char* argv[]) {
     application.SetTimestep(0.02);
 
 
-	ChCSR3Matrix Cq, H, E;
+	ChCSR3Matrix Cq, H, E, Cq_eq, Cq_ineq;
 	ChMatrixDynamic<double> Fvector, Bvector, Frict;
+	mphysicalSystem.GetSystemDescriptor()->SortActiveConstraints();
+	auto dim = mphysicalSystem.GetSystemDescriptor()->CountActiveConstraintsSorted(false);
+	auto m_eq = std::get<0>(dim);
+	auto m_ineq = std::get<1>(dim);
 	mphysicalSystem.GetSystemDescriptor()->ConvertToMatrixForm(&Cq, &H, &E, &Fvector, &Bvector, &Frict, false, false);
+	auto n = H.GetNumRows();
+
+	fclib_matrix matCq_eq, matCq_ineq, matH;
+	fclib_matrix_info matCq_ineq_info, matCq_eq_info, matH_info;
+
+	Cq_eq.Resize(m_eq, n);
+	Cq_ineq.Resize(m_ineq, n);
+	Cq_eq.PasteClippedMatrix(Cq, )
+
+	matCq_eq.nz = Cq_eq.IsRowMajor() ? -2 : -1;
+	matCq_eq.nzmax = Cq_eq.GetNNZ();
+	matCq_eq.x = Cq_eq.GetCSR_ValueArray();
+	matCq_eq.p = Cq_eq.GetCSR_LeadingIndexArray();
+	matCq_eq.i = Cq_eq.GetCSR_TrailingIndexArray();
+	matCq_eq.m = Cq_eq.GetNumRows();
+	matCq_eq.n = Cq_eq.GetNumColumns();
+	matCq_eq.info = &matCq_eq_info;
+
+	matCq_ineq.nz = Cq_ineq.IsRowMajor() ? -2 : -1;
+	matCq_ineq.nzmax = Cq_ineq.GetNNZ();
+	matCq_ineq.x = Cq_ineq.GetCSR_ValueArray();
+	matCq_ineq.p = Cq_ineq.GetCSR_LeadingIndexArray();
+	matCq_ineq.i = Cq_ineq.GetCSR_TrailingIndexArray();
+	matCq_ineq.m = Cq_ineq.GetNumRows();
+	matCq_ineq.n = Cq_ineq.GetNumColumns();
+	matCq_ineq.info = &matCq_ineq_info;
+
+	matH.nz = H.IsRowMajor() ? -2 : -1;
+	matH.nzmax = H.GetNNZ();
+	matH.x = H.GetCSR_ValueArray();
+	matH.p = H.GetCSR_LeadingIndexArray();
+	matH.i = H.GetCSR_TrailingIndexArray();
+	matH.m = H.GetNumRows();
+	matH.n = H.GetNumColumns();
+	matH.info = &matH_info;
+
+	fclib_global glob_prob;
+	glob_prob.M = &matH;
+	glob_prob.G = &
+
+
+	struct fclib_global *problem;
+	struct fclib_solution *solution;
+	struct fclib_solution *guesses;
+	int numguess = rand() % 10, n;
+	short allfine = 0;
+
+	problem = random_global_problem(10 + rand() % 900, 10 + rand() % 900, 10 + rand() % 900);
+	solution = random_global_solutions(problem, 1);
+	guesses = random_global_solutions(problem, numguess);
+
+	if (fclib_write_global(problem, "output_file.hdf5"))
+		if (fclib_write_solution(solution, "output_file.hdf5"))
 
     //
     // THE SOFT-REAL-TIME CYCLE

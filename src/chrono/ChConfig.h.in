@@ -31,6 +31,9 @@
 // If module COSIMULATION was enabled, define CHRONO_COSIMULATION
 @CHRONO_COSIMULATION@
 
+// If module FCLIB was enabled, define CHRONO_FCLIB
+@CHRONO_FCLIB@
+
 // If module FEA was enabled, define CHRONO_FEA
 @CHRONO_FEA@
 

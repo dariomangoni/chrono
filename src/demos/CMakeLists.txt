@@ -30,6 +30,15 @@ if(BUILD_DEMOS_BASE)
 	add_subdirectory(core)
 endif()
 
+if(ENABLE_MODULE_FCLIB)
+	option(BUILD_DEMOS_FCLIB "Build demo programs for FCLIB module" TRUE)
+	mark_as_advanced(FORCE BUILD_DEMOS_FCLIB)
+	if(BUILD_DEMOS_FCLIB)
+		add_subdirectory(fclib)
+	endif()
+endif()
+
+
 if(ENABLE_MODULE_FEA)
 	option(BUILD_DEMOS_FEA "Build demo programs for FEA module" TRUE)
 	mark_as_advanced(FORCE BUILD_DEMOS_FEA)
