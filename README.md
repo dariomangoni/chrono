@@ -1,6 +1,11 @@
 Project CHRONO
 ==============
 
+| Travis CI | AppVeyor |
+|:-:|:-:|
+| [![Travis CI Build Status](https://travis-ci.org/dariomangoni/chrono.svg?branch=continuous_integration)](https://travis-ci.org/dariomangoni/chrono) | [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/github/dariomangoni/chrono?branch=continuous_integration&svg=true)](https://ci.appveyor.com/project/dariomangoni/chrono) |
+
+
 Project Chrono represents a community effort aimed at producing a physics-based modelling and simulation infrastructure based on a platform-independent, open-source design. The name of this software infrastructure is Chrono. Some of its features are listed below. More information is available at the [project website](http://www.projectchrono.org/). The applications areas in which Chrono is most often used are **vehicle dynamics**, **robotics**, and **machine design**. In vehicle dynamics, Chrono has mature support for tire/terrain interaction modeling and simulation.
 
 ### Physics modeling
