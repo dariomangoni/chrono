@@ -34,6 +34,9 @@
 // If module FEA was enabled, define CHRONO_FEA
 @CHRONO_FEA@
 
+// If module CHRONO_INTERIORPOINT was enabled, define CHRONO_INTERIORPOINT
+@CHRONO_INTERIORPOINT@
+
 // If module IRRLICHT was enabled, define CHRONO_IRRLICHT
 @CHRONO_IRRLICHT@
 
