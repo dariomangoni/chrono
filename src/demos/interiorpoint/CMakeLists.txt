@@ -5,13 +5,13 @@ SET(IP_DEMOS
     demo_IP_bricks
     demo_IP_convergence
 	demo_IP_trivial
-	demo_IP_FEA
+	demo_IP_FEA_contacts
+	demo_IP_FEA_threepointbending
+	demo_IP_criticalball
+	demo_IP_ballpile
 )
 
 INCLUDE_DIRECTORIES( ${CH_IRRLICHTINC} )
-
-find_package(VTK REQUIRED)
-include(${VTK_USE_FILE})
  
 FOREACH(PROGRAM ${IP_DEMOS})
 	MESSAGE(STATUS "...add ${PROGRAM}")
@@ -30,7 +30,6 @@ FOREACH(PROGRAM ${IP_DEMOS})
 		ChronoEngine_fea
 		ChronoEngine_irrlicht
 		ChronoEngine_interiorpoint
-		${VTK_LIBRARIES}
 		)
 		
 	ADD_DEPENDENCIES(${PROGRAM}
