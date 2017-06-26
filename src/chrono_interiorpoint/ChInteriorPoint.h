@@ -30,20 +30,20 @@
 #endif
 
 // Interior point methdon based on Numerical Optimization by Nocedal, Wright
-// minimize 0.5*xT*G*x + xT*x while Ax>=b (16.54 pag.480)
+// minimize 0.5*vT*H*v + vT*v while Ax>=b (16.54 pag.480)
 // WARNING: FOR THE MOMENT THE CONSTRAINTS MUST BE INEQUALITIES
 // Further references: (all pages number refers to [1] if not otherwise specified)
 // [1] Nocedal&Wright - Numerical Optimization, 2nd edition
 // [2] D'Apuzzo et al. - Starting-point strategies for an infeasible potential reduction method
-// [3] Mangoni D., Tasora A. - Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
+// [3] Mangoni D., Tasora IneqCon. - Solving Unilateral Contact Problems in Multibody Dynamics using a Primal-Dual Interior Point Method
 // [4] Meszaros - Steplengths in interior-point algorithms of quadratic programming
 
 // Symbol conversion table from [1] to [2]
 // [2] | [1]
 //  z  |  y
-//  y  | lam
+//  y  | lambda
 //  Q  |  G
-// lam |  -
+// lambda |  -
 //  b  |  b
 //  s  |  -
 //  u  |  -
@@ -55,20 +55,20 @@
 // Symbol conversion table from [1] to Chrono
 //                          | Chr | [1]
 // Mass/Stiffness           |  H  |  G
-// Acceleration/DSpeed      |  q  |  x
-// Constraints              | Cq  |  A
-// Forces(internal)         |  l  |  lam
+// Acceleration/DSpeed      |  q  |  v
+// Constraints              | Cq  |  IneqCon
+// Forces(internal)         |  l  |  lambda
 // Forces(external)         |  f  |  -c
 // Constr. compliance       |  ?  |  E (+ o - ?)
 // Slack (contact distance) |  c  |  y
 // Constraint rhs           |  b  |  -b
 
 // KKT conditions (16.55 pag.481)
-// G*x-AT*lam+c = 0; (dual)
-// A*x-y-b = 0; (primal)
-// y.*lam = 0 (mixed)
+// H*v-AT*lambda+c = 0; (dual)
+// IneqCon*v-y-b = 0; (primal)
+// y.*lambda = 0 (mixed)
 // y>=0
-// lam>=0
+// lambda>=0
 
 // In order to run the ChInteriorPoint solver needs:
 // - ChCOOMatrix BigMat
@@ -92,14 +92,15 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS };
 
   private:
-    int m = 0;  // size of #lam, #y, A rows
-    int n = 0;  // size of #x, G, A columns
+	int n = 0;  // size of #v, #G, #IneqCon columns
+    int m_eq = 0;  // size of #gamma, #IneqCon rows
+    int m_ineq = 0;  // size of #lambda, #y, #IneqCon rows
     int solver_call = 0;
     int iteration_count = 0;
     int iteration_count_max = 50;
 
     const bool EQUAL_STEP_LENGTH = true;
-    const bool ADAPTIVE_ETA = true;
+    const bool ADAPTIVE_ETA = false;
     const bool ONLY_PREDICT = false;
     bool warm_start_broken = false;
     bool warm_start = true;
@@ -113,45 +114,75 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     // Problem matrices and vectors
     ChCOOMatrix BigMat;
-    ChCOOMatrix SmallMat;
     ChCOOMatrix E;  // compliance matrix
 
     // Known terms
     struct IPrhs_t {
+		IPrhs_t(){}
+		IPrhs_t(int n, int m_eq, int m_ineq) { Resize(n, m_eq, m_ineq); }
+		void Resize(int n, int m_eq, int m_ineq)
+		{
+			c.Resize(n, 1);
+			b.Resize(m_eq + m_ineq, 1);
+			b_eq.Resize(m_eq, 1);
+			b_ineq.Resize(m_ineq, 1);
+		}
+		ChMatrixDynamic<double> c;  ///< forces (is '-f' in chrono)
         ChMatrixDynamic<double> b;  ///< rhs of constraints (is '-b' in chrono)
-        ChMatrixDynamic<double> c;  ///< forces (is '-f' in chrono)
+		ChMatrixDynamic<double> b_eq;  ///< rhs of constraints (is '-b' in chrono)
+		ChMatrixDynamic<double> b_ineq;  ///< rhs of constraints (is '-b' in chrono)
     } rhs;
 
 
 
     // Variables
     struct IPvariables_t {
-        ChMatrixDynamic<double> x;    ///< DeltaSpeed/Acceleration ('q' in chrono)
+		IPvariables_t(){}
+		IPvariables_t(int n, int m_eq, int m_ineq) { Resize(n, m_eq, m_ineq); }
+		void Resize(int n, int m_eq, int m_ineq)
+		{
+			v.Resize(n, 1);
+			y.Resize(m_ineq, 1);
+			gamma.Resize(m_eq, 1);
+			lambda.Resize(m_ineq, 1);
+		}
+        ChMatrixDynamic<double> v;    ///< DeltaSpeed/Acceleration ('q' in chrono)
         ChMatrixDynamic<double> y;    ///< Slack variable/Contact points distance ('c' in chrono)
-        ChMatrixDynamic<double> lam;  ///< Lagrangian multipliers/contact|constraint forces ('l' in chrono)
+        ChMatrixDynamic<double> gamma;    ///< Lagrangian multipliers/contact|constraint forces for bilateral constraints ('l' in chrono)
+        ChMatrixDynamic<double> lambda;  ///< Lagrangian multipliers/contact|constraint forces for unilateral constraints ('l' in chrono)
     } var;
 
     // Residuals
     struct IPresidual_nnorm_t {
-        double rp_nnorm = 1e-10;
+        double rp_gamma_nnorm = 1e-10;
+        double rp_lambda_nnorm = 1e-10;
         double rd_nnorm = 1e-10;
         double mu = 1e-9;
     } res_nnorm_tol;
 
 
     struct IPresidual_t {
-        ChMatrixDynamic<double> rp;    ///< Residual about primal variables (i.e. violation if dynamic equation of motion); rp = A*x - y - b.
-        ChMatrixDynamic<double> rd;    ///< Residual about dual variables (i.e. violation of constraints equations); rd = G*x - AT*lam + c.
-        ChMatrixDynamic<double> rpd;    ///< Residual about primal-dual variables (only for #IP_KKT_SOLUTION_METHOD#NORMAL mode)
+		ChMatrixDynamic<double> rd;    ///< Residual about dual variables (i.e. violation of constraints equations); rd = H*v - AT*lambda + c.
+		ChMatrixDynamic<double> rp_gamma;    ///< Residual about primal variables regarding unilateral constraints (i.e. violation if dynamic equation of motion); rp_lambda = IneqCon*v - y - b.
+        ChMatrixDynamic<double> rp_lambda;   ///< Residual about primal variables regarding bilateral constraints (i.e. violation if dynamic equation of motion); rp_lambda = IneqCon*v - y - b.
         double mu = 0;  ///< complementarity measure
 
-        bool operator<(const IPresidual_t& other) const { return rp.NormTwo() < other.rp.NormTwo() && rd.NormTwo() < other.rd.NormTwo() && mu < other.mu; }
-        bool operator<=(const IPresidual_t& other) const { return rp.NormTwo() <= other.rp.NormTwo() && rd.NormTwo() <= other.rd.NormTwo() && mu <= other.mu; }
+		IPresidual_t(){}
+		IPresidual_t(int n, int m_eq, int m_ineq) { Resize(n, m_eq, m_ineq); }
+		void Resize(int n, int m_eq, int m_ineq)
+		{
+			rd.Resize(n, 1);
+			rp_gamma.Resize(m_eq, 1);
+			rp_lambda.Resize(m_ineq, 1);
+		}
+
+        bool operator<(const IPresidual_t& other) const { return rp_lambda.NormTwo() < other.rp_lambda.NormTwo() && rp_gamma.NormTwo() < other.rp_gamma.NormTwo() && rd.NormTwo() < other.rd.NormTwo() && mu < other.mu; }
+        bool operator<=(const IPresidual_t& other) const { return rp_lambda.NormTwo() <= other.rp_lambda.NormTwo() && rp_gamma.NormTwo() <= other.rp_gamma.NormTwo() && rd.NormTwo() <= other.rd.NormTwo() && mu <= other.mu; }
         bool operator>(const IPresidual_t& other) const { return !(*this <= other); }
         bool operator>=(const IPresidual_t& other) const { return !(*this < other); }
 
-        bool operator<(const IPresidual_nnorm_t& other) const { return rp.NormTwo() < other.rp_nnorm * rp.GetRows() && rd.NormTwo() < other.rd_nnorm * rd.GetRows() && mu < other.mu; }
-        bool operator<=(const IPresidual_nnorm_t& other) const { return rp.NormTwo() <= other.rp_nnorm * rp.GetRows() && rd.NormTwo() <= other.rd_nnorm * rd.GetRows() && mu <= other.mu; }
+        bool operator<(const IPresidual_nnorm_t& other) const { return rp_lambda.NormTwo() < other.rp_lambda_nnorm * rp_lambda.GetRows() && rp_gamma.NormTwo() < other.rp_gamma_nnorm * rp_gamma.GetRows() && rd.NormTwo() < other.rd_nnorm * rd.GetRows() && mu < other.mu; }
+        bool operator<=(const IPresidual_nnorm_t& other) const { return rp_lambda.NormTwo() <= other.rp_lambda_nnorm * rp_lambda.GetRows() && rp_gamma.NormTwo() <= other.rp_gamma_nnorm * rp_gamma.GetRows() && rd.NormTwo() <= other.rd_nnorm * rd.GetRows() && mu <= other.mu; }
         bool operator>(const IPresidual_nnorm_t& other) const { return !(*this <= other); }
         bool operator>=(const IPresidual_nnorm_t& other) const { return !(*this < other); }
 
@@ -159,7 +190,8 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     // Temporaries used in different functions
     mutable ChMatrixDynamic<double> vectn;  // temporary variable that has always size (#n,1)
-    mutable ChMatrixDynamic<double> vectm;  // temporary variable that has always size (#m,1)
+    mutable ChMatrixDynamic<double> vectm_ineq;  // temporary variable that has always size (#m_eq,1)
+    mutable ChMatrixDynamic<double> vectm_eq;  // temporary variable that has always size (#m_ineq,1)
     mutable ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
 
 
@@ -170,19 +202,21 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
     void setup_system_matrix(const IPvariables_t& vars);
     void makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
-    void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_old = 0);
+    void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_eq_old = 0, int m_ineq_old = 0);
     static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
     void find_Newton_step_length(const IPvariables_t& vars, const IPvariables_t& Dvars, double tau, double& alfa_prim, double& alfa_dual) const;
-    double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*xT*G*x + xT*x.
+    double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*vT*H*v + vT*v.
 
     // Auxiliary
-    void reset_internal_dimensions(int n_old, int m_old);
-    ChMatrix<>& adapt_to_Chrono(ChMatrix<>& solution_vect) const;
+    void reset_internal_dimensions(int n_old, int m_eq_new, int m_ineq_new, int m_ineq_full);
+    ChMatrix<>& adapt_to_Chrono(ChSystemDescriptor& sysd, ChMatrix<>& solution_vect) const;
     void residual_fullupdate(IPresidual_t& residuals, const IPvariables_t& variables) const;
-    void make_positive_definite();  ///< Change A^T to -A^T in the current system matrix.
-    void multiplyA(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
-    void multiplyNegAT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
-    void multiplyG(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+    void make_positive_definite();  ///< Change IneqCon^T to -IneqCon^T in the current system matrix.
+    void multiplyIneqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+	void multiplyEqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+	void multiplyNegIneqConT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+	void multiplyNegEqConT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
+	void multiplyH(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 
     // Debug
     std::ofstream logfile_stream;
@@ -210,8 +244,11 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     /// Set the maximum number of iterations after which the iteration loop will be stopped.
     void SetMaxIterations(int max_iter) { iteration_count_max = max_iter; }
 
-    /// Set the tolerance over the residual of the \a primal variables (i.e. violation of constraints equations).
-    void SetPrimalResidualTolerance(double rp_tol) { res_nnorm_tol.rp_nnorm = rp_tol; }
+    /// Set the tolerance over the residual of the \a primal unilateral variables (i.e. violation of constraints equations).
+    void SetPrimalUnilateralResidualTolerance(double rp_tol) { res_nnorm_tol.rp_lambda_nnorm = rp_tol; }
+
+    /// Set the tolerance over the residual of the \a primal bilateral variables (i.e. violation of constraints equations).
+    void SetPrimalBilateralResidualTolerance(double rp_tol) { res_nnorm_tol.rp_lambda_nnorm = rp_tol; }
 
     /// Set the tolerance over the residual of the \a dual variables (i.e. stationarity of the solution).
     void SetDualResidualTolerance(double rd_tol) { res_nnorm_tol.rd_nnorm = rd_tol; }
@@ -226,14 +263,17 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void DumpProblem(std::string suffix = "");
     void DumpIPStatus(std::string suffix = "") const;
     void RecordHistory(bool on_off, std::string file_name = "interior_point_log");
+	void PrintIPStatus() const;
     int GetSolverCalls() const { return solver_call; }
     int GetIPSolverCalls() const { return ip_solver_call; }
     int GetIPIterations() const { return iteration_count_tot; }
-    int GetMassMatrixDimension() const { return m; }
-    int GetJacobianMatrixRows() const { return n; }
+    int GetMassMatrixDimension() const { return n; }
+    int GetUnilateralConstraintsMatrixRows() const { return m_ineq; }
+    int GetBilateralConstraintsMatrixRows() const { return m_eq; }
+    int GetConstraintsMatrixRows() const { return m_ineq + m_eq; }
     double GetIPTimer() const { return ip_timer(); }
-    //void Solve(const ChSparseMatrix& Q, const ChSparseMatrix& A, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrix<double>& var_x, ChMatrix<double>& var_y, ChMatrix<double>& var_lam );
-    void Solve(const ChCOOMatrix& normal_mat, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrixDynamic<double>& var_x, ChMatrixDynamic<double>& var_y, ChMatrixDynamic<double>& var_lam);
+    //void Solve(const ChSparseMatrix& Q, const ChSparseMatrix& IneqCon, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrix<double>& var_x, ChMatrix<double>& var_y, ChMatrix<double>& var_lam );
+    void Solve(const ChCOOMatrix& normal_mat, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrixDynamic<double>& var_x, ChMatrixDynamic<double>& var_y, ChMatrixDynamic<double>& var_gamma, ChMatrixDynamic<double>& var_lambda);
 };
 
 }  // end of namespace chrono
