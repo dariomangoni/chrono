@@ -20,8 +20,7 @@
 #include "chrono_postprocess/ChGnuPlot.h"
 #endif
 
-//#define DEBUG_MODE
-#define SKIP_CONTACTS_UV true
+#define DEBUG_MODE
 #define ADD_COMPLIANCE false
 #define REUSE_OLD_SOLUTIONS false
 #define STEPLENGTH_METHOD 0
@@ -96,14 +95,14 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 
 	sysd.SortActiveConstraints(); // tell ChSystemDescriptor to write the Jacobian [equalities;inequalities]
 
-	auto m_tuple = sysd.CountActiveConstraintsSorted(SKIP_CONTACTS_UV);
+	auto m_tuple = sysd.CountActiveConstraintsSorted(constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT);
     reset_internal_dimensions(sysd.CountActiveVariables(), std::get<0>(m_tuple), std::get<2>(m_tuple), std::get<1>(m_tuple));
-    sysd.ConvertToMatrixForm(&BigMat, nullptr, SKIP_CONTACTS_UV, false);
+    sysd.ConvertToMatrixForm(&BigMat, nullptr, constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT, false);
 
 	if (!leverage_symmetry)
 		make_positive_definite();
 
-    sysd.ConvertToMatrixForm(nullptr, nullptr, nullptr, &rhs.c, &rhs.b, nullptr, false, SKIP_CONTACTS_UV);  // load f->c and b->b
+    sysd.ConvertToMatrixForm(nullptr, nullptr, nullptr, &rhs.c, &rhs.b, nullptr, false, constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT);  // load f->c and b->b
     rhs.c.MatrScale(-1); // adapt to InteriorPoint convention
     rhs.b.MatrScale(-1); // adapt to InteriorPoint convention
 
@@ -167,7 +166,7 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 
     if( ADD_COMPLIANCE && m_ineq > 0 )
     {
-        sysd.ConvertToMatrixForm(nullptr, nullptr, &E, nullptr, nullptr, nullptr, false, SKIP_CONTACTS_UV);
+        sysd.ConvertToMatrixForm(nullptr, nullptr, &E, nullptr, nullptr, nullptr, false, constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT);
         E *= -1;
     }
 
@@ -206,6 +205,7 @@ void ChInteriorPoint::iterate() {
     /*********************************************************************************/
 
     setup_system_matrix(var);
+    computeNesterovToddScalingMatrix(var);
 
     ChMatrixDynamic<double> mumps_rhs(n + m_eq + m_ineq, 1);
     IPvariables_t Dvar_pred(n, m_eq, m_ineq);
@@ -761,8 +761,89 @@ double ChInteriorPoint::evaluate_objective_function() const {
     return obj_value;
 }
 
+double ChInteriorPoint::projectionOnPolarCone(const ChMatrixDynamic<double>& z)
+{
+    assert(z.GetRows() == 3);
+    return std::sqrt(std::pow(z(0), 2.0) - (std::pow(z(1), 2.0) + std::pow(z(2), 2.0)));
+}
 
-/// Take care of adapting the size of matrices to \p n_new and \p m_new
+void ChInteriorPoint::computeNesterovToddScalingMatrix(const IPvariables_t& var)
+{
+
+
+	switch (constraints_form)
+	{
+	case IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT:
+        scaling_matrix.Resize(m_ineq, m_ineq); // TODO: has to be actually computed?
+		for (auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel)
+            scaling_matrix.SetElement(diag_sel,diag_sel, sqrt(var.y(diag_sel)) + 1 / sqrt(var.lambda(diag_sel)) );
+			break;
+	case IP_CONSTRAINTS_FORM::SECOND_ORDER_CONE:
+	    {
+            assert(m_ineq % 3 == 0 && "Unilateral constraints must be all of frictional type for now");
+            scaling_matrix.Resize(m_ineq, m_ineq, m_ineq * 3); // TODO: has to be actually computed?
+            for (auto ci = 0; ci<m_ineq; ci += 3) // for each frictional constraint
+            {
+                auto y_proj = projectionOnPolarCone(var.y);
+                auto lam_proj = projectionOnPolarCone(var.lambda);
+                auto gamma = std::sqrt((1 + (var.lambda(ci)*var.y(ci) + var.lambda(ci + 1)*var.y(ci + 1) + var.lambda(ci + 2)*var.y(ci + 2)) / y_proj / lam_proj)/2);
+
+                ChVector<double> ssp; // Scaled Scaling Point
+                ssp[0] = (var.y(ci)/y_proj + var.lambda(ci)/lam_proj) / 2 / gamma;
+                ssp[0] = (var.y(ci)/y_proj - var.lambda(ci)/lam_proj) / 2 / gamma;
+                ssp[0] = (var.y(ci)/y_proj - var.lambda(ci)/lam_proj) / 2 / gamma;
+
+                ChMatrix33<double> ssm; // Scaled Scaling (sub)Matrix
+                ssm[0][0] = ssp[0];
+                ssm[0][1] = ssp[1];
+                ssm[0][2] = ssp[2];
+
+                ssm[1][0] = ssp[1];
+                ssm[2][0] = ssp[2];
+
+                ssm[1][1] = 1 + ssp[1] * ssp[1] / (ssp[0] + 1);
+                ssm[1][2] = 1 + ssp[1] * ssp[2] / (ssp[0] + 1);
+                ssm[2][1] = 1 + ssp[2] * ssp[1] / (ssp[0] + 1);
+                ssm[2][2] = 1 + ssp[2] * ssp[2] / (ssp[0] + 1);
+
+
+#ifdef DEBUG_MODE
+                ChMatrixDynamic<double> deb;
+                for(auto i = 0; i < 3; ++i)
+                    for(auto j = 0; j < 3; ++j)
+                        deb[i][j] = ssp[i] * ssp[j];
+
+                ChMatrixDynamic<double> J;
+                J[0][0] = 1;
+                J[1][1] = -1;
+                J[2][2] = -1;
+
+                auto temp(J);
+                temp.MatrMultiply(J, deb);
+                temp.MatrMultiply(temp,J);
+                temp *= 2;
+                temp -= J;
+                temp.MatrMultiply(ssm, temp);
+                temp.MatrMultiply(temp, ssm);
+
+                for (auto i = 0; i < 3; ++i)
+                    for (auto j = 0; j < 3; ++j)
+                        i == j ? assert(std::abs(temp[i][i] - 1)<1e-8) : assert(std::abs(temp[i][i])<1e-8);
+#endif
+
+                ssm *= std::sqrt(y_proj / lam_proj);
+
+                scaling_matrix.PasteClippedMatrix(ssm, 0, 0, 3, 3, ci + n + m_eq, ci + n + m_eq, true);
+
+
+            }
+	    }
+		break;
+	default:;
+	}
+}
+
+	/// Take care of adapting the size of matrices to \p n_new and \p m_new
 void ChInteriorPoint::reset_internal_dimensions(int n_new, int m_eq_new, int m_ineq_new, int m_ineq_full) {
 
 	var.Resize(n_new, m_eq_new, m_ineq_new);
@@ -998,7 +1079,7 @@ ChMatrix<>& ChInteriorPoint::adapt_to_Chrono(ChSystemDescriptor& sysd, ChMatrix<
 	}
 
 	// copy 'lambda' as is
-    if( SKIP_CONTACTS_UV )
+    if( constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT )
     {
 		auto ineq_sel = 0;
 		auto row_sel = 0;

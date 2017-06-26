@@ -93,6 +93,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
   public:
     enum class IP_KKT_SOLUTION_METHOD { STANDARD, AUGMENTED, NORMAL };
     enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS, VANDERBERGHE };
+    enum class IP_CONSTRAINTS_FORM { NONNEGATIVE_ORTHANT, SECOND_ORDER_CONE };
 
   private:
 	int n = 0;  ///< size of #v, #H, #IneqCon columns, #EqCon columns
@@ -108,6 +109,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     bool warm_start_broken = false;
     bool warm_start = true;
 	bool leverage_symmetry = false;
+	bool nesterov_todd_scaling = false;
 
     ChTimer<> ip_timer_solver_solvercall;
     ChTimer<> ip_timer_solve_assembly;
@@ -116,6 +118,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
     IP_STARTING_POINT_METHOD starting_point_method = IP_STARTING_POINT_METHOD::NOCEDAL;
+	IP_CONSTRAINTS_FORM constraints_form = IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT;
 
     // Problem matrices and vectors
     ChCOOMatrix BigMat;	///< Global sparse matrix
@@ -150,11 +153,13 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 			y.Resize(m_ineq, 1);
 			gamma.Resize(m_eq, 1);
 			lambda.Resize(m_ineq, 1);
+			yl_scaled.Resize(m_ineq, 1);
 		}
         ChMatrixDynamic<double> v;    ///< DeltaSpeed/Acceleration ('q' in chrono)
         ChMatrixDynamic<double> y;    ///< Slack variable/Contact points distance ('c' in chrono)
         ChMatrixDynamic<double> gamma;    ///< Lagrangian multipliers/contact|constraint forces for bilateral constraints ('l' in chrono)
         ChMatrixDynamic<double> lambda;  ///< Lagrangian multipliers/contact|constraint forces for unilateral constraints ('l' in chrono)
+        ChMatrixDynamic<double> yl_scaled;  ///< Lagrangian multipliers/contact|constraint forces for unilateral constraints ('l' in chrono)
     } var;
 
     // Residuals
@@ -211,12 +216,20 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
     void find_Newton_step_length(const IPvariables_t& vars, const IPvariables_t& Dvars, double tau, double& alfa_prim, double& alfa_dual) const;
     double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*vT*H*v + vT*v.
+    static double projectionOnPolarCone(const ChMatrixDynamic<double>& z); ///< Evaluate projection on polar cone
+
+
+    // Nesterov-Todd scaling
+	ChCSMatrix scaling_matrix;
+	void computeNesterovToddScalingMatrix(const IPvariables_t & var);
 
     // Auxiliary
     void reset_internal_dimensions(int n_old, int m_eq_new, int m_ineq_new, int m_ineq_full);
     ChMatrix<>& adapt_to_Chrono(ChSystemDescriptor& sysd, ChMatrix<>& solution_vect) const;
     void residual_fullupdate(IPresidual_t& residuals, const IPvariables_t& variables) const;
     void make_positive_definite();  ///< Change EQ|IneqCon^T to -Eq|IneqCon^T in the current system matrix.
+
+	// Basic Algebra routines
     void multiplyIneqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 	void multiplyEqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
 	void multiplyNegIneqConT(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
@@ -263,6 +276,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     /// Leverage matrix symmetry
 	void SetUseSymmetry(bool val);
+
+	/// Enable Nesterov-Todd scaling
+	void SetNesterovToddScaling(bool val) { nesterov_todd_scaling = val; }
 
 	/// Get cumulative time for assembly operations in Solve phase.
 	double GetTimeSolve_Assembly() const { return ip_timer_solve_assembly(); }
