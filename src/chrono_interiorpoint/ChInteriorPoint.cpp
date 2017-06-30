@@ -163,9 +163,9 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
         if( verbose && mumps_engine.GetRINFOG(6) > 1e-6 )
             std::cout << "MUMPS scaled residual: " << mumps_engine.GetRINFOG(6) << std::endl;
 
-		if (!leverage_symmetry)
+		if (leverage_symmetry) // then the gamma have flipped sign
 			for (auto row_sel = 0; row_sel < m_eq; row_sel++)
-				mumps_rhs(row_sel,0) *= 1;
+				mumps_rhs(n + row_sel,0) *= -1;
 
         sysd.FromVectorToUnknowns(mumps_rhs);
 
