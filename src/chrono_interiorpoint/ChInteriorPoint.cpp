@@ -83,6 +83,7 @@ void ImportArrayFromFile(ChMatrix<>& output_mat, std::string filename) {
     my_file.close();
 }
 
+
 double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     solver_call++;
 
@@ -93,16 +94,49 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
     auto m_ineq_old = m_ineq;
     auto m_eq_old = m_eq;
 
-	sysd.SortActiveConstraints(); // tell ChSystemDescriptor to write the Jacobian [equalities;inequalities]
+    // set offsets so that equality constraints come first
+    sysd.SortActiveConstraints();
 
-	auto m_tuple = sysd.CountActiveConstraintsSorted(constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT);
-    reset_internal_dimensions(sysd.CountActiveVariables(), std::get<0>(m_tuple), std::get<2>(m_tuple), std::get<1>(m_tuple));
-    sysd.ConvertToMatrixForm(&BigMat, nullptr, constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT, false);
+    // get matrices size and identify the constraint mode for inequality constraints
+    auto constr_list = sysd.GetConstraintsList();
+    m_eq = 0;
+    auto m_ineq_tot = 0;
+    ineq_mode.clear();
+    for (auto it = 0; it<constr_list.size(); ++it)
+    {
+        auto temp_mode = constr_list[it]->GetMode();
+        std::cout << "Mode: " << temp_mode << " @" << constr_list[it]->GetOffset() << " ---> " << constr_list[it]->GetOffset() - m_eq << std::endl;
+        switch(constr_list[it]->GetMode())
+        {
+        case eChConstraintMode::CONSTRAINT_FREE:
+            ++m_eq; break;
+        case eChConstraintMode::CONSTRAINT_LOCK:
+            ++m_eq; break;
+        case eChConstraintMode::CONSTRAINT_UNILATERAL:
+            ineq_mode.push_back(eChConstraintModeMOD::CONSTRAINT_UNILATERAL);
+            break;
+        case eChConstraintMode::CONSTRAINT_FRIC:
+            ++m_ineq_tot;
+            if (!dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(constr_list[it]))
+                ineq_mode.push_back(eChConstraintModeMOD::CONSTRAINT_FRIC_N);
+            else
+            // we assume that CONSTRAINT_FRIC has only N and UV type of constraints, otherwise if (enable_friction_cones && dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(constr_list[it]))
+            if (!skip_contacts_uv)
+                ineq_mode.push_back(eChConstraintModeMOD::CONSTRAINT_FRIC_UV);
+            break;
+        default:
+            assert(0);
+        }
+    }
+    m_ineq = ineq_mode.size();
+
+    reset_internal_dimensions(sysd.CountActiveVariables(), m_eq, m_ineq, m_ineq_tot);
+    sysd.ConvertToMatrixForm(&BigMat, nullptr, false, skip_contacts_uv, ADD_COMPLIANCE);
 
 	if (!leverage_symmetry)
 		make_positive_definite();
 
-    sysd.ConvertToMatrixForm(nullptr, nullptr, nullptr, &rhs.c, &rhs.b, nullptr, false, constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT);  // load f->c and b->b
+    sysd.ConvertToMatrixForm(nullptr, nullptr, nullptr, &rhs.c, &rhs.b, nullptr, false, skip_contacts_uv);  // load f->c and b->b
     rhs.c.MatrScale(-1); // adapt to InteriorPoint convention
     rhs.b.MatrScale(-1); // adapt to InteriorPoint convention
 
@@ -166,7 +200,7 @@ double ChInteriorPoint::Solve(ChSystemDescriptor& sysd) {
 
     if( ADD_COMPLIANCE && m_ineq > 0 )
     {
-        sysd.ConvertToMatrixForm(nullptr, nullptr, &E, nullptr, nullptr, nullptr, false, constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT);
+        sysd.ConvertToMatrixForm(nullptr, nullptr, &E, nullptr, nullptr, nullptr, false, skip_contacts_uv);
         E *= -1;
     }
 
@@ -205,26 +239,26 @@ void ChInteriorPoint::iterate() {
     /*********************************************************************************/
 
     setup_system_matrix(var);
-    computeNesterovToddScalingMatrix(var);
+    scaling_matrix.MatrMultiply(var.lambda, yl_scaled);
 
-    ChMatrixDynamic<double> mumps_rhs(n + m_eq + m_ineq, 1);
-    IPvariables_t Dvar_pred(n, m_eq, m_ineq);
 
     // WARNING: the residual structure 'res' must be already updated at this point!
 
     // fill 'mumps_rhs' with rhs [-res.rd;-res.rp_gamma;-res.rp_lambda-y]
+    mumps_rhs.Resize(n + m_eq + m_ineq, 1);
     for( auto row_sel = 0; row_sel < n;      row_sel++ ) mumps_rhs.SetElement(row_sel,            0, -res.rd(row_sel, 0));
-	for (auto row_sel = 0; row_sel < m_eq;   row_sel++ ) mumps_rhs.SetElement(row_sel + n,        0, -res.rp_gamma(row_sel, 0));
+	for( auto row_sel = 0; row_sel < m_eq;   row_sel++ ) mumps_rhs.SetElement(row_sel + n,        0, -res.rp_gamma(row_sel, 0));
     for( auto row_sel = 0; row_sel < m_ineq; row_sel++ ) mumps_rhs.SetElement(row_sel + n + m_eq, 0, -res.rp_lambda(row_sel, 0) - var.y(row_sel, 0));
 
-    makeNewtonStep(Dvar_pred, mumps_rhs, res);
+    Dvar_pred.Resize(n, m_eq, m_ineq);
+    get_Newton_direction(Dvar_pred, mumps_rhs, res);
 
     /*** compute step lengths ***/
     // from 16.60 pag.482 from 14.32 pag.408 (remember that y>=0!)
     auto alfa_pred_prim = find_Newton_step_length(var.y, Dvar_pred.y);
     auto alfa_pred_dual = find_Newton_step_length(var.lambda, Dvar_pred.lambda);
 
-    if( EQUAL_STEP_LENGTH )
+    if( equal_step_lengths )
     {
         auto alfa_pred = std::min(alfa_pred_prim, alfa_pred_dual);
         alfa_pred_prim = alfa_pred;
@@ -234,7 +268,7 @@ void ChInteriorPoint::iterate() {
 
     /*** make the prediction step ***/
 	// update only variables needed for complementarity measure
-    IPvariables_t var_pred(n, m_eq, m_ineq);
+    var_pred.Resize(n, m_eq, m_ineq);
 
     var_pred.y = Dvar_pred.y;
 	var_pred.lambda = Dvar_pred.lambda;
@@ -251,7 +285,7 @@ void ChInteriorPoint::iterate() {
 	if (mu_pred == 0)
 		std::cout << "IP warning: complementarity measure is 0, but probably we are not at the optimal solution." << std::endl;
 
-    if( ONLY_PREDICT)
+    if( only_predict)
     {
 		// update remaining variables (v, gamma)
         var_pred.v = Dvar_pred.v;
@@ -273,7 +307,7 @@ void ChInteriorPoint::iterate() {
         res.rp_gamma.MatrScale(1 - alfa_pred_prim);
 
 		res.rd.MatrScale(1 - alfa_pred_dual);
-		if (!EQUAL_STEP_LENGTH)
+		if (!equal_step_lengths)
 		{
 			multiplyH(Dvar_pred.v, vectn);                          // vectn = H * Dvar.v
 			vectn.MatrScale(alfa_pred_prim - alfa_pred_dual);  // vectn = (alfa_pred_prim - alfa_pred_dual) * (H * Dvar.v)
@@ -288,35 +322,59 @@ void ChInteriorPoint::iterate() {
     /*********************************************************************************/
     /******************************* Correction phase ********************************/
     /*********************************************************************************/
-    IPvariables_t Dvar(n, m_eq, m_ineq);
 
     /*** evaluate centering parameter ***/
-    auto sigma = std::pow( mu_pred / res.mu, 3);  // from 14.34 pag.408
+    auto sigma = std::pow(std::max(0.0, std::min(1.0, mu_pred / res.mu)), 3.0); // from [5] pag. 12
+
+    auto rhs_corr = 0;
+    //auto rhs_correction = sigma;
+    vectm_ineq.Reset();
+
+    for (auto cs = 0; cs < ineq_mode.size(); ++cs)
+    {
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_UNILATERAL || ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N)
+        {
+            vectm_ineq(cs) = sigma*res.mu - Dvar_pred.lambda(cs)*Dvar_pred.y(cs);
+            continue;
+        }
+
+
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_UV)
+        {
+            vectm_ineq(cs) = - Dvar_pred.lambda(cs)*Dvar_pred.y(cs);
+            continue;
+        }
+    }
+
+    inverse_Hadamard(yl_scaled, vectm_ineq, vectm_ineq);
+    for (auto row_sel = 0; row_sel < m_ineq; row_sel++) mumps_rhs.SetElement(row_sel + n + m_eq, 0, -yl_scaled(row_sel) + vectm_ineq(row_sel));
+    scaling_matrix.MatrMultiplyClipped(mumps_rhs, vectm_ineq, 0, m_ineq - 1, 0, m_ineq - 1, n + m_eq, 0, true, 0, 0, 0, true);
+
 
     /*** find directions ***/
-	for (auto row_sel = 0; row_sel < n;      row_sel++) mumps_rhs.SetElement(row_sel,            0, -res.rd(row_sel, 0));
-	for (auto row_sel = 0; row_sel < m_eq;   row_sel++) mumps_rhs.SetElement(row_sel + n,        0, -res.rp_gamma(row_sel, 0));
-	for (auto row_sel = 0; row_sel < m_ineq; row_sel++) mumps_rhs.SetElement(row_sel + n + m_eq, 0, -res.rp_lambda(row_sel, 0) - var.y(row_sel, 0) + (sigma * res.mu - Dvar_pred.lambda(row_sel, 0) * Dvar_pred.y(row_sel, 0)) / var.lambda(row_sel, 0));
+	for (auto row_sel = 0; row_sel < n;      row_sel++) mumps_rhs(row_sel           ) =  -(1 - rhs_corr)*res.rd(row_sel);
+	for (auto row_sel = 0; row_sel < m_eq;   row_sel++) mumps_rhs(row_sel + n       ) =  -(1 - rhs_corr)*res.rp_gamma(row_sel);
+	for (auto row_sel = 0; row_sel < m_ineq; row_sel++) mumps_rhs(row_sel + n + m_eq) =  -(1 - rhs_corr)*res.rp_lambda(row_sel) + vectm_ineq(row_sel);
 
-    makeNewtonStep(Dvar, mumps_rhs, res);
+    Dvar.Resize(n, m_eq, m_ineq);
+    get_Newton_direction(Dvar, mumps_rhs, res);
 
     /*** step length correction ***/
-    auto tau = ADAPTIVE_ETA ? exp(-res.mu * m_ineq) * 0.1 + 0.9 : 0.95;  // exponential descent of tau
+    auto tau = adaptive_eta ? exp(-res.mu * m_ineq) * 0.1 + 0.9 : 0.99;  // exponential descent of tau
 
     /*** compute step lengths ***/
     auto alfa_corr_prim = find_Newton_step_length(var.y, Dvar.y, tau);
     auto alfa_corr_dual = find_Newton_step_length(var.lambda, Dvar.lambda, tau);
 
-    if( EQUAL_STEP_LENGTH )
+    if( equal_step_lengths )
     {
         auto alfa_corr = std::min(alfa_corr_prim, alfa_corr_dual);
         alfa_corr_prim = alfa_corr;
         alfa_corr_dual = alfa_corr;
     }
 
-    IPvariables_t var_corr(n, m_eq, m_ineq);
-
     /*** make the correction step ***/
+    var_corr.Resize(n, m_eq, m_ineq);
     var_corr.v = Dvar.v;        var_corr.v.MatrScale(alfa_corr_prim);        var_corr.v += var.v;        var.v = var_corr.v;
     var_corr.y = Dvar.y;        var_corr.y.MatrScale(alfa_corr_prim);        var_corr.y += var.y;        var.y = var_corr.y;
     var_corr.gamma = Dvar.gamma;      var_corr.gamma.MatrScale(alfa_corr_dual);     var_corr.gamma += var.gamma;        var.gamma = var_corr.gamma;
@@ -328,7 +386,7 @@ void ChInteriorPoint::iterate() {
     res.rp_lambda.MatrScale(1 - alfa_corr_prim);
 
 	res.rd.MatrScale(1 - alfa_corr_dual);
-    if( !EQUAL_STEP_LENGTH )
+    if( !equal_step_lengths )
     {
         multiplyH(Dvar.v, vectn);                          // vectn = H*Dvar.v
         vectn.MatrScale(alfa_corr_prim - alfa_corr_dual);  // vectn = (alfa_pred_prim - alfa_pred_dual) * (H * Dvar.v)
@@ -406,6 +464,9 @@ void ChInteriorPoint::setup_system_matrix(const IPvariables_t& vars) {
 			for( auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel )
 				BigMat.SetElement(n + m_eq + diag_sel, n + m_eq + diag_sel, vars.y.GetElement(diag_sel, 0) / vars.lambda.GetElement(diag_sel, 0));
 
+    // Add
+    computeNesterovToddScalingMatrix(vars);
+    scaling_matrix.MatrMultiplyClipped(scaling_matrix, BigMat, 0, m_ineq - 1, 0, m_ineq - 1, 0, n + m_eq, true, 0, 0, n + m_eq);
 	
 
     // factorize the matrix
@@ -426,7 +487,7 @@ void ChInteriorPoint::setup_system_matrix(const IPvariables_t& vars) {
 
 }
 
-void ChInteriorPoint::makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals) {
+void ChInteriorPoint::get_Newton_direction(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals) {
     // Solve the KKT system
     mumps_engine.SetRhsVector(rhs);
     if( mumps_engine.MumpsCall(ChMumpsEngine::SOLVE) )
@@ -461,6 +522,48 @@ void ChInteriorPoint::makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rh
     }
 }
 
+double ChInteriorPoint::get_Newton_steplength(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect) const
+{
+    double alpha_inv = 1;
+    ChMatrixNM<double, 3, 1> a_pr;
+    ChMatrixNM<double, 3, 1> yln; // normalized scaled variable
+    for (auto cs = 0; cs < ineq_mode.size(); ++cs)
+    {
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_UNILATERAL || ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N && skip_contacts_uv)
+        {
+            if (-Dvect(cs) / vect(cs) > alpha_inv)
+                alpha_inv = -Dvect(cs) / vect(cs);
+
+            continue;
+        }
+
+
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N)
+        {
+            auto v_proj = projection_on_polar_cone(vect, cs);
+            auto yl_proj = projection_on_polar_cone(yl_scaled, cs);
+
+            yln(0) = yl_scaled(cs + 0) / yl_proj;
+            yln(1) = yl_scaled(cs + 1) / yl_proj;
+            yln(2) = yl_scaled(cs + 2) / yl_proj;
+
+            auto sjv = yln(0)*Dvect(cs + 0) - yln(1)*Dvect(cs + 1) - yln(2)*Dvect(cs + 2);
+            a_pr(0) = sjv / yl_proj;
+            a_pr(1) = Dvect(cs + 1) - (sjv + Dvect(cs + 0)) / (yln(0) + 1)*yln(1);
+            a_pr(2) = Dvect(cs + 2) - (sjv + Dvect(cs + 0)) / (yln(0) + 1)*yln(2);
+
+            auto alfa_inv_temp = -a_pr(0) + sqrt(a_pr(1)*a_pr(1) + a_pr(2)*a_pr(2));
+
+            if (alfa_inv_temp > alpha_inv)
+                alpha_inv = alfa_inv_temp;
+
+            continue;
+        }
+    } // end FOR loop
+
+    return 1.0 / alpha_inv;
+}
+
 void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old, int m_eq_old, int m_ineq_old) {
     IPvariables_t Dvar(n, m_eq ,m_ineq);
 
@@ -478,7 +581,7 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
             var.lambda.FillElem(1);
 
             auto duality_gap_calc = var.y.MatrDot(var.y, var.lambda);  // [2] pag. 132
-            double duality_gap = m_ineq;                                   // [2] pag. 132
+            double duality_gap = m_ineq;
             assert(duality_gap_calc == duality_gap);
 
             // norm of all residuals; [2] pag. 132
@@ -548,7 +651,7 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
 			for (auto row_sel = 0; row_sel < m_eq; row_sel++) mumps_rhs.SetElement(row_sel + n, 0, -res.rp_gamma(row_sel, 0));
 			for (auto row_sel = 0; row_sel < m_ineq; row_sel++) mumps_rhs.SetElement(row_sel + n + m_eq, 0, -res.rp_lambda(row_sel, 0) - var.y(row_sel, 0));
 
-            makeNewtonStep(Dvar, mumps_rhs, res);
+            get_Newton_direction(Dvar, mumps_rhs, res);
 
             // v is accepted as it is
             var.y += Dvar.y;      // calculate y0
@@ -600,7 +703,7 @@ void ChInteriorPoint::set_starting_point(IP_STARTING_POINT_METHOD start_point_me
             for( auto row_sel = 0; row_sel < m_ineq; row_sel++ )
                 mumps_rhs.SetElement(row_sel + n, 0, -res.rp_lambda(row_sel, 0) - var.y(row_sel, 0));
 
-            makeNewtonStep(Dvar, mumps_rhs, res);
+            get_Newton_direction(Dvar, mumps_rhs, res);
 
 
             // v is accepted as it is
@@ -761,86 +864,153 @@ double ChInteriorPoint::evaluate_objective_function() const {
     return obj_value;
 }
 
-double ChInteriorPoint::projectionOnPolarCone(const ChMatrixDynamic<double>& z)
+double ChInteriorPoint::projection_on_polar_cone(const ChMatrixDynamic<double>& z, int offset)
 {
-    assert(z.GetRows() == 3);
-    return std::sqrt(std::pow(z(0), 2.0) - (std::pow(z(1), 2.0) + std::pow(z(2), 2.0)));
+    return std::sqrt(std::pow(z(0+ offset), 2.0) - (std::pow(z(1+ offset), 2.0) + std::pow(z(2+ offset), 2.0)));
+}
+
+
+
+void ChInteriorPoint::inverse_Hadamard(const ChMatrix<>& v1, const ChMatrix<>& v2, ChMatrix<>& v_out) const
+{
+
+    double sf = 0;
+    for (auto cs = 0; cs < ineq_mode.size(); ++cs)
+    {
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_UNILATERAL || ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N && skip_contacts_uv)
+        {
+            v_out(cs) = v2(cs) / v1(cs);
+            continue;
+        }
+
+
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N)
+        {
+            sf = 1 / std::pow(projection_on_polar_cone(v1, cs), 2.0);
+
+            // backup v2 (needed if v_out == v2)
+            auto v2_0 = v2(cs + 0);
+            auto v2_1 = v2(cs + 1);
+            auto v2_2 = v2(cs + 2);
+
+            v_out(cs + 0) = ( v1(cs + 0) * v2_0 - v1(cs + 1) * v2_1 - v1(cs + 2) * v2_2) / sf;
+            v_out(cs + 1) = (-v1(cs + 1) * v2_0 + (sf + std::pow(v1(cs + 1), 2.0)) / v1(cs + 0) * v2_1 + v1(cs + 1)*v1(cs + 2) / v1(cs + 0) * v2_2) / sf;
+            v_out(cs + 2) = (-v1(cs + 2) * v2_0 + v1(cs + 1)*v1(cs + 2) / v1(cs + 0) * v2_1 + (sf + std::pow(v1(cs + 2), 2.0)) / v1(cs + 0) * v2_2) / sf;
+            cs += 2;
+            continue;
+        }
+    }
+    
 }
 
 void ChInteriorPoint::computeNesterovToddScalingMatrix(const IPvariables_t& var)
 {
+    // resize the scaling matrix
+    auto nnz = 0;
+    for (auto cs = 0; cs < ineq_mode.size(); ++cs)
+    {
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_UNILATERAL)
+            nnz++;
 
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N)
+            skip_contacts_uv ? ++nnz : nnz += 9;
 
-	switch (constraints_form)
-	{
-	case IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT:
-        scaling_matrix.Resize(m_ineq, m_ineq); // TODO: has to be actually computed?
-		for (auto diag_sel = 0; diag_sel < m_ineq; ++diag_sel)
-            scaling_matrix.SetElement(diag_sel,diag_sel, sqrt(var.y(diag_sel)) + 1 / sqrt(var.lambda(diag_sel)) );
-			break;
-	case IP_CONSTRAINTS_FORM::SECOND_ORDER_CONE:
-	    {
-            assert(m_ineq % 3 == 0 && "Unilateral constraints must be all of frictional type for now");
-            scaling_matrix.Resize(m_ineq, m_ineq, m_ineq * 3); // TODO: has to be actually computed?
-            for (auto ci = 0; ci<m_ineq; ci += 3) // for each frictional constraint
-            {
-                auto y_proj = projectionOnPolarCone(var.y);
-                auto lam_proj = projectionOnPolarCone(var.lambda);
-                auto gamma = std::sqrt((1 + (var.lambda(ci)*var.y(ci) + var.lambda(ci + 1)*var.y(ci + 1) + var.lambda(ci + 2)*var.y(ci + 2)) / y_proj / lam_proj)/2);
+        // skip UV, they have already been considered in the previous 'if'
+    }
+    scaling_matrix.Resize(m_ineq, m_ineq, nnz);
 
-                ChVector<double> ssp; // Scaled Scaling Point
-                ssp[0] = (var.y(ci)/y_proj + var.lambda(ci)/lam_proj) / 2 / gamma;
-                ssp[0] = (var.y(ci)/y_proj - var.lambda(ci)/lam_proj) / 2 / gamma;
-                ssp[0] = (var.y(ci)/y_proj - var.lambda(ci)/lam_proj) / 2 / gamma;
+    // evaluate the scaling matrix
+    for (auto cs = 0; cs<ineq_mode.size(); ++cs)
+    {
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_UNILATERAL || ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N && skip_contacts_uv)
+        {
+            
+            scaling_matrix.SetElement(cs, cs, sqrt(var.y(cs)) + 1 / sqrt(var.lambda(cs)));
 
-                ChMatrix33<double> ssm; // Scaled Scaling (sub)Matrix
-                ssm[0][0] = ssp[0];
-                ssm[0][1] = ssp[1];
-                ssm[0][2] = ssp[2];
+            continue;
+        }
 
-                ssm[1][0] = ssp[1];
-                ssm[2][0] = ssp[2];
+        
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N)
+        {
+            // grant that we are handling UV contact components
+            assert(!skip_contacts_uv);
+            // grant that the friction force N is followed by two UV
+            assert(ineq_mode[cs + 1] == eChConstraintModeMOD::CONSTRAINT_FRIC_UV &&
+                ineq_mode[cs + 2] == eChConstraintModeMOD::CONSTRAINT_FRIC_UV
+                && "A friction reaction force along N is not followed by a couple of constraints on UV");
 
-                ssm[1][1] = 1 + ssp[1] * ssp[1] / (ssp[0] + 1);
-                ssm[1][2] = 1 + ssp[1] * ssp[2] / (ssp[0] + 1);
-                ssm[2][1] = 1 + ssp[2] * ssp[1] / (ssp[0] + 1);
-                ssm[2][2] = 1 + ssp[2] * ssp[2] / (ssp[0] + 1);
+            auto y_proj = projection_on_polar_cone(var.y, cs);
+            auto lam_proj = projection_on_polar_cone(var.lambda, cs);
+            auto gamma = std::sqrt((1 + (var.lambda(cs)*var.y(cs) + var.lambda(cs + 1)*var.y(cs + 1) + var.lambda(cs + 2)*var.y(cs + 2)) / y_proj / lam_proj) / 2);
+
+            ChVector<double> nsp; // Normalized Scaling Point  i.e. \bar{w}_k
+            nsp[0] = (var.y(cs    ) / y_proj + var.lambda(cs    ) / lam_proj) / 2 / gamma;
+            nsp[1] = (var.y(cs + 1) / y_proj - var.lambda(cs + 1) / lam_proj) / 2 / gamma;
+            nsp[2] = (var.y(cs + 2) / y_proj - var.lambda(cs + 2) / lam_proj) / 2 / gamma;
+
+            ChMatrix33<double> nsm; // Normalized Scaling SubMatrix i.e. \bar{W}_k
+            nsm[0][0] = nsp[0];
+            nsm[0][1] = nsp[1];
+            nsm[0][2] = nsp[2];
+
+            nsm[1][0] = nsp[1];
+            nsm[2][0] = nsp[2];
+
+            nsm[1][1] = 1 + nsp[1] * nsp[1] / (nsp[0] + 1);
+            nsm[1][2] = 1 + nsp[1] * nsp[2] / (nsp[0] + 1);
+            nsm[2][1] = 1 + nsp[2] * nsp[1] / (nsp[0] + 1);
+            nsm[2][2] = 1 + nsp[2] * nsp[2] / (nsp[0] + 1);
 
 
 #ifdef DEBUG_MODE
-                ChMatrixDynamic<double> deb;
-                for(auto i = 0; i < 3; ++i)
-                    for(auto j = 0; j < 3; ++j)
-                        deb[i][j] = ssp[i] * ssp[j];
+            ChMatrix33<double> deb;
+            for (auto i = 0; i < 3; ++i)
+                for (auto j = 0; j < 3; ++j)
+                    deb[i][j] = nsp[i] * nsp[j];
 
-                ChMatrixDynamic<double> J;
-                J[0][0] = 1;
-                J[1][1] = -1;
-                J[2][2] = -1;
+            ChMatrix33<double> J;
+            J[0][0] = 1;
+            J[1][1] = -1;
+            J[2][2] = -1;
 
-                auto temp(J);
-                temp.MatrMultiply(J, deb);
-                temp.MatrMultiply(temp,J);
-                temp *= 2;
-                temp -= J;
-                temp.MatrMultiply(ssm, temp);
-                temp.MatrMultiply(temp, ssm);
+            auto temp(J);
+            temp.MatrMultiply(J, deb);
+            temp.MatrMultiply(temp, J);
+            temp *= 2;
+            temp -= J;
+            temp.MatrMultiply(nsm, temp);
+            temp.MatrMultiply(temp, nsm);
 
-                for (auto i = 0; i < 3; ++i)
-                    for (auto j = 0; j < 3; ++j)
-                        i == j ? assert(std::abs(temp[i][i] - 1)<1e-8) : assert(std::abs(temp[i][i])<1e-8);
+            // from [5] pag.9 
+            for (auto i = 0; i < 3; ++i)
+                for (auto j = 0; j < 3; ++j)
+                    i == j ? assert(std::abs(temp[i][i] - 1)<1e-8) : assert(std::abs(temp[i][i])<1e-8);
 #endif
 
-                ssm *= std::sqrt(y_proj / lam_proj);
+            // De-normalized Scaling SubMatrix i.e. W_k
+            nsm *= std::sqrt(y_proj / lam_proj);
 
-                scaling_matrix.PasteClippedMatrix(ssm, 0, 0, 3, 3, ci + n + m_eq, ci + n + m_eq, true);
+            scaling_matrix.PasteClippedMatrix(nsm, 0, 0, 3, 3, cs, cs, true);
+
+            cs += 2;
+            continue;
+        }
+
+        // skip UV, they should have already been considered in the previous 'if'
+
+#ifdef DEBUG_MODE
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_UV)
+            continue;
+        
+        assert(false && "An unhandled constraint has been found.");
+#endif
 
 
-            }
-	    }
-		break;
-	default:;
-	}
+    } // end FOR loop
+
+
+
 }
 
 	/// Take care of adapting the size of matrices to \p n_new and \p m_new
@@ -849,6 +1019,7 @@ void ChInteriorPoint::reset_internal_dimensions(int n_new, int m_eq_new, int m_i
 	var.Resize(n_new, m_eq_new, m_ineq_new);
 	rhs.Resize(n_new, m_eq_new, m_ineq_new);
 	res.Resize(n_new, m_eq_new, m_ineq_new);
+    yl_scaled.Resize(m_ineq_new,1);
 
 	// update mutables
     vectn.Resize(n_new, 1);
@@ -875,14 +1046,14 @@ void ChInteriorPoint::reset_internal_dimensions(int n_new, int m_eq_new, int m_i
 	m_ineq = m_ineq_new; // constraints inequalities lines (eventually excluding tangential contact forces)
 }
 
-	void ChInteriorPoint::SetUseSymmetry(bool val)
-	{
-		leverage_symmetry = val;
-		BigMat.SetType(val ? ChSparseMatrix::SYMMETRIC_INDEF : ChSparseMatrix::GENERAL);
-		mumps_engine.SetMatrixSymmetry(val ? ChMumpsEngine::mumps_SYM::SYMMETRIC_GENERAL : ChMumpsEngine::mumps_SYM::UNSYMMETRIC);
-	}
+void ChInteriorPoint::SetUseSymmetry(bool val)
+{
+	leverage_symmetry = val;
+	BigMat.SetType(val ? ChSparseMatrix::SYMMETRIC_INDEF : ChSparseMatrix::GENERAL);
+	mumps_engine.SetMatrixSymmetry(val ? ChMumpsEngine::mumps_SYM::SYMMETRIC_GENERAL : ChMumpsEngine::mumps_SYM::UNSYMMETRIC);
+}
 
-	void ChInteriorPoint::DumpProblem(std::string suffix) {
+void ChInteriorPoint::DumpProblem(std::string suffix) {
 	CreateDirectory("dump", nullptr);
     ExportArrayToFile(var.y, "dump/var_y" + suffix + ".txt");
     ExportArrayToFile(var.v, "dump/var_v" + suffix + ".txt");
@@ -1075,34 +1246,20 @@ ChMatrix<>& ChInteriorPoint::adapt_to_Chrono(ChSystemDescriptor& sysd, ChMatrix<
 	// copy 'gamma' as is
 	for (auto row_sel = 0; row_sel < m_eq; row_sel++)
 	{
-		solution_vect(n + row_sel, 0) = -var.gamma(row_sel, 0);  // there will be an inversion inside FromVectorToUnknowns()
+		solution_vect(n + row_sel, 0) = -var.gamma(row_sel, 0); // there will be an inversion inside FromVectorToUnknowns()
 	}
 
-	// copy 'lambda' as is
-    if( constraints_form == IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT )
+	// copy 'lambda', taking care of padding the space in case we skipped the UV contact forces
+    for (auto cs = 0; cs<ineq_mode.size(); ++cs)
     {
-		auto ineq_sel = 0;
-		auto row_sel = 0;
-		auto con_list = sysd.GetConstraintsList();
-		for (auto con_sel = 0;  con_sel < sysd.GetConstraintsList().size() && ineq_sel<m_ineq; ++con_sel)
-        {
-			if ((con_list[con_sel]->GetMode() == CONSTRAINT_UNILATERAL || con_list[con_sel]->GetMode() == CONSTRAINT_FRIC) && con_list[con_sel]->IsActive() )
-			{
-				if (dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(con_list[con_sel]))
-				{
-					solution_vect(n + m_eq + row_sel, 0) = 0;
-				}
-				else
-					solution_vect(n + m_eq + row_sel, 0) = -var.lambda(ineq_sel, 0);  // there will be an inversion inside FromVectorToUnknowns()
+        solution_vect(n + m_eq + cs, 0) = -var.lambda(cs, 0); // there will be an inversion inside FromVectorToUnknowns()
 
-				++row_sel;
-			}
+        if (ineq_mode[cs] == eChConstraintModeMOD::CONSTRAINT_FRIC_N && skip_contacts_uv)
+        {
+            solution_vect(n + m_eq + cs + 1, 0) = 0;
+            solution_vect(n + m_eq + cs + 2, 0) = 0;
+            cs += 2;
         }
-    }
-    else
-    {
-        for( auto row_sel = 0; row_sel < m_ineq; row_sel++ )
-            solution_vect(n + m_eq + row_sel, 0) = -var.lambda(row_sel);  // there will be an inversion inside FromVectorToUnknowns()
     }
 
     return solution_vect;

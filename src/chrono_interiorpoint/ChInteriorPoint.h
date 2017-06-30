@@ -93,7 +93,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
   public:
     enum class IP_KKT_SOLUTION_METHOD { STANDARD, AUGMENTED, NORMAL };
     enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS, VANDERBERGHE };
-    enum class IP_CONSTRAINTS_FORM { NONNEGATIVE_ORTHANT, SECOND_ORDER_CONE };
 
   private:
 	int n = 0;  ///< size of #v, #H, #IneqCon columns, #EqCon columns
@@ -103,9 +102,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count = 0;
     int iteration_count_max = 50;
 
-    const bool EQUAL_STEP_LENGTH = true;
-    const bool ADAPTIVE_ETA = false;
-    const bool ONLY_PREDICT = false;
+    const bool equal_step_lengths = true;
+    const bool adaptive_eta = false;
+    const bool only_predict = false;
     bool warm_start_broken = false;
     bool warm_start = true;
 	bool leverage_symmetry = false;
@@ -118,7 +117,16 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
     IP_STARTING_POINT_METHOD starting_point_method = IP_STARTING_POINT_METHOD::NOCEDAL;
-	IP_CONSTRAINTS_FORM constraints_form = IP_CONSTRAINTS_FORM::NONNEGATIVE_ORTHANT;
+    bool skip_contacts_uv = true;
+
+    enum class eChConstraintModeMOD {
+        CONSTRAINT_FREE = 0,        ///< the constraint does not enforce anything
+        CONSTRAINT_LOCK = 1,        ///< the constraint enforces c_i=0;
+        CONSTRAINT_UNILATERAL = 2,  ///< the constraint enforces linear complementarity
+                                    /// c_i>=0, l_i>=0, l_1*c_i=0;
+        CONSTRAINT_FRIC_N = 3,        ///< the constraint is the friction normal constraint
+        CONSTRAINT_FRIC_UV = 4,       ///< the constraint is the friction constraint on UV plane
+    };
 
     // Problem matrices and vectors
     ChCOOMatrix BigMat;	///< Global sparse matrix
@@ -141,8 +149,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 		ChMatrixDynamic<double> b_ineq;  ///< rhs of constraints (is '-b' in chrono)
     } rhs;
 
-
-
     // Variables
     struct IPvariables_t {
 		IPvariables_t(){}
@@ -153,14 +159,16 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 			y.Resize(m_ineq, 1);
 			gamma.Resize(m_eq, 1);
 			lambda.Resize(m_ineq, 1);
-			yl_scaled.Resize(m_ineq, 1);
 		}
         ChMatrixDynamic<double> v;    ///< DeltaSpeed/Acceleration ('q' in chrono)
         ChMatrixDynamic<double> y;    ///< Slack variable/Contact points distance ('c' in chrono)
         ChMatrixDynamic<double> gamma;    ///< Lagrangian multipliers/contact|constraint forces for bilateral constraints ('l' in chrono)
         ChMatrixDynamic<double> lambda;  ///< Lagrangian multipliers/contact|constraint forces for unilateral constraints ('l' in chrono)
-        ChMatrixDynamic<double> yl_scaled;  ///< Lagrangian multipliers/contact|constraint forces for unilateral constraints ('l' in chrono)
     } var;
+
+    // Scaled variable
+    ChMatrixDynamic<double> yl_scaled;  ///< Lagrangian multipliers/contact|constraint forces for unilateral constraints ('l' in chrono)
+
 
     // Residuals
     struct IPresidual_nnorm_t {
@@ -204,23 +212,30 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     mutable ChMatrixDynamic<double> vectm_eq;  // temporary variable that has always size (#m_ineq,1)
     mutable ChMatrixDynamic<double> sol_chrono;  // intermediate file to inject the IP solution into Chrono used in adapt_to_Chrono()
 
+    // Temporaries used ONLY in the iterate() function
+    ChMatrixDynamic<double> mumps_rhs;
+    IPvariables_t Dvar_pred, var_pred, Dvar, var_corr;
+
 
     // MUMPS engine
     ChMumpsEngine mumps_engine;
 
+
     // IP specific functions
     void iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
     void setup_system_matrix(const IPvariables_t& vars);
-    void makeNewtonStep(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
+    void get_Newton_direction(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
+    double get_Newton_steplength(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect) const;
     void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_eq_old = 0, int m_ineq_old = 0);
     static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
     void find_Newton_step_length(const IPvariables_t& vars, const IPvariables_t& Dvars, double tau, double& alfa_prim, double& alfa_dual) const;
     double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*vT*H*v + vT*v.
-    static double projectionOnPolarCone(const ChMatrixDynamic<double>& z); ///< Evaluate projection on polar cone
-
+    static double projection_on_polar_cone(const ChMatrixDynamic<double>& z, int offset); ///< Evaluate projection on polar cone
+    void inverse_Hadamard(const ChMatrix<>& v1, const ChMatrix<>& v2, ChMatrix<>& v_out) const;
 
     // Nesterov-Todd scaling
 	ChCSMatrix scaling_matrix;
+    std::vector<eChConstraintModeMOD> ineq_mode;
 	void computeNesterovToddScalingMatrix(const IPvariables_t & var);
 
     // Auxiliary
