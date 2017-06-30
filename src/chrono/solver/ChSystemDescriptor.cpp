@@ -125,9 +125,10 @@ int ChSystemDescriptor::CountActiveConstraints(bool only_bilaterals, bool skip_c
 void ChSystemDescriptor::SortActiveConstraints() {
 	
 	// first put equalities
-	auto counter = 0; // can be #n_c if wanted;
+	auto counter = 0; // can be n_c if wanted;
 	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
-		if (vconstraints[ic]->IsActive() && !(vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL))
+		if (vconstraints[ic]->IsActive() &&
+            !(vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL)) // if NOT unilateral nor friction
 		{
 			vconstraints[ic]->SetOffset(counter);
 			counter++;
@@ -136,7 +137,8 @@ void ChSystemDescriptor::SortActiveConstraints() {
 
 	// then put inequalities
 	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
-		if (vconstraints[ic]->IsActive() && (vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL))
+		if (vconstraints[ic]->IsActive() &&
+            (vconstraints[ic]->GetMode() == CONSTRAINT_FRIC || vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL)) // if unilateral or friction
 		{
 			vconstraints[ic]->SetOffset(counter);
 			counter++;
@@ -144,30 +146,6 @@ void ChSystemDescriptor::SortActiveConstraints() {
 
 	}
 
-}
-
-std::tuple<unsigned int, unsigned int, unsigned int> ChSystemDescriptor::CountActiveConstraintsSorted(bool skip_contacts_uv) {
-
-	n_c = 0;
-	unsigned int n_c_ineq_nouv = 0;
-	unsigned int n_c_ineq_full = 0;
-	unsigned int n_c_eq = 0;
-	for (unsigned int ic = 0; ic < vconstraints.size(); ic++) {
-		if (vconstraints[ic]->IsActive())
-		{
-			++n_c;
-			if (vconstraints[ic]->GetMode() == CONSTRAINT_UNILATERAL || vconstraints[ic]->GetMode() == CONSTRAINT_FRIC)
-			{
-				++n_c_ineq_full;
-				if (!(skip_contacts_uv && dynamic_cast<ChConstraintTwoTuplesFrictionTall*>(vconstraints[ic])))
-					++n_c_ineq_nouv;
-			}
-			else
-				++n_c_eq;
-		}
-	}
-
-	return std::tuple<unsigned int, unsigned int, unsigned int>(n_c_eq, n_c_ineq_full, n_c_ineq_nouv);
 }
 
 void ChSystemDescriptor::UpdateCountsAndOffsets() {
@@ -185,6 +163,7 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Cq,
                                              ChMatrix<>* Frict,
                                              bool only_bilaterals,
                                              bool skip_contacts_uv) {
+
     std::vector<ChConstraint*>& mconstraints = this->GetConstraintsList();
     std::vector<ChVariables*>& mvariables = this->GetVariablesList();
 
@@ -270,29 +249,19 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Cq,
     }
 }
 
-// Convert to different formats:
-// format = 0; | M  Cq'|*| q|-| f|=|0|
-//             | Cq  E | |-l| |-b| |c|
-//
-// format = 1; | M  Cq'|
-//             | Cq  0 |
-//
-// format = 2; | M   0  Cq'|
-//             | Cq  0   0 |
-//             | 0   0   0 |
 
 void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z,
                                              ChMatrix<>* rhs,
+                                             bool only_bilaterals,
                                              bool skip_contacts_uv,
-											 bool add_compliance)
+                                             bool add_compliance)
 
 {
     auto& mconstraints = this->GetConstraintsList();
     auto& mvariables = this->GetVariablesList();
 
     // Count bilateral and other constraints.. (if wanted, bilaterals only)
-    auto mn_c_tuple = this->CountActiveConstraintsSorted(skip_contacts_uv);
-	auto mn_c = std::get<0>(mn_c_tuple) + std::get<2>(mn_c_tuple);
+    auto mn_c = this->CountActiveConstraints(only_bilaterals, skip_contacts_uv);
 
     // Count active variables, by scanning through all variable blocks, and set offsets.
     n_q = this->CountActiveVariables();

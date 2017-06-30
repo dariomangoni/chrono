@@ -142,7 +142,6 @@ class ChApi ChSystemDescriptor {
     virtual int CountActiveConstraints();
     int CountActiveConstraints(bool only_bilaterals, bool skip_contacts_uv);
     void SortActiveConstraints();
-    std::tuple<unsigned, unsigned, unsigned> CountActiveConstraintsSorted(bool skip_contacts_uv);
 
     /// Updates counts of scalar variables and scalar constraints,
     /// if you added/removed some item or if you switched some active state,
@@ -359,6 +358,7 @@ class ChApi ChSystemDescriptor {
     /// Create and return the assembled system matrix and RHS vector.
     virtual void ConvertToMatrixForm(ChSparseMatrix* Z,  ///< [out] assembled system matrix
                                      ChMatrix<>* rhs,     ///< [out] assembled RHS vector
+                                     bool only_bilaterals = false,  ///< only bilateral constraints
                                      bool skip_contacts_uv = false, ///< skip the tangential reaction constraints
                                      bool add_compliance = false  ///< fill this system 'compliance' matrix , if not null
     );
