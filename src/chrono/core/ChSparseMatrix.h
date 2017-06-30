@@ -57,6 +57,10 @@ public:
     /// Get the number of columns of this matrix.
     int GetNumColumns() const { return m_num_cols; }
 
+    // TEMPORARY: in order to get template compatibility sith ChMatrix
+    int GetRows() const { return m_num_rows; }
+    int GetColumns() const { return m_num_cols; }
+
     /// Get the number of non-zero elements stored in this matrix.
     virtual int GetNNZ() const { return m_nnz; }
 
