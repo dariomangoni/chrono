@@ -667,12 +667,12 @@ bool ChCSMatrix::operator==(const ChCSMatrix& mat_source) const {
     return true;
 }
 
-void ChCSMatrix::MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& mat_out, bool transposeA) const {
-    transposeA
+void ChCSMatrix::MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& mat_out, bool this_transposed) const {
+    this_transposed
         ? assert(this->GetNumRows() == matB.GetRows() && "Cannot perform matrix multiplication: wrong dimensions.")
         : assert(this->GetNumColumns() == matB.GetRows() && "Cannot perform matrix multiplication: wrong dimensions.");
 
-    mat_out.Reset(transposeA ? this->GetNumColumns() : this->GetNumRows(), matB.GetColumns());
+    mat_out.Reset(this_transposed ? this->GetNumColumns() : this->GetNumRows(), matB.GetColumns());
 
     for (auto lead_i = 0; lead_i < *leading_dimension; lead_i++) {
         for (auto trail_i = leadIndex[lead_i]; trail_i < leadIndex[lead_i + 1] && initialized_element[trail_i];
@@ -681,25 +681,31 @@ void ChCSMatrix::MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& ma
                 break;
 
             for (auto col_i = 0; col_i < matB.GetColumns(); col_i++)
-                IsRowMajor() ^ transposeA
+                IsRowMajor() ^ this_transposed
                     ? mat_out(lead_i, col_i) += values[trail_i] * matB.GetElement(trailIndex[trail_i], col_i)
                     : mat_out(trailIndex[trail_i], col_i) += values[trail_i] * matB.GetElement(lead_i, col_i);
         }
     }
 }
 
-void ChCSMatrix::MatrMultiplyClipped(const ChMatrix<double>& matB,
-                                     ChMatrix<double>& mat_out,
+template <class matB_type, class mat_out_type>
+void ChCSMatrix::MatrMultiplyClipped(const matB_type& matB,
+                                     mat_out_type& mat_out,
                                      int start_row_matA,
                                      int end_row_matA,
                                      int start_col_matA,
                                      int end_col_matA,
                                      int start_row_matB,
                                      int start_row_mat_out,
-                                     bool transposeA,
+                                     bool this_transposed,
                                      int start_col_matB,
                                      int end_col_matB,
-                                     int start_col_mat_out) const {
+                                     int start_col_mat_out,
+                                     bool overwrite) const {
+    // mat_out cannot be either this nor matB
+    assert(&matB != &mat_out);
+    assert(this != &mat_out);
+
     // if not otherwise specified, matB will be multiplied from start_col_matB until the last column
     if (end_col_matB == 0)
         end_col_matB = matB.GetColumns() - 1;
@@ -714,7 +720,7 @@ void ChCSMatrix::MatrMultiplyClipped(const ChMatrix<double>& matB,
 
     assert(end_col_matB < matB.GetColumns());
 
-    if (!transposeA) {
+    if (!this_transposed) {
         assert(end_row_matA < GetNumRows());
         assert(end_col_matA < GetNumColumns());
     } else {
@@ -729,15 +735,18 @@ void ChCSMatrix::MatrMultiplyClipped(const ChMatrix<double>& matB,
            "Not enough columns in mat_out");
 
     // convert passed argument to internal representation
-    auto start_lead_matA = IsRowMajor() ^ transposeA ? start_row_matA : start_col_matA;
-    auto end_lead_matA = IsRowMajor() ^ transposeA ? end_row_matA : end_col_matA;
-    auto start_trail_matA = IsRowMajor() ^ transposeA ? start_col_matA : start_row_matA;
-    auto end_trail_matA = IsRowMajor() ^ transposeA ? end_col_matA : end_row_matA;
+    auto start_lead_matA = IsRowMajor() ^ this_transposed ? start_row_matA : start_col_matA;
+    auto end_lead_matA = IsRowMajor() ^ this_transposed ? end_row_matA : end_col_matA;
+    auto start_trail_matA = IsRowMajor() ^ this_transposed ? start_col_matA : start_row_matA;
+    auto end_trail_matA = IsRowMajor() ^ this_transposed ? end_col_matA : end_row_matA;
 
     // reset the part of mat_out that will be overwritten
-    for (auto mat_out_row_offset = 0; mat_out_row_offset <= end_row_matA - start_row_matA; ++mat_out_row_offset) {
-        for (auto mat_out_col_offset = 0; mat_out_col_offset <= end_col_matB - start_col_matB; ++mat_out_col_offset) {
-            mat_out(start_row_mat_out + mat_out_row_offset, start_col_mat_out + mat_out_col_offset) = 0;
+    if (overwrite)
+    {
+        for (auto mat_out_row_offset = 0; mat_out_row_offset <= end_row_matA - start_row_matA; ++mat_out_row_offset) {
+            for (auto mat_out_col_offset = 0; mat_out_col_offset <= end_col_matB - start_col_matB; ++mat_out_col_offset) {
+                mat_out(start_row_mat_out + mat_out_row_offset, start_col_mat_out + mat_out_col_offset) = 0;
+            }
         }
     }
 
@@ -756,7 +765,7 @@ void ChCSMatrix::MatrMultiplyClipped(const ChMatrix<double>& matB,
                 continue;
 
             for (auto col_i = start_col_matB; col_i <= end_col_matB; col_i++)
-                IsRowMajor() ^ transposeA
+                IsRowMajor() ^ this_transposed
                     ? mat_out(start_row_mat_out + lead_i - start_lead_matA,
                               start_col_mat_out + col_i - start_col_matB) +=
                       values[trail_i] *

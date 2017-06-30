@@ -287,25 +287,32 @@ class ChApi ChCSMatrix : public ChSparseMatrix {
     /// It allows non compressed matrices.
     bool operator==(const ChCSMatrix& mat_source) const;
 
-    /// Multiply \a this (or \a this transposed, if \p transposeA is \c true) to \p matB and put the result in \p
+    /// Multiply \a this (or \a this transposed, if \p this_transposed is \c true) to \p matB and put the result in \p
     /// mat_out
-    void MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& mat_out, bool transposeA = false) const;
+    void MatrMultiply(const ChMatrix<double>& matB, ChMatrix<double>& mat_out, bool this_transposed = false) const;
 
-    /// Multiply part of \a this (or part of \a this transposed, if \p transposeA is \c true) to \p matB and put the
+    /// Multiply part of \a this (or part of \a this transposed, if \p this_transposed is \c true) to \p matB and put the
     /// result in \p mat_out. \param start_row_this first row of \a this that has to be taken into account for the
-    /// multiplication \param transposeA multiply for \a this transposed instead of \a this
-    void MatrMultiplyClipped(const ChMatrix<double>& matB,
-                             ChMatrix<double>& mat_out,
+    /// multiplication \param this_transposed multiply for \a this transposed instead of \a this<br>
+    /// \a mat_out != this and mat_out != matB
+    /// <pre>
+    /// mat_out[start_row_this:,start_col_mat_out:] = this[start_row_this:end_row_this, start_col_this:end_col_this] *
+    /// matB[start_row_mat_out:start_row_mat_out+end_row_this-start_row_this,start_col_matB+end_col_this-start_col_this,start_col_matB:end_col_matB]
+    /// </pre>
+    template <class matB_type, class mat_out_type>
+    void MatrMultiplyClipped(const matB_type& matB,
+                             mat_out_type& mat_out,
                              int start_row_this,
                              int end_row_this,
                              int start_col_this,
                              int end_col_this,
                              int start_row_matB,
                              int start_row_mat_out,
-                             bool transposeA = false,
+                             bool this_transposed = false,
                              int start_col_matB = 0,
                              int end_col_matB = 0,
-                             int start_col_mat_out = 0) const;
+                             int start_col_mat_out = 0,
+                             bool overwrite = true) const;
 
     /// Apply the given function \p func to any existent and initialized element in the matrix.
     /// To the function \p func will be passed the pointer to the existing element.
