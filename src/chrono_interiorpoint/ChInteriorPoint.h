@@ -92,7 +92,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
   public:
     enum class IP_KKT_SOLUTION_METHOD { STANDARD, AUGMENTED, NORMAL };
-    enum class IP_STARTING_POINT_METHOD { STP1, STP2, NOCEDAL, NOCEDAL_WS, VANDERBERGHE };
 
   private:
 	int n = 0;  ///< size of #v, #H, #IneqCon columns, #EqCon columns
@@ -116,7 +115,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count_tot = 0;
 
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
-    IP_STARTING_POINT_METHOD starting_point_method = IP_STARTING_POINT_METHOD::NOCEDAL;
     bool skip_contacts_uv = true;
 
     enum class eChConstraintModeMOD {
@@ -223,12 +221,10 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 
     // IP specific functions
     void iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
-    void setup_system_matrix(const IPvariables_t& vars);
+    void factorize_system_matrix();
     void get_Newton_direction(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
     double get_Newton_steplength(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect) const;
-    void set_starting_point(IP_STARTING_POINT_METHOD start_point_method, int n_old = 0, int m_eq_old = 0, int m_ineq_old = 0);
-    static double find_Newton_step_length(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect, double tau = 1);
-    void find_Newton_step_length(const IPvariables_t& vars, const IPvariables_t& Dvars, double tau, double& alfa_prim, double& alfa_dual) const;
+    void set_feasible_starting_point();
     double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*vT*H*v + vT*v.
     static double projection_on_polar_cone(const ChMatrixDynamic<double>& z, int offset); ///< Evaluate projection on polar cone
     void inverse_Hadamard(const ChMatrix<>& v1, const ChMatrix<>& v2, ChMatrix<>& v_out) const;
@@ -270,9 +266,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     // Auxiliary
     /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem. Change it before starting the solver.
     void SetKKTSolutionMethod(IP_KKT_SOLUTION_METHOD qp_solve_type_selection) { KKT_solve_method = qp_solve_type_selection; }
-
-    /// Set the Karush–Kuhn–Tucker problem form that will be used to solve the IP problem. Change it before starting the solver.
-    void SetStartingPointMethod(IP_STARTING_POINT_METHOD starting_point_method_in) { starting_point_method = starting_point_method_in; }
 
     /// Set the maximum number of iterations after which the iteration loop will be stopped.
     void SetMaxIterations(int max_iter) { iteration_count_max = max_iter; }
