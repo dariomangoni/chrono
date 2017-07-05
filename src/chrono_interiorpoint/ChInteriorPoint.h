@@ -102,12 +102,14 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count_max = 50;
 
     const bool equal_step_lengths = true;
-    const bool adaptive_eta = false;
+    const bool adaptive_eta = true;
     const bool only_predict = false;
-    bool warm_start_broken = false;
     bool warm_start = true;
+    bool warm_start_broken = true;
 	bool leverage_symmetry = false;
 	bool nesterov_todd_scaling = false;
+    bool m_lock = false;
+    bool m_force_sparsity_pattern_update = false;
 
     ChTimer<> ip_timer_solver_solvercall;
     ChTimer<> ip_timer_solve_assembly;
@@ -115,7 +117,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count_tot = 0;
 
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
-    bool skip_contacts_uv = true;
+    bool skip_contacts_uv = false;
 
     enum class eChConstraintModeMOD {
         CONSTRAINT_FREE = 0,        ///< the constraint does not enforce anything
@@ -133,25 +135,39 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     // Known terms
     struct IPrhs_t {
 		IPrhs_t(){}
-		IPrhs_t(int n, int m_eq, int m_ineq) { Resize(n, m_eq, m_ineq); }
-		void Resize(int n, int m_eq, int m_ineq)
+		IPrhs_t(int n, int m_eq, int m_ineq) { Reset(n, m_eq, m_ineq); }
+		void Reset(int n, int m_eq, int m_ineq)
 		{
-			c.Resize(n, 1);
-			b.Resize(m_eq + m_ineq, 1);
-			b_eq.Resize(m_eq, 1);
-			b_ineq.Resize(m_ineq, 1);
+			c.Reset(n, 1);
+			b.Reset(m_eq + m_ineq, 1);
+			b_eq.Reset(m_eq, 1);
+			b_ineq.Reset(m_ineq, 1);
 		}
+        void Resize(int n, int m_eq, int m_ineq)
+        {
+            c.Resize(n, 1);
+            b.Resize(m_eq + m_ineq, 1);
+            b_eq.Resize(m_eq, 1);
+            b_ineq.Resize(m_ineq, 1);
+        }
 		ChMatrixDynamic<double> c;  ///< forces (is '-f' in chrono)
         ChMatrixDynamic<double> b;  ///< rhs of constraints (is '-b' in chrono)
-		ChMatrixDynamic<double> b_eq;  ///< rhs of constraints (is '-b' in chrono)
-		ChMatrixDynamic<double> b_ineq;  ///< rhs of constraints (is '-b' in chrono)
+		ChMatrixDynamic<double> b_eq;  ///< rhs of equality constraints
+		ChMatrixDynamic<double> b_ineq;  ///< rhs of inequality constraints
     } rhs;
 
     // Variables
     struct IPvariables_t {
 		IPvariables_t(){}
-		IPvariables_t(int n, int m_eq, int m_ineq) { Resize(n, m_eq, m_ineq); }
-		void Resize(int n, int m_eq, int m_ineq)
+		IPvariables_t(int n, int m_eq, int m_ineq) { Reset(n, m_eq, m_ineq); }
+		void Reset(int n, int m_eq, int m_ineq)
+		{
+			v.Reset(n, 1);
+			y.Reset(m_ineq, 1);
+			gamma.Reset(m_eq, 1);
+			lambda.Reset(m_ineq, 1);
+		}
+        void Resize(int n, int m_eq, int m_ineq)
 		{
 			v.Resize(n, 1);
 			y.Resize(m_ineq, 1);
@@ -184,8 +200,15 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
         double mu = 0;  ///< complementarity measure
 
 		IPresidual_t(){}
-		IPresidual_t(int n, int m_eq, int m_ineq) { Resize(n, m_eq, m_ineq); }
-		void Resize(int n, int m_eq, int m_ineq)
+		IPresidual_t(int n, int m_eq, int m_ineq) { Reset(n, m_eq, m_ineq); }
+		void Reset(int n, int m_eq, int m_ineq)
+		{
+			rd.Reset(n, 1);
+			rp_gamma.Reset(m_eq, 1);
+			rp_lambda.Reset(m_ineq, 1);
+		}
+
+        void Resize(int n, int m_eq, int m_ineq)
 		{
 			rd.Resize(n, 1);
 			rp_gamma.Resize(m_eq, 1);
@@ -223,7 +246,8 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
     void factorize_system_matrix();
     void get_Newton_direction(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
-    double get_Newton_steplength(const ChMatrix<double>& vect, const ChMatrix<double>& Dvect) const;
+    double get_Newton_steplength(const ChMatrix<double>& pos, const ChMatrix<double>& dir) const;
+    double get_Newton_steplength_MIN(const ChMatrix<double>& pos) const;
     void set_feasible_starting_point();
     double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*vT*H*v + vT*v.
     static double projection_on_polar_cone(const ChMatrixDynamic<double>& z, int offset); ///< Evaluate projection on polar cone
@@ -252,6 +276,8 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     std::string logfile_name{ "interior_point_log" };
     bool print_history = false;
     void LoadProblem();
+    template <class vect_t>
+    static bool is_not_valid(const vect_t& vect, int size);
 
 
 
@@ -285,6 +311,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     /// Leverage matrix symmetry
 	void SetUseSymmetry(bool val);
 
+    /// Leverage matrix symmetry
+    void SetSkipContactsUV(bool val) { skip_contacts_uv = val; }
+
 	/// Enable Nesterov-Todd scaling
 	void SetNesterovToddScaling(bool val) { nesterov_todd_scaling = val; }
 
@@ -292,6 +321,23 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 	double GetTimeSolve_Assembly() const { return ip_timer_solve_assembly(); }
 	/// Get cumulative time for Pardiso calls in Solve phase.
 	double GetTimeSolve_SolverCall() const { return ip_timer_solver_solvercall(); }
+
+    /// Enable/disable locking of the sparsity pattern (default: false).
+    /// If \a val is set to true, then the sparsity pattern of the problem matrix is assumed
+    /// to not change from call to call.
+    void SetSparsityPatternLock(bool val)
+    {
+        m_lock = val;
+        BigMat.SetSparsityPatternLock(m_lock);
+    }
+
+    /// Call an update of the sparsity pattern on the underlying matrix.
+    /// It is used to inform the solver (and the underlying matrices) that the sparsity pattern is changed.
+    /// It is suggested to call this function just after the construction of the solver.
+    void ForceSparsityPatternUpdate(bool val = true)
+    {
+        m_force_sparsity_pattern_update = val;
+    }
 
     // Test
     void DumpProblem(std::string suffix = "");
@@ -304,8 +350,18 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int GetMassMatrixDimension() const { return n; }
     int GetUnilateralConstraintsMatrixRows() const { return m_ineq; }
     int GetBilateralConstraintsMatrixRows() const { return m_eq; }
-    void Solve(const ChCOOMatrix& normal_mat, const ChMatrix<double>& rhs_b, const ChMatrix<double>& rhs_c, ChMatrixDynamic<double>& var_x, ChMatrixDynamic<double>& var_y, ChMatrixDynamic<double>& var_gamma, ChMatrixDynamic<double>& var_lambda);
 };
+
+template <class vect_t>
+bool ChInteriorPoint::is_not_valid(const vect_t& vect, int size)
+{
+    for (auto sel = 0; sel < size; ++ sel)
+    {
+        if (!std::isfinite(vect(sel)))
+            return false;
+    }
+    return true;
+}
 
 }  // end of namespace chrono
 

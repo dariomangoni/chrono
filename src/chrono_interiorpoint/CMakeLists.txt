@@ -34,6 +34,7 @@ SET(ChronoEngine_IP_SOURCES
 
 SET(ChronoEngine_IP_HEADERS
     ChInteriorPoint.h
+    ChInteriorPointUtils.h
 	ChApiInteriorPoint.h
 )
 

@@ -181,10 +181,10 @@ int main(int argc, char* argv[]) {
 	std::cout << "Interior-Point test bench using " << (contact_model_NSC ? "NSC" : "SMC") << " contact model" << std::endl;
 
 	double cubes_edge = 0.05;
-	int cubes_x = 12;
-	int cubes_y = 3;
-	int cubes_z = 28;
-	double support_cylinder_radius = 0.05;
+	int cubes_x = 4;
+	int cubes_y = 1;
+	int cubes_z = 6;
+	double support_cylinder_radius = 0.02;
 	double clearance = 0.01;
 
 	// Create a Chrono::Engine physical system
@@ -196,7 +196,7 @@ int main(int argc, char* argv[]) {
 	typedef ChMaterialSurfaceSMC material_surface_class;
 #endif
 
-	auto timestep = contact_model_NSC ? 0.075 : 0.005;
+	auto timestep = contact_model_NSC ? 0.01 : 0.005;
 	auto mat_surface_type = contact_model_NSC ? ChMaterialSurface::NSC : ChMaterialSurface::SMC;
 
 
@@ -250,21 +250,21 @@ int main(int argc, char* argv[]) {
 
 	// Add cylinders
 
-	auto cylinder_left = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, 1, 1000, true, true, mat_surface_type);
+	auto cylinder_left = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, cubes_x*cubes_edge*1.5, 1000, true, true, mat_surface_type);
 	cylinder_left->SetMaterialSurface(mysurfmaterial);
-	cylinder_left->SetPos(ChVector<>(0, 0, -0.5));
+	cylinder_left->SetPos(ChVector<>(0, 0, -0.15));
 	cylinder_left->SetRot(Q_from_AngZ(-CH_C_PI_2));
 	cylinder_left->SetBodyFixed(true);
 	my_system.Add(cylinder_left);
 
-	auto cylinder_right = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, 1, 1000, true, true, mat_surface_type);
+	auto cylinder_right = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, cubes_x*cubes_edge*1.5, 1000, true, true, mat_surface_type);
 	cylinder_right->SetMaterialSurface(mysurfmaterial);
-	cylinder_right->SetPos(ChVector<>(0, 0, 0.5));
+	cylinder_right->SetPos(ChVector<>(0, 0, 0.15));
 	cylinder_right->SetRot(Q_from_AngZ(-CH_C_PI_2));
 	cylinder_right->SetBodyFixed(true);
 	my_system.Add(cylinder_right);
 
-	auto cylinder_up = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, 1, 1000, true, true, mat_surface_type);
+	auto cylinder_up = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, cubes_x*cubes_edge*1.5, 1000, true, true, mat_surface_type);
 	cylinder_up->SetMaterialSurface(mysurfmaterial);
 	cylinder_up->SetPos(ChVector<>(0, 2 * (support_cylinder_radius + clearance) + cubes_y*cubes_edge, 0));
 	cylinder_up->SetRot(Q_from_AngZ(-CH_C_PI_2));
