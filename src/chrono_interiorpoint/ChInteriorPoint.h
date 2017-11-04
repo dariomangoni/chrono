@@ -102,12 +102,9 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count_max = 50;
 
     const bool equal_step_lengths = true;
-    const bool adaptive_eta = true;
+    const bool adaptive_eta = false;
     const bool only_predict = false;
-    bool warm_start = true;
-    bool warm_start_broken = true;
-	bool leverage_symmetry = false;
-	bool nesterov_todd_scaling = false;
+	bool leverage_symmetry = false; //TODO: the ChCSMatrix is not ready to hold symmetric matrices
     bool m_lock = false;
     bool m_force_sparsity_pattern_update = false;
 
@@ -117,14 +114,14 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     int iteration_count_tot = 0;
 
     IP_KKT_SOLUTION_METHOD KKT_solve_method = IP_KKT_SOLUTION_METHOD::AUGMENTED;
-    bool skip_contacts_uv = false;
+    bool skip_contacts_uv = true;
 
     enum class eChConstraintModeMOD {
         CONSTRAINT_FREE = 0,        ///< the constraint does not enforce anything
         CONSTRAINT_LOCK = 1,        ///< the constraint enforces c_i=0;
         CONSTRAINT_UNILATERAL = 2,  ///< the constraint enforces linear complementarity
                                     /// c_i>=0, l_i>=0, l_1*c_i=0;
-        CONSTRAINT_FRIC_N = 3,        ///< the constraint is the friction normal constraint
+        CONSTRAINT_FRIC_N = 3,        ///< the constraint is the friction constraint along the normal
         CONSTRAINT_FRIC_UV = 4,       ///< the constraint is the friction constraint on UV plane
     };
 
@@ -246,11 +243,14 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void iterate();  ///< Perform an IP iteration; returns \e true if exit conditions are met.
     void factorize_system_matrix();
     void get_Newton_direction(IPvariables_t& Dvar_unknown, ChMatrix<>& rhs, const IPresidual_t& residuals);
-    double get_Newton_steplength(const ChMatrix<double>& pos, const ChMatrix<double>& dir) const;
-    double get_Newton_steplength_MIN(const ChMatrix<double>& pos) const;
+    double get_Newton_steplength_MAX(const ChMatrix<double>& pos, const ChMatrix<double>& dir) const;
+    double get_Newton_steplength_MAX_mod(const ChMatrix<double>& pos, const ChMatrix<double>& dir, bool bound_from_zero_to_one = true) const;
+    double get_Newton_steplength_MIN(const ChMatrix<double>& pos, const ChMatrix<double>& dir, bool bound_from_zero_to_one = true) const;
+    double get_Newton_steplength_MIN_along_cone_axis(const ChMatrix<double>& pos) const;
     void set_feasible_starting_point();
     double evaluate_objective_function() const;  ///< Evaluate the objective function i.e. 0.5*vT*H*v + vT*v.
     static double projection_on_polar_cone(const ChMatrixDynamic<double>& z, int offset); ///< Evaluate projection on polar cone
+    static double uTJv(const ChMatrix<double>& u, const ChMatrix<double>& v, int offset);
     void inverse_Hadamard(const ChMatrix<>& v1, const ChMatrix<>& v2, ChMatrix<>& v_out) const;
 
     // Nesterov-Todd scaling
@@ -259,10 +259,10 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 	void computeNesterovToddScalingMatrix(const IPvariables_t & var);
 
     // Auxiliary
-    void reset_internal_dimensions(int n_old, int m_eq_new, int m_ineq_new, int m_ineq_full);
     ChMatrix<>& adapt_to_Chrono(ChSystemDescriptor& sysd, ChMatrix<>& solution_vect) const;
     void residual_fullupdate(IPresidual_t& residuals, const IPvariables_t& variables) const;
     void make_positive_definite();  ///< Change EQ|IneqCon^T to -Eq|IneqCon^T in the current system matrix.
+    void output_log();
 
 	// Basic Algebra routines
     void multiplyIneqCon(const ChMatrix<double>& vect_in, ChMatrix<double>& vect_out) const;
@@ -277,12 +277,14 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     bool print_history = false;
     void LoadProblem();
     template <class vect_t>
-    static bool is_not_valid(const vect_t& vect, int size);
+    static bool is_valid(const vect_t& vect, int size);
+    static int belongs_to_cone(const ChMatrix<double>& pos, int offset);
+    static int belongs_to_cone(const ChMatrix<double>& pos, const ChMatrix<double>& dir, double alfa, int offset);
+    int find_out_of_cone(const ChMatrix<double>& pos, const ChMatrix<double>& dir, double alfa);
+    int find_out_of_cone(const ChMatrix<double>& pos);
 
 
-
-
-  public:
+public:
     ChInteriorPoint();
     ~ChInteriorPoint();
     double Solve(ChSystemDescriptor& sysd) override;
@@ -314,9 +316,6 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     /// Leverage matrix symmetry
     void SetSkipContactsUV(bool val) { skip_contacts_uv = val; }
 
-	/// Enable Nesterov-Todd scaling
-	void SetNesterovToddScaling(bool val) { nesterov_todd_scaling = val; }
-
 	/// Get cumulative time for assembly operations in Solve phase.
 	double GetTimeSolve_Assembly() const { return ip_timer_solve_assembly(); }
 	/// Get cumulative time for Pardiso calls in Solve phase.
@@ -343,6 +342,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void DumpProblem(std::string suffix = "");
     void DumpIPStatus(std::string suffix = "") const;
     void RecordHistory(bool on_off, std::string file_name = "interior_point_log");
+    void PrintCVXOPTproblem(ChSystemDescriptor& sysd, std::string filepath);
 	void PrintIPStatus() const;
     int GetSolverCalls() const { return solver_call; }
     int GetIPSolverCalls() const { return ip_solver_call; } ///< it may differ from GetSolverCalls() in case no inequality constraint is found
@@ -353,7 +353,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
 };
 
 template <class vect_t>
-bool ChInteriorPoint::is_not_valid(const vect_t& vect, int size)
+bool ChInteriorPoint::is_valid(const vect_t& vect, int size)
 {
     for (auto sel = 0; sel < size; ++ sel)
     {
@@ -362,6 +362,7 @@ bool ChInteriorPoint::is_not_valid(const vect_t& vect, int size)
     }
     return true;
 }
+
 
 }  // end of namespace chrono
 

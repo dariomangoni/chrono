@@ -47,11 +47,11 @@ void create_bucket(ChSystemNSC& mphysicalSystem) {
     // Create bricks
 	int box_edges = 36;
 	double wall_thick = 0.01;
-	double box_apothem = 0.5;
+	double box_apothem = 0.06;
 	double box_height = 0.25;
 	double ball_radius = 0.035;
 	double ball_clearance = 0.005;
-    int ball_arrays = 5;
+    int ball_arrays = 1;
 
 
 	
