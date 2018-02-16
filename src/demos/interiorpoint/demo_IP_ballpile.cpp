@@ -42,7 +42,7 @@ void run_test(int total_balls)
 
 	// Create the Irrlicht visualization (open the Irrlicht device,
 	// bind a simple user interface, etc. etc.)
-	irrlicht::ChIrrApp application(&mphysicalSystem, L"Critical Ball", core::dimension2d<u32>(600, 600), false, true);
+	irrlicht::ChIrrApp application(&mphysicalSystem, L"Critical Ball", core::dimension2d<u32>(1080, 1080), false, true);
 
 	// Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
 	irrlicht::ChIrrWizard::add_typical_Logo(application.GetDevice());
@@ -82,8 +82,8 @@ void run_test(int total_balls)
 	double density = 7500;
 	double clearance = 0.01;
 	auto ball_rad = [density](double mass) { return std::pow(mass* 3.0 / 4.0 / density / CH_C_PI, 1.0 / 3.0); };
-	//auto mass_choice = [density](int index) { return std::pow(10.0, static_cast<double>(index)); };
-	auto mass_choice = [](int) { return 1e12; };
+	auto mass_choice = [density](int index) { return std::pow(10.0, static_cast<double>(index)); };
+	//auto mass_choice = [](int) { return 1e12; };
 
 	double height = 0;
 	for (auto ball_sel = 0; ball_sel < total_balls; ++ball_sel)
@@ -168,10 +168,10 @@ void run_test(int total_balls)
 int main(int argc, char* argv[]) {
 	
 
-	for (auto ball_count = 1; ball_count < 25; ++ball_count)
-		run_test(ball_count);
+	//for (auto ball_count = 1; ball_count < 25; ++ball_count)
+	//	run_test(ball_count);
 
-	//run_test(12);
+	run_test(12);
 
 	getchar();
 

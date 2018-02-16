@@ -201,11 +201,11 @@ int main(int argc, char* argv[]) {
 
 
 	// Irrlicht setup
-	ChIrrApp application(&my_system, L"IP FEA contacts", core::dimension2d<u32>(800, 600), false, true, true, irr::video::EDT_OPENGL);
+	ChIrrApp application(&my_system, L"IP FEA contacts", core::dimension2d<u32>(1440, 1080), false, true, true, irr::video::EDT_OPENGL);
 	application.AddTypicalLogo();
 	application.AddTypicalSky();
 	application.AddTypicalLights();
-	application.AddTypicalCamera(core::vector3df(0.6f, 0.2f, 0.4f));
+	application.AddTypicalCamera(core::vector3df(1.2f, 0.5f, 0.8f));
 	application.AddLightWithShadow(core::vector3df(2.5, 3, 2.5), core::vector3df(0, 0, 0), 3, 1, 7.2, 40, 512, video::SColorf(1, 1, 1));
 
 
