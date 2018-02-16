@@ -122,7 +122,7 @@ int main(int argc, char* argv[]) {
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
-	irrlicht::ChIrrApp application(&mphysicalSystem, L"Balls in bucket", core::dimension2d<u32>(800, 600), false, true);
+	irrlicht::ChIrrApp application(&mphysicalSystem, L"Balls in bucket", core::dimension2d<u32>(1440, 1080), false, true);
 
     // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
 	irrlicht::ChIrrWizard::add_typical_Logo(application.GetDevice());
@@ -197,8 +197,8 @@ int main(int argc, char* argv[]) {
 
         application.GetVideoDriver()->endScene();
 
-        if (ip_solver_speed->GetSolverCalls() > 25)
-            break;
+        //if (ip_solver_speed->GetSolverCalls() > 25)
+        //    break;
 
     }
 	timer.stop();
