@@ -52,7 +52,7 @@ class ChApi ChConstraintTwoTuplesRollingN : public ChConstraintTwoTuples<Ta, Tb>
     /// Default constructor
     ChConstraintTwoTuplesRollingN()
         : rollingfriction(0), spinningfriction(0), constraint_U(NULL), constraint_V(NULL), constraint_N(NULL) {
-        this->mode = CONSTRAINT_FRIC;
+        this->mode = CONSTRAINT_FRIC_N;
     }
 
     /// Copy constructor

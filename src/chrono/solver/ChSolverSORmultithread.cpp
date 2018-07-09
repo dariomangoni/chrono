@@ -80,7 +80,7 @@ void SolverThreadFunc(void* userPtr, void* lsMemory) {
             int j_friction_comp = 0;
             double gi_values[3];
             for (unsigned int ic = tdata->constr_from; ic < tdata->constr_to; ic++) {
-                if ((*mconstraints)[ic]->GetMode() == CONSTRAINT_FRIC) {
+                if ((*mconstraints)[ic]->IsUnilateralConic()) {
                     gi_values[j_friction_comp] = (*mconstraints)[ic]->Get_g_i();
                     j_friction_comp++;
                     if (j_friction_comp == 3) {
@@ -148,7 +148,7 @@ void SolverThreadFunc(void* userPtr, void* lsMemory) {
                         // compute:  delta_lambda = -(omega/g_i) * ([Cq_i]*q + b_i + cfm_i*l_i )
                         double deltal = (tdata->solver->GetOmega() / (*mconstraints)[ic]->Get_g_i()) * (-mresidual);
 
-                        if ((*mconstraints)[ic]->GetMode() == CONSTRAINT_FRIC) {
+                        if ((*mconstraints)[ic]->IsUnilateralConic()) {
                             candidate_violation = 0;
                             
                             // update:   lambda += delta_lambda;

@@ -45,7 +45,7 @@ double ChSolverMINRES::Solve(ChSystemDescriptor& sysd  ///< system description w
     int j_friction_comp = 0;
     double gi_values[3];
     for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-        if (mconstraints[ic]->GetMode() == CONSTRAINT_FRIC) {
+        if (mconstraints[ic]->IsUnilateralConic()) {
             gi_values[j_friction_comp] = mconstraints[ic]->Get_g_i();
             j_friction_comp++;
             if (j_friction_comp == 3) {
@@ -183,7 +183,7 @@ double ChSolverMINRES::Solve(ChSystemDescriptor& sysd  ///< system description w
                         double new_lp = mconstraints[ic]->Get_l_i();
 
                         double violation = mconstraints[ic]->Violation(mr(s_cc));  //?
-                        if (mconstraints[ic]->GetMode() == CONSTRAINT_FRIC)
+                        if (mconstraints[ic]->IsUnilateralConic())
                             violation = fabs(ChMin(0.0, violation));
 
                         // ??? trouble with Tang. constraints, for the moment just disable norms
@@ -279,7 +279,7 @@ double ChSolverMINRES::Solve(ChSystemDescriptor& sysd  ///< system description w
                     ml(s_cc) = mconstraints[ic]->Get_l_i();
 
                     double violation = mconstraints[ic]->Violation(mr(s_cc));
-                    if (mconstraints[ic]->GetMode() == CONSTRAINT_FRIC)
+                    if (mconstraints[ic]->IsUnilateralConic())
                         violation = fabs(ChMin(0.0, violation));
 
                     norm_viol += pow(violation, 2);

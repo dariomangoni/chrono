@@ -28,8 +28,8 @@ enum eChConstraintMode {
     CONSTRAINT_LOCK = 1,        ///< the constraint enforces c_i=0;
     CONSTRAINT_UNILATERAL = 2,  ///< the constraint enforces linear complementarity
                                 /// c_i>=0, l_i>=0, l_1*c_i=0;
-    CONSTRAINT_FRIC = 3,        ///< the constraint is one of three reactions in friction
-                                ///(cone complementarity problem)
+    CONSTRAINT_FRIC_N = 3,      ///< the constraint is the normal of the friction force
+    CONSTRAINT_FRIC_UV = 4      ///< the constraint is one of the two tangential friction force
 };
 
 /// Base class for representing constraints to be used
@@ -149,12 +149,25 @@ class ChApi ChConstraint {
     /// constraint).
     virtual bool IsUnilateral() const { return mode == CONSTRAINT_UNILATERAL; }
 
+    /// Tells if the constraint is unilateral conic (i.e. with friction)
+    virtual bool IsUnilateralConic() const { return mode == CONSTRAINT_FRIC_N || mode == CONSTRAINT_FRIC_UV; }
+
+    /// Tells if the constraint is unilateral linear (i.e. no friction)
+    virtual bool IsUnilateralLinear() const { return mode == CONSTRAINT_UNILATERAL; }
+
+    /// Tells if the constraint is bilateral.
+    virtual bool IsBilateral() const { return mode != CONSTRAINT_UNILATERAL && mode != CONSTRAINT_FRIC_N && mode != CONSTRAINT_FRIC_UV; }
+
     /// Tells if the constraint is linear (if non linear, returns false).
     virtual bool IsLinear() const { return true; }
 
     /// Gets the mode of the constraint: free / lock / complementary
     /// A typical constraint has 'lock = true' by default.
     eChConstraintMode GetMode() const { return mode; }
+
+    /// Gets the mode of the constraint: free / lock / complementary
+    /// A typical constraint has 'lock = true' by default.
+    bool IsOfType(eChConstraintMode mode_test) const { return mode == mode_test; }
 
     /// Sets the mode of the constraint: free / lock / complementary
     void SetMode(eChConstraintMode mmode) {

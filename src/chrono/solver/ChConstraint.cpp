@@ -79,7 +79,8 @@ double ChConstraint::Violation(double mc_i) {
 //  public:
     CH_ENUM_MAPPER_BEGIN(eChConstraintMode);
     CH_ENUM_VAL(eChConstraintMode::CONSTRAINT_FREE);
-    CH_ENUM_VAL(eChConstraintMode::CONSTRAINT_FRIC);
+    CH_ENUM_VAL(eChConstraintMode::CONSTRAINT_FRIC_N);
+    CH_ENUM_VAL(eChConstraintMode::CONSTRAINT_FRIC_UV);
     CH_ENUM_VAL(eChConstraintMode::CONSTRAINT_LOCK);
     CH_ENUM_VAL(eChConstraintMode::CONSTRAINT_UNILATERAL);
     CH_ENUM_MAPPER_END(eChConstraintMode);

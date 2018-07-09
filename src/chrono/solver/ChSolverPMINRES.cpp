@@ -63,7 +63,7 @@ double ChSolverPMINRES::Solve(ChSystemDescriptor& sysd  ///< system description 
     int j_friction_comp = 0;
     double gi_values[3];
     for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-        if (mconstraints[ic]->GetMode() == CONSTRAINT_FRIC) {
+        if (mconstraints[ic]->IsUnilateralConic()) {
             gi_values[j_friction_comp] = mconstraints[ic]->Get_g_i();
             j_friction_comp++;
             if (j_friction_comp == 3) {

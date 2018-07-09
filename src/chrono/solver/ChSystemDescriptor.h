@@ -48,6 +48,16 @@ namespace chrono {
 /// * Cone Complementarity Problem (CCP): \f$Y \ni \mathbb{l}  \perp \mathbb{c} \in N_y\f$ (\f$Y_i\f$ are friction
 /// cones)
 ///
+/// Some solvers may require that equality|bilateral and inequality|unilateral constraints are stored in separated
+/// matrix/vectors. In the form
+/// <pre>
+///  | H   C'  D' |*| q |   |0 |   | f |
+///  | C   0   0  | |-le| - |0 | = |-be|
+///  | D   0   E  | |-li|   |ci|   |-bi|
+/// </pre>
+/// vconstraints holds {-l} or {-le;-li}
+/// vvariables holds {q}
+///
 /// *Notes*
 /// 1. most often you call ConvertToMatrixForm() right after a dynamic simulation step,
 ///    in order to get the system matrices updated to the last timestep;
@@ -87,6 +97,9 @@ class ChApi ChSystemDescriptor {
   private:
     int n_q;            ///< number of active variables
     int n_c;            ///< number of active constraints
+    unsigned int n_c_bil = 0;      ///< number of active bilateral constraints
+    unsigned int n_c_unilin = 0;   ///< number of active unilateral constraints with NO friction (linear constraint)
+    unsigned int n_c_unicone = 0;  ///< number of active unilateral constraints with friction (cone constraint)
     bool freeze_count;  ///< for optimization: avoid to re-count the number of active variables and constraints
 
   public:
@@ -141,10 +154,30 @@ class ChApi ChSystemDescriptor {
     /// in 'l' global vector (see GetOffset() in ChConstraint).
     virtual int CountActiveConstraints();
 
+    /// Updates count of active constraints, but only if needed i.e. if new constraints were added since last count.
+    /// Updates the number of
+    void CountActiveConstraintsSplit(bool no_friction = false);
+
+    /// Returns the number of variables.
+    unsigned int GetNumVariables() const { return n_q; }
+
+    /// Returns the number of active _bilateral_ constraints.
+    unsigned int GetNumConstraintsBilateral() const { return n_c_bil; }
+
+    /// Returns the number of active _unilateral linear_ constraints.
+    unsigned int GetNumConstraintsUnilateralLinear() const { return n_c_unilin; }
+
+    /// Returns the number of active _unilateral conic_ constraints.
+    unsigned int GetNumConstraintsUnilateralConic() const { return n_c_unicone; }
+
     /// Updates counts of scalar variables and scalar constraints,
     /// if you added/removed some item or if you switched some active state,
     /// otherwise CountActiveVariables() and CountActiveConstraints() might fail.
     virtual void UpdateCountsAndOffsets();
+
+    /// Updates counts of variables and constraints, sorting constraints in the order: bilateral, unilateral linear and
+    /// unilateral conic constraints.
+    virtual void UpdateCountsAndOffsetsSplit(bool no_friction = false);
 
     /// Sets the c_a coefficient (default=1) used for scaling the M masses of the vvariables
     /// when performing ShurComplementProduct(), SystemProduct(), ConvertToMatrixForm(),
@@ -250,6 +283,10 @@ class ChApi ChSystemDescriptor {
     virtual int FromVectorToUnknowns(ChMatrix<>& mvector  ///< matrix which contains the entire vector x={q,l}
     );
 
+    void SetDynamicVariables(const ChMatrix<>& mvector);
+    void SetConstrReactionVariables(const ChMatrix<>& le_vector, const ChMatrix<>& li_vector);
+    void SetConstrReactionVariables(const ChMatrix<>& l_vector);
+
     //
     // MATHEMATICAL OPERATIONS ON DATA
     //
@@ -351,6 +388,17 @@ class ChApi ChSystemDescriptor {
         /// tangent comp.; =-2 for bilaterals), if not null
         bool only_bilaterals = false,  ///< skip unilateral constraints
         bool skip_contacts_uv = false  ///< skip the tangential reaction constraints
+    );
+
+    void ConvertToMatrixForm(ChSparseMatrix* C,           ///< Jacobian matrix of bilateral constraints
+                             ChSparseMatrix* D,           ///< Jacobian matrix of unilateral constraints
+                             ChSparseMatrix* H,           ///< system matrix (mass+stiffness+damp)
+                             ChSparseMatrix* E,           ///< compliance matrix (mass+stiffness+damp)
+                             ChMatrix<>* f,               ///< external forces vector
+                             ChMatrix<>* be,              ///< residual vector of bilateral constraints
+                             ChMatrix<>* bi,              ///< residual vector of unilateral constraints
+                             ChMatrix<>* friction_coeff,  ///< friction coefficients
+                             bool skip_contacts_uv        ///< skip tangential reaction constraints
     );
 
     /// Create and return the assembled system matrix and RHS vector.

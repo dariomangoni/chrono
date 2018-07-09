@@ -33,7 +33,7 @@ class ChApi ChConstraintTwoTuplesFrictionT : public ChConstraintTwoTuples<Ta, Tb
                                              public ChConstraintTwoTuplesFrictionTall {
   public:
     /// Default constructor
-    ChConstraintTwoTuplesFrictionT() { this->mode = CONSTRAINT_FRIC; }
+    ChConstraintTwoTuplesFrictionT() { this->mode = CONSTRAINT_FRIC_UV; }
 
     /// Copy constructor
     ChConstraintTwoTuplesFrictionT(const ChConstraintTwoTuplesFrictionT& other)
