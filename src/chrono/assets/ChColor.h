@@ -16,6 +16,7 @@
 #define CHCOLOR_H
 
 #include "chrono/core/ChClassFactory.h"
+#include "chrono/core/ChMathematics.h"
 #include "chrono/core/ChStream.h"
 #include "chrono/serialization/ChArchive.h"
 
@@ -24,6 +25,8 @@ namespace chrono {
 /// Class for setting a color (used by ChVisualization)
 class ChApi ChColor {
   public:
+    virtual ~ChColor(){}
+
     float R;  /// red channel (0,1)
     float G;  /// green channel (0,1)
     float B;  /// blue channel (0,1)
@@ -49,6 +52,9 @@ class ChApi ChColor {
     /// The 'v' scalar value is mapped in the vmin-vmax range.
     /// If out_of_range_as_bw option is true, when v>vmax the color is white and for v<vmin the color is black.
     static ChColor ComputeFalseColor(double v, double vmin, double vmax, bool out_of_range_as_bw = false);
+
+    /// Set the color, based on a scalar index that maps to a Rainbow map.
+    static ChColor ComputeRainbowColor(float v, float v_max = 1.0f);
 
     /// Method to allow serialization of transient data to archives.
     virtual void ArchiveOUT(ChArchiveOut& marchive);

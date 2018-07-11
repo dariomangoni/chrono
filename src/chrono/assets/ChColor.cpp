@@ -23,7 +23,6 @@ CH_FACTORY_REGISTER(ChColor)
 
 ChColor ChColor::ComputeFalseColor(double v, double vmin, double vmax, bool out_of_range_as_bw) {
     ChColor c = {1.0, 1.0, 1.0, 0.0};  // default white
-    double dv;
 
     if (out_of_range_as_bw) {
         if (v < vmin)
@@ -36,25 +35,37 @@ ChColor ChColor::ComputeFalseColor(double v, double vmin, double vmax, bool out_
         v = vmin;
     if (v > vmax)
         v = vmax;
-    dv = vmax - vmin;
+
+    double dv = vmax - vmin;
 
     if (v < (vmin + 0.25 * dv)) {
         c.R = 0;
-        c.G = (float)(4 * (v - vmin) / dv);
+        c.G = static_cast<float>(4 * (v - vmin) / dv);
     } else if (v < (vmin + 0.5 * dv)) {
         c.R = 0;
-        c.B = (float)(1 + 4 * (vmin + 0.25 * dv - v) / dv);
+        c.B = static_cast<float>(1 + 4 * (vmin + 0.25 * dv - v) / dv);
     } else if (v < (vmin + 0.75 * dv)) {
-        c.R = (float)(4 * (v - vmin - 0.5 * dv) / dv);
+        c.R = static_cast<float>(4 * (v - vmin - 0.5 * dv) / dv);
         c.B = 0;
     } else {
-        c.G = (float)(1 + 4 * (vmin + 0.75 * dv - v) / dv);
+        c.G = static_cast<float>(1 + 4 * (vmin + 0.75 * dv - v) / dv);
         c.B = 0;
     }
 
-    return (c);
+    return c;
 }
 
+ChColor ChColor::ComputeRainbowColor(float v, float v_max) {
+    v = std::min(v, v_max);
+    auto i = v / v_max;
+    auto R = static_cast<float>(sin(CH_C_2PI * i + 0.0f) * 0.5f + 0.5f);
+    auto G = static_cast<float>(sin(CH_C_2PI * i + 1 * CH_C_PI / 3) * 0.5f + 0.5f);
+    auto B = static_cast<float>(sin(CH_C_2PI * i + 2 * CH_C_PI / 3) * 0.5f + 0.5f);
+    auto A = 0.0f;
+
+    ChColor c = {R, G, B, A};
+    return c;
+}
 void ChColor::ArchiveOUT(ChArchiveOut& marchive) {
     // version number
     marchive.VersionWrite<ChColor>();
