@@ -17,11 +17,11 @@
 
 #include "chrono_fea/ChContactSurfaceMesh.h"
 #include "chrono_fea/ChContactSurfaceNodeCloud.h"
-#include "chrono_fea/ChElementCableANCF.h"
 #include "chrono_fea/ChElementBeamEuler.h"
 #include "chrono_fea/ChElementBeamIGA.h"
 #include "chrono_fea/ChElementBrick.h"
 #include "chrono_fea/ChElementBrick_9.h"
+#include "chrono_fea/ChElementCableANCF.h"
 #include "chrono_fea/ChElementHexa_20.h"
 #include "chrono_fea/ChElementHexa_8.h"
 #include "chrono_fea/ChElementShell.h"
@@ -119,17 +119,29 @@ double ChVisualizationFEAmesh::ComputeScalarOutput(std::shared_ptr<ChNodeFEAxyz>
             if (auto mytetra = std::dynamic_pointer_cast<ChElementTetra_4>(melement)) {
                 return mytetra->GetStrain().GetEquivalentVonMises();
             }
+            if (auto myhexa = std::dynamic_pointer_cast<ChElementHexa_8>(melement)) {
+                return myhexa->GetStrain(0.0, 0.0, 0.0).GetEquivalentVonMises();
+            }
         case E_PLOT_ELEM_STRESS_VONMISES:
             if (auto mytetra = std::dynamic_pointer_cast<ChElementTetra_4>(melement)) {
                 return mytetra->GetStress().GetEquivalentVonMises();
+            }
+            if (auto myhexa = std::dynamic_pointer_cast<ChElementHexa_8>(melement)) {
+                return myhexa->GetStress(0.0, 0.0, 0.0).GetEquivalentVonMises();
             }
         case E_PLOT_ELEM_STRAIN_HYDROSTATIC:
             if (auto mytetra = std::dynamic_pointer_cast<ChElementTetra_4>(melement)) {
                 return mytetra->GetStrain().GetEquivalentMeanHydrostatic();
             }
+            if (auto myhexa = std::dynamic_pointer_cast<ChElementHexa_8>(melement)) {
+                return myhexa->GetStrain(0.0, 0.0, 0.0).GetEquivalentMeanHydrostatic();
+            }
         case E_PLOT_ELEM_STRESS_HYDROSTATIC:
             if (auto mytetra = std::dynamic_pointer_cast<ChElementTetra_4>(melement)) {
                 return mytetra->GetStress().GetEquivalentMeanHydrostatic();
+            }
+            if (auto myhexa = std::dynamic_pointer_cast<ChElementHexa_8>(melement)) {
+                return myhexa->GetStress(0.0, 0.0, 0.0).GetEquivalentMeanHydrostatic();
             }
         default:
             return 1e30;
@@ -176,9 +188,9 @@ void TriangleNormalsCompute(ChVector<int> norm_indexes,
                             std::vector<ChVector<>>& vertexes,
                             std::vector<ChVector<>>& normals,
                             std::vector<int>& accumul) {
-    ChVector<> tnorm =
-        Vcross(vertexes[vert_indexes.y()] - vertexes[vert_indexes.x()], vertexes[vert_indexes.z()] - vertexes[vert_indexes.x()])
-            .GetNormalized();
+    ChVector<> tnorm = Vcross(vertexes[vert_indexes.y()] - vertexes[vert_indexes.x()],
+                              vertexes[vert_indexes.z()] - vertexes[vert_indexes.x()])
+                           .GetNormalized();
     normals[norm_indexes.x()] += tnorm;
     normals[norm_indexes.y()] += tnorm;
     normals[norm_indexes.z()] += tnorm;
@@ -349,10 +361,12 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
                 if (auto mybeameuler = std::dynamic_pointer_cast<ChElementBeamEuler>(this->FEMmesh->GetElement(iel))) {
                     if (mybeameuler->GetSection()->IsCircular())
                         m_circular = true;
-                } else if (auto mybeamancf = std::dynamic_pointer_cast<ChElementCableANCF>(this->FEMmesh->GetElement(iel))) {
+                } else if (auto mybeamancf =
+                               std::dynamic_pointer_cast<ChElementCableANCF>(this->FEMmesh->GetElement(iel))) {
                     if (mybeamancf->GetSection()->IsCircular())
                         m_circular = true;
-                } else if (auto mybeamiga = std::dynamic_pointer_cast<ChElementBeamIGA>(this->FEMmesh->GetElement(iel))) {
+                } else if (auto mybeamiga =
+                               std::dynamic_pointer_cast<ChElementBeamIGA>(this->FEMmesh->GetElement(iel))) {
                     if (mybeamiga->GetSection()->IsCircular())
                         m_circular = true;
                 }
@@ -636,14 +650,12 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
                 unsigned int ivert_el = i_verts;
                 unsigned int inorm_el = i_vnorms;
 
-
                 for (int in = 0; in < beam_resolution; ++in) {
                     double eta = -1.0 + (2.0 * in / (beam_resolution - 1));
 
                     ChVector<> P;
                     ChQuaternion<> msectionrot;
-                    mybeam->EvaluateSectionFrame(eta, P,
-                                                 msectionrot);  // compute abs. pos and rot of section plane
+                    mybeam->EvaluateSectionFrame(eta, P, msectionrot);  // compute abs. pos and rot of section plane
 
                     ChVector<> vresult;
                     ChVector<> vresultB;
@@ -708,7 +720,8 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
 
                         if (in > 0) {
                             ChVector<int> ivert_offset(ivert_el, ivert_el, ivert_el);
-                            ChVector<int> islice_offset((in - 1) * (int)msection_pts.size(), (in - 1) * (int)msection_pts.size(),
+                            ChVector<int> islice_offset((in - 1) * (int)msection_pts.size(),
+                                                        (in - 1) * (int)msection_pts.size(),
                                                         (in - 1) * (int)msection_pts.size());
                             for (size_t is = 0; is < msection_pts.size(); ++is) {
                                 int ipa = (int)is;
@@ -824,20 +837,19 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
                         myshell->EvaluateSectionPoint(u, v, P);  // compute abs. pos and rot of section plane
 
                         ChVector<float> mcol(1, 1, 1);
-                        /*
-                        ChVector<> vresult;
-                        ChVector<> vresultB;
-                        double sresult = 0;
-                        switch(this->fem_data_type)
-                        {
-                            case E_PLOT_ELEM_SHELL_blabla:
-                                myshell->EvaluateSectionForceTorque(eta, vresult, vresultB);
-                                sresult = vresultB.x();
-                                break;
 
-                        }
-                        ChVector<float> mcol = ComputeFalseColor(sresult);
-                        */
+                        // ChVector<> vresult;
+                        // ChVector<> vresultB;
+                        // double sresult = 0;
+                        // switch(this->fem_data_type)
+                        //{
+                        //    case E_PLOT_ELEM_SHELL_blabla:
+                        //        myshell->EvaluateSectionForceTorque(eta, vresult, vresultB);
+                        //        sresult = vresultB.x();
+                        //        break;
+
+                        //}
+                        // ChVector<float> mcol = ComputeFalseColor(sresult);
 
                         trianglemesh.getCoordsVertices()[i_verts] = P;
                         ++i_verts;
@@ -1034,7 +1046,7 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
             }
             // else if (auto mynode = std::dynamic_pointer_cast<ChNodeFEAxyzD>(this->FEMmesh->GetNode(inode))) {
             //	glyphs_asset->SetGlyphVector(inode, mynode->GetPos(), mynode->GetD() * this->symbols_scale,
-            //this->symbolscolor );
+            // this->symbolscolor );
             //}
         }
     }
@@ -1164,7 +1176,8 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
                     glyphs_asset->SetDrawMode(ChGlyphs::GLYPH_VECTOR);
                     for (int igp = 0; igp < 4; ++igp) {
                         glyphs_asset->GetNumberOfGlyphs();
-                        glyphs_asset->SetGlyphVector((unsigned int)glyphs_asset->GetNumberOfGlyphs(), myshell->EvaluateGP(igp),
+                        glyphs_asset->SetGlyphVector((unsigned int)glyphs_asset->GetNumberOfGlyphs(),
+                                                     myshell->EvaluateGP(igp),
                                                      ChVector<>(0, myshell->alpha_i[igp] * 4, 0));
                     }
                 }
@@ -1195,13 +1208,13 @@ void ChVisualizationFEAmesh::Update(ChPhysicsItem* updater, const ChCoordsys<>& 
                         glyphs_asset->SetDrawMode(ChGlyphs::GLYPH_VECTOR);
                         double scale = 1;
                         glyphs_asset->GetNumberOfGlyphs();
-                        glyphs_asset->SetGlyphVector((unsigned int)glyphs_asset->GetNumberOfGlyphs(), myshell->EvaluateGP(igp),
-                                                     myshell->T_i[igp] * (myshell->eps_tilde_1_i[igp] * scale),
-                                                     ChColor(1, 0, 0));
+                        glyphs_asset->SetGlyphVector(
+                            (unsigned int)glyphs_asset->GetNumberOfGlyphs(), myshell->EvaluateGP(igp),
+                            myshell->T_i[igp] * (myshell->eps_tilde_1_i[igp] * scale), ChColor(1, 0, 0));
                         glyphs_asset->GetNumberOfGlyphs();
-                        glyphs_asset->SetGlyphVector((unsigned int)glyphs_asset->GetNumberOfGlyphs(), myshell->EvaluateGP(igp),
-                                                     myshell->T_i[igp] * (myshell->eps_tilde_2_i[igp] * scale),
-                                                     ChColor(0, 0, 1));
+                        glyphs_asset->SetGlyphVector(
+                            (unsigned int)glyphs_asset->GetNumberOfGlyphs(), myshell->EvaluateGP(igp),
+                            myshell->T_i[igp] * (myshell->eps_tilde_2_i[igp] * scale), ChColor(0, 0, 1));
                         glyphs_asset->GetNumberOfGlyphs();
                     }
                 }
