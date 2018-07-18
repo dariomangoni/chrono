@@ -288,24 +288,24 @@ class ChApiFea ChElementHexa_8 : public ChElementHexahedron, public ChLoadableUV
     /// The number of Gauss Point is defined by SetIntegrationRule function (default: 8 Gp).
     virtual void ComputeStiffnessMatrix() {
         double Jdet;
-        ChMatrixNM<double,24,24> temp;
-        //ChMatrixDynamic<> BT;
+        ChMatrixDynamic<>* temp = new ChMatrixDynamic<>;
+        ChMatrixDynamic<> BT;
         this->Volume = 0;
 
         for (unsigned int i = 0; i < GpVector.size(); i++) {
             ComputeMatrB(GpVector[i], Jdet);
-            //BT = *GpVector[i]->MatrB;
-            //BT.MatrTranspose();
-            //temp = (BT * Material->Get_StressStrainMatrix() * (*GpVector[i]->MatrB));
-            temp.MatrTMultiply(*GpVector[i]->MatrB, *GpVector[i]->MatrB);
-            temp.MatrScale(GpVector[i]->GetWeight());
-            temp.MatrScale(Jdet);
-            StiffnessMatrix.MatrAdd(StiffnessMatrix, temp);
+            BT = *GpVector[i]->MatrB;
+            BT.MatrTranspose();
+            *temp = (BT * Material->Get_StressStrainMatrix() * *(GpVector[i]->MatrB));
+            temp->MatrScale(GpVector[i]->GetWeight());
+            temp->MatrScale(Jdet);
+            StiffnessMatrix.MatrAdd(StiffnessMatrix, *temp);
 
             // by the way also computes volume:
             this->Volume += GpVector[i]->GetWeight() * Jdet;
         }
 
+        delete temp;
     }
 
     virtual void SetupInitial(ChSystem* system) override { ComputeStiffnessMatrix(); }
