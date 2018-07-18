@@ -269,8 +269,8 @@ void ChMeshFileLoader::FromAbaqusFileMOD(
                 std::string::size_type nse = line.find("NSET=", 5);
                 if (nse > 0) {
                     std::string::size_type ncom = line.find(",", nse);
-                    std::string current_tag = line.substr(nse + 5, ncom - (nse + 5));
-                    GetLog() << "| parsing nodeset: " << current_tag << "\n";
+                    current_set = line.substr(nse + 5, ncom - (nse + 5));
+                    GetLog() << "| parsing nodeset: " << current_set << "\n";
                 }
                 e_parse_section = E_PARSE_NSET;
             }
