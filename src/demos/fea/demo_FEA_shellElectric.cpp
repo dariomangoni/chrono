@@ -21,15 +21,12 @@
 #include "chrono/core/ChFileutils.h"
 
 #include "chrono/physics/ChBodyEasy.h"
-#include "chrono/physics/ChLinkMate.h"
 #include "chrono/physics/ChSystemNSC.h"
-#include "chrono/solver/ChSolverMINRES.h"
-#include "chrono/solver/ChSolverPMINRES.h"
-#include "chrono/timestepper/ChTimestepper.h"
+
 
 #include <set>
+#include "chrono_fea/ChElementHexa_8.h"
 #include "chrono_fea/ChElementShellReissner4.h"
-#include "chrono_fea/ChLinkDirFrame.h"
 #include "chrono_fea/ChLinkPointFrame.h"
 #include "chrono_fea/ChMesh.h"
 #include "chrono_fea/ChMeshFileLoader.h"
@@ -39,8 +36,6 @@
 #include "chrono_mkl/ChSolverMKL.h"
 #include "chrono_postprocess/ChGnuPlot.h"
 #include "utils/ChUtilsInputOutput.h"
-#include "chrono_fea/ChElementHexahedron.h"
-#include "chrono_fea/ChElementHexa_8.h"
 
 // Remember to use the namespace 'chrono' because all classes
 // of Chrono::Engine belong to this namespace and its children...
@@ -54,16 +49,25 @@ using namespace irr;
 // Output directory
 std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/MATLAB/stressPriusCPSR.sigma_t.txt";
 std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/MATLAB/stressPriusCPSR.sigma_n.txt";
-std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm_coarse.INP";
+std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
+int test_num = 12345;
+double omega = 3000*CH_C_2PI/60.0;
 
 #define USE_MKL
+#define USE_IRRLICHT
+#define FULL_STRESS_OUTPUT
+
+
 
 int main(int argc, char* argv[]) {
-    GetLog() << "Copyright (c) 2017 projectchrono.org\nChrono version: " << CHRONO_VERSION << "\n\n";
 
+
+
+    ChTimer<> tim;
     // Create a Chrono::Engine physical system
     ChSystemNSC my_system;
 
+#ifdef USE_IRRLICHT
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
     ChIrrApp application(&my_system, L"Shells FEA", core::dimension2d<u32>(1024, 768), false, true);
@@ -73,11 +77,13 @@ int main(int argc, char* argv[]) {
     application.AddTypicalSky();
     application.AddTypicalLights();
     application.AddTypicalCamera(core::vector3dfCH(ChVector<>(0.0, 0.0, 0.2)),
-        core::vector3dfCH(ChVector<>(0.0, 0.0, 0.0)));
+                                 core::vector3dfCH(ChVector<>(0.0, 0.0, 0.0)));
     // application.SetContactsDrawMode(irr::ChIrrTools::CONTACT_DISTANCES);
 
     application.AddLightWithShadow(core::vector3dfCH(ChVector<>(0.0, 0.0, 0.5)), core::vector3df(0.0, 0.0, 0.0), 0.1,
-        0.1, 0.5, 0, 512, video::SColorf((f32)0.8, (f32)0.8, (f32)1.0));
+                                   0.0, 0.5, 0, 512, video::SColorf((f32)0.8, (f32)0.8, (f32)1.0));
+
+#endif
 
     // Create a mesh, that is a container for groups
     // of elements and their referenced nodes.
@@ -89,7 +95,18 @@ int main(int argc, char* argv[]) {
     // my_system.Set_G_acc(VNULL); or
     my_mesh->SetAutomaticGravity(false);
 
+    std::string element_tag = "C3D8";
 
+    // Create a material
+    double rho = 7850;
+    double E = 200e9;
+    double nu = 0.3;
+    auto element_thickness = 5e-3;
+
+    auto element_material = std::make_shared<ChContinuumElastic>(E, nu, rho);
+
+
+    std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements;
     std::vector<double> sigma_t;
     std::vector<double> sigma_n;
     {
@@ -136,35 +153,19 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    typedef ChElementHexa_8 element_type;
-    typedef ChNodeFEAxyz nodes_type;
-    typedef ChContinuumElastic material_type;
-    std::string element_tag = "C3D8";
-
-    // Create a material
-    double rho = 7850;
-    double E = 200e9;
-    double nu = 0.7;
-
-    auto element_material = std::make_shared<material_type>(rho, E, nu);
-
     std::map<unsigned, std::tuple<std::string, std::vector<unsigned>>> elements_map;
     std::map<unsigned, std::vector<double>> nodes_map;
     std::map<std::string, std::vector<unsigned int>> nset_map;
     std::map<std::string, std::vector<unsigned int>> elset_map;
-    std::map<unsigned int, std::shared_ptr<nodes_type>> inserted_nodes;
+    std::map<unsigned int, std::shared_ptr<ChNodeFEAxyz>> inserted_nodes;
 
     try {
-        ChMeshFileLoader::FromAbaqusFileMOD(filename_mesh, elements_map,
-            nodes_map, nset_map, elset_map);
+        ChMeshFileLoader::FromAbaqusFileMOD(filename_mesh, elements_map, nodes_map, nset_map, elset_map);
     }
     catch (ChException myerr) {
         GetLog() << myerr.what();
         return 0;
     }
-
-    auto shell_thickness = 1e-2;
-
 
     // bool full_rotor = true;
     // int repetitions = 8;
@@ -174,9 +175,9 @@ int main(int argc, char* argv[]) {
     //    for (auto slot_sel = 0; slot_sel < repetitions; ++slot_sel) {
     for (auto el_it = elements_map.begin(); el_it != elements_map.end(); ++el_it) {
         if (std::get<0>(el_it->second) == element_tag) {
-            auto new_elem = std::make_shared<element_type>();
+            auto new_elem = std::make_shared<ChElementHexa_8>();
             auto nodeid_vect = std::get<1>(el_it->second);
-            std::array<std::shared_ptr<nodes_type>, 8> nodes;
+            std::array<std::shared_ptr<ChNodeFEAxyz>, 8> nodes;
             for (auto node_sel = 0; node_sel < 8; ++node_sel) {
                 // check if the node specified by the current element exists
                 auto node = nodes_map.find(nodeid_vect[node_sel]);
@@ -184,9 +185,12 @@ int main(int argc, char* argv[]) {
                     // check if the node specified by the current has not been inserted yet
                     auto node_found = inserted_nodes.find(nodeid_vect[node_sel]);
                     if (node_found == inserted_nodes.end()) {
-                        //nodes[node_sel] = std::make_shared<nodes_type>(ChFrame<>(ChVector<>(node->second[0], node->second[1], node->second[2]), QUNIT));
-                        //nodes[node_sel] = std::make_shared<nodes_type>(ChVector<>(node->second[0], node->second[1], node->second[2]), VECT_Z);
-                        nodes[node_sel] = std::make_shared<nodes_type>(ChVector<>(node->second[0], node->second[1], node->second[2]));
+                        // nodes[node_sel] = std::make_shared<ChNodeFEAxyz>(ChFrame<>(ChVector<>(node->second[0],
+                        // node->second[1], node->second[2]), QUNIT));  nodes[node_sel] =
+                        // std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]),
+                        // VECT_Z);
+                        nodes[node_sel] =
+                            std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]));
                         my_mesh->AddNode(nodes[node_sel]);
                         inserted_nodes.emplace_hint(inserted_nodes.end(), nodeid_vect[node_sel], nodes[node_sel]);
                     }
@@ -200,9 +204,20 @@ int main(int argc, char* argv[]) {
             // Add new element
             new_elem->SetNodes(nodes[0], nodes[1], nodes[2], nodes[3], nodes[4], nodes[5], nodes[6], nodes[7]);
             new_elem->SetMaterial(element_material);
-            //new_elem->AddLayer(shell_thickness, 0 * CH_C_DEG_TO_RAD, element_material);
-            // new_elem->SetAlphaDamp(0.0);
+            ChVector<> mean_node;
+            for (auto node_sel = 0; node_sel<8; ++node_sel)
+            {
+                mean_node += nodes[node_sel]->GetPos();
+            }
+            mean_node *= 1.0 / 8.0;
+            auto dist_from_center = sqrt(mean_node.x()*mean_node.x() + mean_node.y()*mean_node.y());
+            auto centrifugal_force = new_elem->GetVolume()*element_material->Get_density()*omega*omega*dist_from_center/8.0;
+            for (auto node_sel = 0; node_sel<8; ++node_sel)
+            {
+                nodes[node_sel]->SetForce(centrifugal_force*(ChVector<>(mean_node.x(), mean_node.y(), 0.0).Normalize()));
+            }
             my_mesh->AddElement(new_elem);
+            inserted_elements.emplace_hint(inserted_elements.end(), new_elem, el_it->first);
         }
     }
 
@@ -227,22 +242,26 @@ int main(int argc, char* argv[]) {
     double external_threshold = rotor_external_radius - 1e-3;
     double internal_threshold = rotor_internal_radius + 1e-3;
     auto nodesmesh = my_mesh->GetNodes();
-    std::vector<std::shared_ptr<nodes_type>> external_nodes;
-    std::vector<std::shared_ptr<nodes_type>> internal_nodes;
+    std::vector<std::shared_ptr<ChNodeFEAxyz>> external_nodes;
+    std::vector<std::shared_ptr<ChNodeFEAxyz>> internal_nodes;
+
     for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
-        auto node = std::dynamic_pointer_cast<nodes_type>(nodesmesh[node_sel]);
-        if (node->GetPos().Length() > external_threshold) {
+        auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(nodesmesh[node_sel]);
+        auto dist_from_center = sqrt(node->GetPos().x()*node->GetPos().x() + node->GetPos().y()*node->GetPos().y());
+        if (dist_from_center > external_threshold) {
             external_nodes.push_back(node);
         }
-        else if (node->GetPos().Length() < internal_threshold) {
+        else if (dist_from_center < internal_threshold) {
             internal_nodes.push_back(node);
         }
     }
 
+    // fix nodes
     for (auto it = internal_nodes.begin(); it != internal_nodes.end(); ++it) {
         (*it)->SetFixed(true);
     }
 
+    ChVector<> ForceCum;
     for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
         double angle = atan2((*it)->GetPos().x(), (*it)->GetPos().y());
         if (angle < 0)
@@ -259,44 +278,49 @@ int main(int argc, char* argv[]) {
         int index_int = floor(index);
         sigma_loc[0] = sigma_n[index_int];
         sigma_loc[1] = sigma_t[index_int];
-        sigma_loc[0] += (index - index_int)*(sigma_n[index_int + 1] - sigma_n[index_int]);
-        sigma_loc[1] += (index - index_int)*(sigma_t[index_int + 1] - sigma_t[index_int]);
+        sigma_loc[0] += (index - index_int) * (sigma_n[index_int + 1] - sigma_n[index_int]);
+        sigma_loc[1] += (index - index_int) * (sigma_t[index_int + 1] - sigma_t[index_int]);
+        sigma_loc[2] = 0;
+
+
+        // OVERRIDE
 
         ChVector<> forces_glob = rot_mat * sigma_loc;
-        forces_glob.Scale(CH_C_2PI*rotor_external_radius / external_nodes.size()*shell_thickness);
+        forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (2.0*external_nodes.size()) );
 
-        //GetLog() << "Angle " << angle << "\n Forces" << forces_glob << "\n";
+        //GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
+        ForceCum += forces_glob;
 
-
-        (*it)->SetForce(forces_glob);
+        (*it)->SetForce((*it)->GetForce()+forces_glob);
     }
-
+    //external_nodes[0]->SetForce(ChVector<>(1.0,1.0,0));
     GetLog() << "External nodes: " << external_nodes.size() << "\n";
     GetLog() << "Internal nodes: " << internal_nodes.size() << "\n";
+    GetLog() << "Forces Cum: " << ForceCum << "\n";
     //    }
     //}
 
 
+#ifdef USE_IRRLICHT
 
+     //auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
+     //mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
+     //mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
+     //mvisualizemesh->SetShrinkElements(true, 0.85);
+     //mvisualizemesh->SetSmoothFaces(true);
+     //my_mesh->AddAsset(mvisualizemesh);
 
-
-    //auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
-    //mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
-    //mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
-    //mvisualizemesh->SetShrinkElements(true, 0.85);
-    //mvisualizemesh->SetSmoothFaces(true);
-    //my_mesh->AddAsset(mvisualizemesh);
-
-    /*auto mvisualizemeshref = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
+    auto mvisualizemeshref = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
     mvisualizemeshref->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
-    mvisualizemeshref->SetWireframe(true);
-    mvisualizemeshref->SetDrawInUndeformedReference(true);
-    my_mesh->AddAsset(mvisualizemeshref);*/
+    mvisualizemeshref->SetWireframe(false);
+    mvisualizemeshref->SetDrawInUndeformedReference(false);
+    my_mesh->AddAsset(mvisualizemeshref);
 
     auto mvisualizemeshC = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
     mvisualizemeshC->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_ELEM_TENS_STRESS);
     mvisualizemeshC->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
-    mvisualizemeshC->SetSymbolsThickness(shell_thickness);
+    mvisualizemeshC->SetSymbolsThickness(element_thickness);
+    mvisualizemeshC->SetColorscaleMinMax(0,1e6);
     my_mesh->AddAsset(mvisualizemeshC);
 
     application.AssetBindAll();
@@ -305,22 +329,26 @@ int main(int argc, char* argv[]) {
     // that you added to the bodies into 3D shapes, they can be visualized by Irrlicht!
 
     application.AssetUpdateAll();
+#endif
 
+    tim.reset();
+    tim.start();
     // Mark completion of system construction
     my_system.SetupInitial();
+    
 
-    //
-    // THE SOFT-REAL-TIME CYCLE
-    //
-     //Change solver to MKL
+//
+// THE SOFT-REAL-TIME CYCLE
+//
+// Change solver to MKL
 #ifdef USE_MKL
     auto mkl_solver = std::make_shared<ChSolverMKL<>>();
     mkl_solver->SetSparsityPatternLock(true);
     mkl_solver->ForceSparsityPatternUpdate(true);
     my_system.SetSolver(mkl_solver);
 #else
-    my_system.SetSolverType(ChSolver::Type::MINRES); // <- NEEDED THIS or Matlab or MKL solver
-    my_system.SetSolverWarmStarting(true); // this helps a lot to speedup convergence in this class of problems
+    my_system.SetSolverType(ChSolver::Type::MINRES);  // <- NEEDED THIS or Matlab or MKL solver
+    my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
     my_system.SetMaxItersSolverSpeed(200);
     my_system.SetMaxItersSolverStab(200);
     my_system.SetTolForce(1e-13);
@@ -329,50 +357,79 @@ int main(int argc, char* argv[]) {
     msolver->SetDiagonalPreconditioning(true);
 #endif
 
-    // Change type of integrator:
-    my_system.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT);
-    // my_system.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT_LINEARIZED);
-    // my_system.SetTimestepperType(ChTimestepper::NEWMARK);
-
-    if (auto mint = std::dynamic_pointer_cast<ChImplicitIterativeTimestepper>(my_system.GetTimestepper())) {
-        mint->SetMaxiters(5);
-        mint->SetAbsTolerances(1e-12, 1e-12);
-    }
-
-    double timestep = 0.01;
-    application.SetTimestep(timestep);
     my_system.Setup();
     my_system.Update();
 
-    double mtime = 0;
-    //application.SetPaused(true);
+    tim.stop();
+    GetLog() << "Setup Initial time: " << tim() << "\n";
+
+    tim.reset();
+    tim.start();
     application.GetSystem()->DoStaticLinear();
+    tim.stop();
+    GetLog() << "Simulation time: " << tim() << "\n";
+
+
+    // Export results
+    {
+        tim.reset();
+        tim.start();
+        std::ofstream myfile;
+        std::ostringstream filename_export;
+        filename_export << "export_" << test_num << ".txt";
+        myfile.open(filename_export.str());
+
+        for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
+        {
+            std::ostringstream line;
+            auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
+            auto stress = el->GetStress(0, 0, 0);
+
+            line << inserted_elements.at(el) << ", "
+                 << stress.GetEquivalentVonMises() << ", " 
+#ifdef FULL_STRESS_OUTPUT
+                << stress.XX() << ", "
+                << stress.YY() << ", "
+                << stress.ZZ() << ", "
+                << stress.XY() << ", "
+                << stress.YZ() << ", "
+                << stress.XZ() << ", "
+#endif
+                 << std::endl;
+            myfile << line.str();
+
+        }
+        myfile.close();
+
+        tim.stop();
+        GetLog() << "Export time: " << tim() << "\n";
+    }
+    
+
+    //GetLog() << "forces: " << external_nodes[0]->GetForce() << "\n";
+    //GetLog() << "pos-pos0: " << external_nodes[0]->GetPos() - external_nodes[0]->GetX0() << "\n";
+    //GetLog() << "stress: " << std::dynamic_pointer_cast<ChElementHexa_8>(my_mesh->GetElements()[50])->GetStress(0,0,0) << "\n";
+    //GetLog() << "strain: " << std::dynamic_pointer_cast<ChElementHexa_8>(my_mesh->GetElements()[50])->GetStrain(0,0,0) << "\n";
+    //GetLog() << "VonMises: " << std::dynamic_pointer_cast<ChElementHexa_8>(my_mesh->GetElements()[50])->GetStress(0, 0, 0).GetEquivalentVonMises() << "\n";
+
+    //for (auto el_it = my_mesh->GetElements().begin(); el_it!= my_mesh->GetElements().end(); ++ el_it)
+    //{
+    //    std::cout << std::dynamic_pointer_cast<ChElementHexa_8>(*el_it)->GetStress(0, 0, 0).GetEquivalentVonMises() << std::endl;
+    //}
+
+#ifdef USE_IRRLICHT
     while (application.GetDevice()->run()) {
         application.BeginScene();
 
         application.DrawAll();
 
-        // .. draw also a grid
-        // ChIrrTools::drawGrid(application.GetVideoDriver(), 0.05, 0.05);
-
         if (!application.GetPaused()) {
-            // application.DoStep();
-            // mtime = my_system.GetChTime();
-            //application.GetSystem()->DoStaticNonlinear(3);
-             //application.GetSystem()->DoStaticLinear();
 
-            /*auto nodesmesh = my_mesh->GetNodes();
-            for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
-            auto node = std::dynamic_pointer_cast<ChNodeFEAxyzrot>(nodesmesh[node_sel]);
-            node->SetForce(node->GetForce()*1.0); // Is this only done for visualization purposes???
-            }*/
-
-            mtime += timestep;
-            GetLog() << "Update\n";
         }
 
         application.EndScene();
     }
+#endif
 
     return 0;
 }
