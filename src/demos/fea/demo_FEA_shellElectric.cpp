@@ -50,7 +50,8 @@ using namespace irr;
 std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_t.txt";
 std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_n.txt";
 //std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm.INP";
-std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm_coarse.INP";
+//std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm_coarse.INP";
+std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
 int test_num = 12345;
 double omega = 5000*CH_C_2PI/60.0;
 
@@ -58,6 +59,7 @@ double omega = 5000*CH_C_2PI/60.0;
 #define USE_IRRLICHT
 #define FULL_STRESS_OUTPUT
 //#define EQUAL_ELEMENT_SPACING
+#define DEBUG true
 
 
 class CSVwriter
@@ -65,9 +67,10 @@ class CSVwriter
 private:
     std::ofstream myfile;
     std::ostringstream outbuffer;
+    bool enabled = true;
 public:
 
-    CSVwriter(std::string filename)
+    CSVwriter(std::string filename, bool enabled = true):enabled(enabled)
     {
         myfile.open(filename, std::ios_base::out);
         if (!myfile.good())
@@ -77,6 +80,9 @@ public:
     template<typename T, typename... args_t>
     void AppendRow(const T& objects, const args_t&... objects_other)
     {
+        if (!enabled)
+            return;
+
         outbuffer << objects << ", ";
         this->AppendRow(objects_other...);
     }
@@ -84,11 +90,16 @@ public:
     template<typename T>
     void AppendRow(const T& objects)
     {
+        if (!enabled)
+            return;
+
         outbuffer << objects;
         myfile << outbuffer.str() << std::endl;
         outbuffer.str("");
         outbuffer.clear();
     }
+
+    void EnableWriting(bool on_off) { enabled = on_off;}
 
 
     ~CSVwriter()
@@ -198,7 +209,7 @@ int main(int argc, char* argv[]) {
 
     tim.start();
     std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements_ptr_to_ID;
-    std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
+    //std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
     std::vector<double> sigma_t;
     std::vector<double> sigma_n;
     {
@@ -245,15 +256,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::vector<ChVector<>> sigma_glob;
-    sigma_glob.resize(sigma_n.size());
-    auto delta_angle = CH_C_2PI / sigma_glob.size();
+    CSVwriter sigma_glob_writer("sigma_glob.txt", DEBUG);
+    std::vector<ChVector<>> sigma_glob_set;
+    sigma_glob_set.resize(sigma_n.size());
+    auto delta_angle = CH_C_2PI / sigma_glob_set.size();
     for(auto sigma_sel = 0; sigma_sel<sigma_n.size(); ++sigma_sel)
     {
 
-        sigma_glob[sigma_sel].x() = sigma_n[sigma_sel] * cos(delta_angle*sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle*sigma_sel);
-        sigma_glob[sigma_sel].y() = sigma_n[sigma_sel] * sin(delta_angle*sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle*sigma_sel);
-        sigma_glob[sigma_sel].z() = 0.0;
+        sigma_glob_set[sigma_sel].x() = sigma_n[sigma_sel] * cos(delta_angle*sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle*sigma_sel);
+        sigma_glob_set[sigma_sel].y() = sigma_n[sigma_sel] * sin(delta_angle*sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle*sigma_sel);
+        sigma_glob_set[sigma_sel].z() = 0.0;
+        sigma_glob_writer.AppendRow(delta_angle*sigma_sel, sigma_glob_set[sigma_sel].x(), sigma_glob_set[sigma_sel].y(), sigma_glob_set[sigma_sel].z());
     }
 
     std::map<unsigned, std::tuple<std::string, std::vector<unsigned>>> elements_map;
@@ -296,7 +309,7 @@ int main(int argc, char* argv[]) {
                             std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]));
                         my_mesh->AddNode(nodes[node_sel]);
                         inserted_nodes.emplace_hint(inserted_nodes.end(), nodeid_vect[node_sel], nodes[node_sel]);
-                        inserted_nodes_ptr_to_ID.emplace_hint(inserted_nodes_ptr_to_ID.end(), nodes[node_sel], nodeid_vect[node_sel]);
+                        //inserted_nodes_ptr_to_ID.emplace_hint(inserted_nodes_ptr_to_ID.end(), nodes[node_sel], nodeid_vect[node_sel]);
                     }
                     else {
                         nodes[node_sel] = node_found->second;
@@ -359,7 +372,7 @@ int main(int argc, char* argv[]) {
         (*it)->SetFixed(true);
     }
 
-    CSVwriter forces("forces.txt");
+    CSVwriter forces("forces.txt", DEBUG);
     for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
         double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
 
@@ -393,11 +406,14 @@ int main(int argc, char* argv[]) {
         //ChVector<> forces_glob = rot_mat * sigma_loc;
 
 
-        ChVector<> forces_glob;
-        forces_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
-        forces_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
-        forces_glob[2] = 0;
         forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (2.0*external_nodes.size()));
+        ChVector<> sigma_glob;
+        sigma_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
+        sigma_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
+        sigma_glob[2] = 0;
+
+
+        ChVector<> forces_glob = sigma_glob;
         forces.AppendRow(angle, sigma_loc[0], sigma_loc[1], sigma_loc[2], forces_glob[0], forces_glob[1], forces_glob[2]);
 
 
@@ -408,11 +424,13 @@ int main(int argc, char* argv[]) {
         double halfangle_next = 0.5*(((iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin()))+angle);
         ChVector<> sigma_glob_previous, sigma_glob_next, sigma_glob_center;
 
-        getSigmaGlob(sigma_glob, sigma_glob_previous, halfangle_previous);
-        getSigmaGlob(sigma_glob, sigma_glob_next, halfangle_next);
-        getSigmaGlob(sigma_glob, sigma_glob_center, angle);
+        getSigmaGlob(sigma_glob_set, sigma_glob_previous, halfangle_previous);
+        getSigmaGlob(sigma_glob_set, sigma_glob_next, halfangle_next);
+        getSigmaGlob(sigma_glob_set, sigma_glob_center, angle);
         double archLength_previous, archLength_next;
         getArcLength(angles, archLength_previous, archLength_next, angle, rotor_external_radius);
+
+        double hom_area = CH_C_2PI * rotor_external_radius / external_nodes.size();
 
         ChVector<> forces_glob = 0.5*(archLength_previous*element_thickness*sigma_glob_previous + archLength_next * element_thickness*sigma_glob_next);
         ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next * element_thickness*sigma_glob_center);
@@ -465,7 +483,7 @@ int main(int argc, char* argv[]) {
     tim.start();
     my_system.SetupInitial();
 
-    CSVwriter b("centrifugal_forces.txt");
+    CSVwriter b("centrifugal_forces.txt", DEBUG);
     for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
     {
         auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
@@ -487,6 +505,7 @@ int main(int argc, char* argv[]) {
             centrifugal_force_vector *= centrifugal_force / 8.0;
             node->SetForce(old_force + centrifugal_force_vector);
             b.AppendRow(mean_node.x(), mean_node.y(), centrifugal_force_vector.x(), centrifugal_force_vector.y(), centrifugal_force_vector.z());
+
         }
     }
 
@@ -529,10 +548,7 @@ int main(int argc, char* argv[]) {
     {
         tim.reset();
         tim.start();
-        std::ofstream myfile;
-        std::ostringstream filename_export;
-        filename_export << "stress_" << test_num << ".txt";
-        myfile.open(filename_export.str());
+        CSVwriter stress_file("stress.txt");
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
@@ -540,37 +556,23 @@ int main(int argc, char* argv[]) {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
             auto stress = el->GetStress(0, 0, 0);
 
-            line << inserted_elements_ptr_to_ID.at(el) << ", "
-                 << stress.GetEquivalentVonMises() << ", " 
+            stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises()
 #ifdef FULL_STRESS_OUTPUT
-                << stress.XX() << ", "
-                << stress.YY() << ", "
-                << stress.ZZ() << ", "
-                << stress.XY() << ", "
-                << stress.YZ() << ", "
-                << stress.XZ() << ", "
+                ,stress.XX(),
+                stress.YY(),
+                stress.ZZ(),
+                stress.XY(),
+                stress.YZ(),
+                stress.XZ()
 #endif
-                 << std::endl;
-            myfile << line.str();
+            );
 
         }
-        myfile.close();
 
         tim.stop();
         GetLog() << "Export time: " << tim() << "\n";
     }
     GetLog() << "Done\n";
-
-    //GetLog() << "forces: " << external_nodes[0]->GetForce() << "\n";
-    //GetLog() << "pos-pos0: " << external_nodes[0]->GetPos() - external_nodes[0]->GetX0() << "\n";
-    //GetLog() << "stress: " << std::dynamic_pointer_cast<ChElementHexa_8>(my_mesh->GetElements()[50])->GetStress(0,0,0) << "\n";
-    //GetLog() << "strain: " << std::dynamic_pointer_cast<ChElementHexa_8>(my_mesh->GetElements()[50])->GetStrain(0,0,0) << "\n";
-    //GetLog() << "VonMises: " << std::dynamic_pointer_cast<ChElementHexa_8>(my_mesh->GetElements()[50])->GetStress(0, 0, 0).GetEquivalentVonMises() << "\n";
-
-    //for (auto el_it = my_mesh->GetElements().begin(); el_it!= my_mesh->GetElements().end(); ++ el_it)
-    //{
-    //    std::cout << std::dynamic_pointer_cast<ChElementHexa_8>(*el_it)->GetStress(0, 0, 0).GetEquivalentVonMises() << std::endl;
-    //}
 
 #ifdef USE_IRRLICHT
     while (application.GetDevice()->run()) {
