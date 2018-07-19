@@ -50,13 +50,14 @@ using namespace irr;
 std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_t.txt";
 std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_n.txt";
 //std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm.INP";
-std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
+std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm_coarse.INP";
 int test_num = 12345;
-double omega = 0*CH_C_2PI/60.0;
+double omega = 5000*CH_C_2PI/60.0;
 
 #define USE_MKL
 #define USE_IRRLICHT
 #define FULL_STRESS_OUTPUT
+//#define EQUAL_ELEMENT_SPACING
 
 
 class CSVwriter
@@ -96,6 +97,50 @@ public:
     }
 };
 
+
+void getSigmaGlob(const std::vector<ChVector<>>& sigma_glob_set, ChVector<>& sigma_glob, double angle)
+{
+    angle = fmod(angle, CH_C_2PI);
+    if (angle < 0)
+        angle += CH_C_2PI;
+
+    assert(angle <= CH_C_2PI);
+    assert(angle >= 0);
+
+    double index = angle / CH_C_2PI * (sigma_glob_set.size()-1);
+    auto index_int = static_cast<size_t>(floor(index));
+    //int next_index = index_int > sigma_glob_set.size() ? index_int - sigma_glob_set.size() : index_int;
+    int next_index = std::min(index_int + 1, sigma_glob_set.size()-1);
+
+    sigma_glob = sigma_glob_set[index_int] + (index - index_int) * (sigma_glob_set[next_index] - sigma_glob_set[index_int]);
+    
+}
+
+void getArcLength(const std::set<double>& angles, double& length_previous, double& length_next, double angle, double radius)
+{
+    angle = fmod(angle, CH_C_2PI);
+    if (angle < 0)
+        angle += CH_C_2PI;
+
+    assert(angle <= CH_C_2PI);
+    assert(angle >= 0);
+
+    auto iter_prev = angles.lower_bound(angle);
+    auto iter_next = iter_prev;
+    double angle_previous = iter_prev != angles.begin() ? *--iter_prev : *(--angles.end()) - CH_C_2PI;
+    double angle_next = (iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin())+CH_C_2PI;
+
+    length_previous = 0.5*radius*(angle - angle_previous);
+    length_next = 0.5*radius*(angle_next - angle);
+
+    // OVERRIDE
+    //length_next = 0.5*CH_C_2PI * 80.22e-3 / (560.0);
+    //length_previous = length_next;
+
+    assert(length_previous >= 0.0);
+    assert(length_next >= 0.0);
+
+}
 
 
 int main(int argc, char* argv[]) {
@@ -151,8 +196,9 @@ int main(int argc, char* argv[]) {
 
     auto element_material = std::make_shared<ChContinuumElastic>(E, nu, rho);
 
-
-    std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements;
+    tim.start();
+    std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements_ptr_to_ID;
+    std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
     std::vector<double> sigma_t;
     std::vector<double> sigma_n;
     {
@@ -199,6 +245,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::vector<ChVector<>> sigma_glob;
+    sigma_glob.resize(sigma_n.size());
+    auto delta_angle = CH_C_2PI / sigma_glob.size();
+    for(auto sigma_sel = 0; sigma_sel<sigma_n.size(); ++sigma_sel)
+    {
+
+        sigma_glob[sigma_sel].x() = sigma_n[sigma_sel] * cos(delta_angle*sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle*sigma_sel);
+        sigma_glob[sigma_sel].y() = sigma_n[sigma_sel] * sin(delta_angle*sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle*sigma_sel);
+        sigma_glob[sigma_sel].z() = 0.0;
+    }
+
     std::map<unsigned, std::tuple<std::string, std::vector<unsigned>>> elements_map;
     std::map<unsigned, std::vector<double>> nodes_map;
     std::map<std::string, std::vector<unsigned int>> nset_map;
@@ -239,6 +296,7 @@ int main(int argc, char* argv[]) {
                             std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]));
                         my_mesh->AddNode(nodes[node_sel]);
                         inserted_nodes.emplace_hint(inserted_nodes.end(), nodeid_vect[node_sel], nodes[node_sel]);
+                        inserted_nodes_ptr_to_ID.emplace_hint(inserted_nodes_ptr_to_ID.end(), nodes[node_sel], nodeid_vect[node_sel]);
                     }
                     else {
                         nodes[node_sel] = node_found->second;
@@ -252,7 +310,7 @@ int main(int argc, char* argv[]) {
             new_elem->SetMaterial(element_material);
             
             my_mesh->AddElement(new_elem);
-            inserted_elements.emplace_hint(inserted_elements.end(), new_elem, el_it->first);
+            inserted_elements_ptr_to_ID.emplace_hint(inserted_elements_ptr_to_ID.end(), new_elem, el_it->first);
         }
     }
 
@@ -274,17 +332,22 @@ int main(int argc, char* argv[]) {
 
     double rotor_external_radius = 80.22e-3;
     double rotor_internal_radius = 25.5e-3;
-    double external_threshold = rotor_external_radius - 1e-3;
-    double internal_threshold = rotor_internal_radius + 1e-3;
+    double external_threshold = rotor_external_radius - 1e-4;
+    double internal_threshold = rotor_internal_radius + 1e-4;
     auto nodesmesh = my_mesh->GetNodes();
     std::vector<std::shared_ptr<ChNodeFEAxyz>> external_nodes;
     std::vector<std::shared_ptr<ChNodeFEAxyz>> internal_nodes;
+    std::set<double> angles;
 
     for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
         auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(nodesmesh[node_sel]);
         auto dist_from_center = sqrt(node->GetPos().x()*node->GetPos().x() + node->GetPos().y()*node->GetPos().y());
         if (dist_from_center > external_threshold) {
             external_nodes.push_back(node);
+            double angle = atan2(node->GetPos().y(), node->GetPos().x());
+            if (angle < 0)
+                angle += CH_C_2PI;
+            angles.insert(angle);
         }
         else if (dist_from_center < internal_threshold) {
             internal_nodes.push_back(node);
@@ -296,56 +359,81 @@ int main(int argc, char* argv[]) {
         (*it)->SetFixed(true);
     }
 
-    ChVector<> ForceCum;
     CSVwriter forces("forces.txt");
     for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
         double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
+
+        // assure angle between [0, 2*pi)
+        angle = fmod(angle, CH_C_2PI);
         if (angle < 0)
             angle += CH_C_2PI;
-        ChMatrix33<double> rot_mat;
-        rot_mat(0, 0) = cos(angle);
-        rot_mat(1, 0) = sin(angle);
-        rot_mat(0, 1) = -sin(angle);
-        rot_mat(1, 1) = cos(angle);
-        rot_mat(2, 2) = 1.0;
+
+        assert(angle <= CH_C_2PI);
+        assert(angle >= 0);
+
+#ifdef EQUAL_ELEMENT_SPACING
+        double index = angle / CH_C_2PI * (sigma_n.size() - 1);
+        auto index_int = static_cast<size_t>(floor(index));
+        //int next_index = index_int > sigma_glob_set.size() ? index_int - sigma_glob_set.size() : index_int;
+        int next_index = std::min(index_int + 1, sigma_n.size() - 1);
 
         ChVector<> sigma_loc;
-        assert(angle <= CH_C_2PI);
-        double index = angle / CH_C_2PI * (sigma_t.size()-1);
-        int index_int = static_cast<int>(floor(index));
-        int next_index = (index_int + 1) == sigma_n.size() ? 0 : index_int;
-
         sigma_loc[0] = sigma_n[index_int];
         sigma_loc[1] = sigma_t[index_int];
         sigma_loc[0] += (index - index_int) * (sigma_n[next_index] - sigma_n[index_int]);
         sigma_loc[1] += (index - index_int) * (sigma_t[next_index] - sigma_t[index_int]);
         sigma_loc[2] = 0.0;
 
-        
+        //ChMatrix33<double> rot_mat;
+        //rot_mat(0, 0) = cos(angle);
+        //rot_mat(1, 0) = sin(angle);
+        //rot_mat(0, 1) = -sin(angle);
+        //rot_mat(1, 1) = cos(angle);
+        //rot_mat(2, 2) = 1.0;
+        //ChVector<> forces_glob = rot_mat * sigma_loc;
 
-        // OVERRIDE
 
-        ChVector<> forces_glob = rot_mat * sigma_loc;
+        ChVector<> forces_glob;
         forces_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
         forces_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
         forces_glob[2] = 0;
+        forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (2.0*external_nodes.size()));
         forces.AppendRow(angle, sigma_loc[0], sigma_loc[1], sigma_loc[2], forces_glob[0], forces_glob[1], forces_glob[2]);
 
-        forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (2.0*external_nodes.size()) );
+
+#else
+        auto iter_prev = angles.lower_bound(angle);
+        auto iter_next = iter_prev;
+        double halfangle_previous = 0.5*((iter_prev != angles.begin() ? *--iter_prev : *(--angles.end()))+angle);
+        double halfangle_next = 0.5*(((iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin()))+angle);
+        ChVector<> sigma_glob_previous, sigma_glob_next, sigma_glob_center;
+
+        getSigmaGlob(sigma_glob, sigma_glob_previous, halfangle_previous);
+        getSigmaGlob(sigma_glob, sigma_glob_next, halfangle_next);
+        getSigmaGlob(sigma_glob, sigma_glob_center, angle);
+        double archLength_previous, archLength_next;
+        getArcLength(angles, archLength_previous, archLength_next, angle, rotor_external_radius);
+
+        ChVector<> forces_glob = 0.5*(archLength_previous*element_thickness*sigma_glob_previous + archLength_next * element_thickness*sigma_glob_next);
+        ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next * element_thickness*sigma_glob_center);
+
+        forces.AppendRow(angle, 0.0,0.0,0.0, forces_glob[0], forces_glob[1], forces_glob[2]);
+
+#endif
+
 
 
         //GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
-        ForceCum += forces_glob;
 
         (*it)->SetForce(forces_glob);
     }
-    //external_nodes[0]->SetForce(ChVector<>(1.0,1.0,0));
+
     GetLog() << "External nodes: " << external_nodes.size() << "\n";
     GetLog() << "Internal nodes: " << internal_nodes.size() << "\n";
-    GetLog() << "Forces Cum: " << ForceCum << "\n";
     //    }
     //}
-
+    tim.stop();
+    GetLog() << "Load and set element: " << tim() << "\n";
 
 #ifdef USE_IRRLICHT
 
@@ -366,7 +454,7 @@ int main(int argc, char* argv[]) {
     mvisualizemeshC->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_ELEM_TENS_STRESS);
     mvisualizemeshC->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
     mvisualizemeshC->SetSymbolsThickness(element_thickness);
-    mvisualizemeshC->SetColorscaleMinMax(0,400e6);
+    mvisualizemeshC->SetColorscaleMinMax(0,250e6);
     my_mesh->AddAsset(mvisualizemeshC);
 
     application.AssetBindAll();
@@ -377,6 +465,7 @@ int main(int argc, char* argv[]) {
     tim.start();
     my_system.SetupInitial();
 
+    CSVwriter b("centrifugal_forces.txt");
     for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
     {
         auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
@@ -390,8 +479,14 @@ int main(int argc, char* argv[]) {
         auto centrifugal_force = el->GetVolume()*element_material->Get_density()*omega*omega*dist_from_center;
         for (auto node_sel = 0; node_sel<8; ++node_sel)
         {
-            auto old_force = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetForce();
-            std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->SetForce(old_force + centrifugal_force*ChVector<>(mean_node.x(), mean_node.y(), 0.0).Normalize());
+            auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel));
+            auto old_force = node->GetForce();
+
+            auto centrifugal_force_vector = ChVector<>(mean_node.x(), mean_node.y(), 0.0);
+            centrifugal_force_vector.Normalize();
+            centrifugal_force_vector *= centrifugal_force / 8.0;
+            node->SetForce(old_force + centrifugal_force_vector);
+            b.AppendRow(mean_node.x(), mean_node.y(), centrifugal_force_vector.x(), centrifugal_force_vector.y(), centrifugal_force_vector.z());
         }
     }
 
@@ -445,7 +540,7 @@ int main(int argc, char* argv[]) {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
             auto stress = el->GetStress(0, 0, 0);
 
-            line << inserted_elements.at(el) << ", "
+            line << inserted_elements_ptr_to_ID.at(el) << ", "
                  << stress.GetEquivalentVonMises() << ", " 
 #ifdef FULL_STRESS_OUTPUT
                 << stress.XX() << ", "
@@ -464,7 +559,7 @@ int main(int argc, char* argv[]) {
         tim.stop();
         GetLog() << "Export time: " << tim() << "\n";
     }
-    
+    GetLog() << "Done\n";
 
     //GetLog() << "forces: " << external_nodes[0]->GetForce() << "\n";
     //GetLog() << "pos-pos0: " << external_nodes[0]->GetPos() - external_nodes[0]->GetX0() << "\n";
