@@ -47,15 +47,54 @@ using namespace chrono::postprocess;
 using namespace irr;
 
 // Output directory
-std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/MATLAB/stressPriusCPSR.sigma_t.txt";
-std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/MATLAB/stressPriusCPSR.sigma_n.txt";
+std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_t.txt";
+std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_n.txt";
+//std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm.INP";
 std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
 int test_num = 12345;
-double omega = 3000*CH_C_2PI/60.0;
+double omega = 0*CH_C_2PI/60.0;
 
 #define USE_MKL
 #define USE_IRRLICHT
 #define FULL_STRESS_OUTPUT
+
+
+class CSVwriter
+{
+private:
+    std::ofstream myfile;
+    std::ostringstream outbuffer;
+public:
+
+    CSVwriter(std::string filename)
+    {
+        myfile.open(filename, std::ios_base::out);
+        if (!myfile.good())
+            throw ChException("File with name: " + filename + "cannot be found");
+    }
+
+    template<typename T, typename... args_t>
+    void AppendRow(const T& objects, const args_t&... objects_other)
+    {
+        outbuffer << objects << ", ";
+        this->AppendRow(objects_other...);
+    }
+
+    template<typename T>
+    void AppendRow(const T& objects)
+    {
+        outbuffer << objects;
+        myfile << outbuffer.str() << std::endl;
+        outbuffer.str("");
+        outbuffer.clear();
+    }
+
+
+    ~CSVwriter()
+    {
+        myfile.close();
+    }
+};
 
 
 
@@ -66,6 +105,13 @@ int main(int argc, char* argv[]) {
     ChTimer<> tim;
     // Create a Chrono::Engine physical system
     ChSystemNSC my_system;
+
+    auto truss = std::make_shared<ChBodyEasyBox>(0.1,0.1,0.1,7850);
+    auto ass = std::make_shared<ChColorAsset>(1.0, 0.0, 0.0);
+    truss->SetPos(ChVector<>(0.0, 0.0, -1.0));
+    truss->AddAsset(ass);
+    my_system.Add(truss);
+    truss->SetBodyFixed(true);
 
 #ifdef USE_IRRLICHT
     // Create the Irrlicht visualization (open the Irrlicht device,
@@ -204,18 +250,7 @@ int main(int argc, char* argv[]) {
             // Add new element
             new_elem->SetNodes(nodes[0], nodes[1], nodes[2], nodes[3], nodes[4], nodes[5], nodes[6], nodes[7]);
             new_elem->SetMaterial(element_material);
-            ChVector<> mean_node;
-            for (auto node_sel = 0; node_sel<8; ++node_sel)
-            {
-                mean_node += nodes[node_sel]->GetPos();
-            }
-            mean_node *= 1.0 / 8.0;
-            auto dist_from_center = sqrt(mean_node.x()*mean_node.x() + mean_node.y()*mean_node.y());
-            auto centrifugal_force = new_elem->GetVolume()*element_material->Get_density()*omega*omega*dist_from_center/8.0;
-            for (auto node_sel = 0; node_sel<8; ++node_sel)
-            {
-                nodes[node_sel]->SetForce(centrifugal_force*(ChVector<>(mean_node.x(), mean_node.y(), 0.0).Normalize()));
-            }
+            
             my_mesh->AddElement(new_elem);
             inserted_elements.emplace_hint(inserted_elements.end(), new_elem, el_it->first);
         }
@@ -262,8 +297,9 @@ int main(int argc, char* argv[]) {
     }
 
     ChVector<> ForceCum;
+    CSVwriter forces("forces.txt");
     for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
-        double angle = atan2((*it)->GetPos().x(), (*it)->GetPos().y());
+        double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
         if (angle < 0)
             angle += CH_C_2PI;
         ChMatrix33<double> rot_mat;
@@ -271,27 +307,37 @@ int main(int argc, char* argv[]) {
         rot_mat(1, 0) = sin(angle);
         rot_mat(0, 1) = -sin(angle);
         rot_mat(1, 1) = cos(angle);
-        rot_mat(2, 2) = 1;
+        rot_mat(2, 2) = 1.0;
 
         ChVector<> sigma_loc;
-        double index = angle / CH_C_2PI * sigma_t.size();
-        int index_int = floor(index);
+        assert(angle <= CH_C_2PI);
+        double index = angle / CH_C_2PI * (sigma_t.size()-1);
+        int index_int = static_cast<int>(floor(index));
+        int next_index = (index_int + 1) == sigma_n.size() ? 0 : index_int;
+
         sigma_loc[0] = sigma_n[index_int];
         sigma_loc[1] = sigma_t[index_int];
-        sigma_loc[0] += (index - index_int) * (sigma_n[index_int + 1] - sigma_n[index_int]);
-        sigma_loc[1] += (index - index_int) * (sigma_t[index_int + 1] - sigma_t[index_int]);
-        sigma_loc[2] = 0;
+        sigma_loc[0] += (index - index_int) * (sigma_n[next_index] - sigma_n[index_int]);
+        sigma_loc[1] += (index - index_int) * (sigma_t[next_index] - sigma_t[index_int]);
+        sigma_loc[2] = 0.0;
 
+        
 
         // OVERRIDE
 
         ChVector<> forces_glob = rot_mat * sigma_loc;
+        forces_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
+        forces_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
+        forces_glob[2] = 0;
+        forces.AppendRow(angle, sigma_loc[0], sigma_loc[1], sigma_loc[2], forces_glob[0], forces_glob[1], forces_glob[2]);
+
         forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (2.0*external_nodes.size()) );
+
 
         //GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
         ForceCum += forces_glob;
 
-        (*it)->SetForce((*it)->GetForce()+forces_glob);
+        (*it)->SetForce(forces_glob);
     }
     //external_nodes[0]->SetForce(ChVector<>(1.0,1.0,0));
     GetLog() << "External nodes: " << external_nodes.size() << "\n";
@@ -320,21 +366,35 @@ int main(int argc, char* argv[]) {
     mvisualizemeshC->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_ELEM_TENS_STRESS);
     mvisualizemeshC->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
     mvisualizemeshC->SetSymbolsThickness(element_thickness);
-    mvisualizemeshC->SetColorscaleMinMax(0,1e6);
+    mvisualizemeshC->SetColorscaleMinMax(0,400e6);
     my_mesh->AddAsset(mvisualizemeshC);
 
     application.AssetBindAll();
-
-    // ==IMPORTANT!== Use this function for 'converting' into Irrlicht meshes the assets
-    // that you added to the bodies into 3D shapes, they can be visualized by Irrlicht!
-
     application.AssetUpdateAll();
 #endif
 
     tim.reset();
     tim.start();
-    // Mark completion of system construction
     my_system.SetupInitial();
+
+    for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
+    {
+        auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
+        ChVector<> mean_node;
+        for (auto node_sel = 0; node_sel<8; ++node_sel)
+        {
+            mean_node += std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetPos();
+        }
+        mean_node *= 1.0 / 8.0;
+        auto dist_from_center = sqrt(mean_node.x()*mean_node.x() + mean_node.y()*mean_node.y());
+        auto centrifugal_force = el->GetVolume()*element_material->Get_density()*omega*omega*dist_from_center;
+        for (auto node_sel = 0; node_sel<8; ++node_sel)
+        {
+            auto old_force = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetForce();
+            std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->SetForce(old_force + centrifugal_force*ChVector<>(mean_node.x(), mean_node.y(), 0.0).Normalize());
+        }
+    }
+
     
 
 //
@@ -376,7 +436,7 @@ int main(int argc, char* argv[]) {
         tim.start();
         std::ofstream myfile;
         std::ostringstream filename_export;
-        filename_export << "export_" << test_num << ".txt";
+        filename_export << "stress_" << test_num << ".txt";
         myfile.open(filename_export.str());
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
