@@ -406,7 +406,6 @@ int main(int argc, char* argv[]) {
         //ChVector<> forces_glob = rot_mat * sigma_loc;
 
 
-        forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (2.0*external_nodes.size()));
         ChVector<> sigma_glob;
         sigma_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
         sigma_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
@@ -414,6 +413,7 @@ int main(int argc, char* argv[]) {
 
 
         ChVector<> forces_glob = sigma_glob;
+        forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (external_nodes.size()));
         forces.AppendRow(angle, sigma_loc[0], sigma_loc[1], sigma_loc[2], forces_glob[0], forces_glob[1], forces_glob[2]);
 
 
