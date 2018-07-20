@@ -51,7 +51,9 @@ std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/mesh/stressPrius
 std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_n.txt";
 //std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm.INP";
 //std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm_coarse.INP";
-std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
+//std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
+std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm_intermediate_clean.INP";
+
 int test_num = 12345;
 double omega = 5000*CH_C_2PI/60.0;
 
@@ -268,18 +270,25 @@ void getArcLength(const std::set<double>& angles, double& length_previous, doubl
 
 int main(int argc, char* argv[]) {
 
-
-
     ChTimer<> tim;
     // Create a Chrono::Engine physical system
     ChSystemNSC my_system;
 
-    auto truss = std::make_shared<ChBodyEasyBox>(0.1,0.1,0.1,7850);
-    auto ass = std::make_shared<ChColorAsset>(1.0, 0.0, 0.0);
-    truss->SetPos(ChVector<>(0.0, 0.0, -1.0));
-    truss->AddAsset(ass);
-    my_system.Add(truss);
-    truss->SetBodyFixed(true);
+#ifdef USE_MKL
+    auto mkl_solver = std::make_shared<ChSolverMKL<>>();
+    mkl_solver->SetSparsityPatternLock(true);
+    mkl_solver->ForceSparsityPatternUpdate(true);
+    my_system.SetSolver(mkl_solver);
+#else
+    my_system.SetSolverType(ChSolver::Type::MINRES);  // <- NEEDED THIS or Matlab or MKL solver
+    my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
+    my_system.SetMaxItersSolverSpeed(200);
+    my_system.SetMaxItersSolverStab(200);
+    my_system.SetTolForce(1e-13);
+    auto msolver = std::static_pointer_cast<ChSolverMINRES>(my_system.GetSolver());
+    msolver->SetVerbose(false);
+    msolver->SetDiagonalPreconditioning(true);
+#endif
 
 #ifdef USE_IRRLICHT
     // Create the Irrlicht visualization (open the Irrlicht device,
@@ -309,64 +318,28 @@ int main(int argc, char* argv[]) {
     // my_system.Set_G_acc(VNULL); or
     my_mesh->SetAutomaticGravity(false);
 
-    std::string element_tag = "C3D8";
+    CSVreader csv_utility;
 
-    // Create a material
+    ////////////// Create Material //////////////
     double rho = 7850;
     double E = 200e9;
     double nu = 0.3;
     auto element_thickness = 5e-3;
-
     auto element_material = std::make_shared<ChContinuumElastic>(E, nu, rho);
 
     tim.start();
+
+
+    ////////////// Acquire EM pressure //////////////
     std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements_ptr_to_ID;
     //std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
     std::vector<double> sigma_t;
     std::vector<double> sigma_n;
-    {
-        // acquire forces
-        std::ifstream fin(filename_sigma_t);
-        if (fin.good())
-            GetLog() << "Parsing Abaqus INP file: " << filename_sigma_t << "\n";
-        else
-            throw ChException("ERROR opening Abaqus .inp file: " + std::string(filename_sigma_t) + "\n");
+    csv_utility.SetFile(filename_sigma_n);
+    csv_utility.ParseRow(sigma_n, 0);
 
-        std::string tmp;
-        char delim = ',';  // Ddefine the delimiter to split by
-        double val;
-
-        while (std::getline(fin, tmp, delim)) {
-            // Provide proper checks here for tmp like if empty
-            // Also strip down symbols like !, ., ?, etc.
-            // Finally push it.
-            std::istringstream stoken(tmp);
-            stoken >> val;
-            sigma_t.push_back(val);
-        }
-    }
-
-    {
-        // acquire forces
-        std::ifstream fin(filename_sigma_n);
-        if (fin.good())
-            GetLog() << "Parsing Abaqus INP file: " << filename_sigma_n << "\n";
-        else
-            throw ChException("ERROR opening Abaqus .inp file: " + std::string(filename_sigma_n) + "\n");
-
-        std::string tmp;
-        char delim = ',';  // Ddefine the delimiter to split by
-        double val;
-
-        while (std::getline(fin, tmp, delim)) {
-            // Provide proper checks here for tmp like if empty
-            // Also strip down symbols like !, ., ?, etc.
-            // Finally push it.
-            std::istringstream stoken(tmp);
-            stoken >> val;
-            sigma_n.push_back(val);
-        }
-    }
+    csv_utility.SetFile(filename_sigma_t);
+    csv_utility.ParseRow(sigma_t, 0);
 
     CSVwriter sigma_glob_writer("sigma_glob.txt", DEBUG);
     std::vector<ChVector<>> sigma_glob_set;
@@ -374,19 +347,25 @@ int main(int argc, char* argv[]) {
     auto delta_angle = CH_C_2PI / sigma_glob_set.size();
     for(auto sigma_sel = 0; sigma_sel<sigma_n.size(); ++sigma_sel)
     {
-
+        //sigma_n[sigma_sel] = 414e3;
+        //sigma_t[sigma_sel] = 0.0;
         sigma_glob_set[sigma_sel].x() = sigma_n[sigma_sel] * cos(delta_angle*sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle*sigma_sel);
         sigma_glob_set[sigma_sel].y() = sigma_n[sigma_sel] * sin(delta_angle*sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle*sigma_sel);
         sigma_glob_set[sigma_sel].z() = 0.0;
         sigma_glob_writer.AppendRow(delta_angle*sigma_sel, sigma_glob_set[sigma_sel].x(), sigma_glob_set[sigma_sel].y(), sigma_glob_set[sigma_sel].z());
     }
 
+
+
+
+    ////////////// Load mesh from Abaqus file and identify nodes //////////////
     std::map<unsigned, std::tuple<std::string, std::vector<unsigned>>> elements_map;
     std::map<unsigned, std::vector<double>> nodes_map;
     std::map<std::string, std::vector<unsigned int>> nset_map;
     std::map<std::string, std::vector<unsigned int>> elset_map;
     std::map<unsigned int, std::shared_ptr<ChNodeFEAxyz>> inserted_nodes;
 
+    // parse Abaqus INP file
     try {
         ChMeshFileLoader::FromAbaqusFileMOD(filename_mesh, elements_map, nodes_map, nset_map, elset_map);
     }
@@ -395,12 +374,8 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // bool full_rotor = true;
-    // int repetitions = 8;
-    // std::list<std::shared_ptr<ChNodeFEAxyzrot>> nodes_to_check;
-
-    // if (full_rotor) {
-    //    for (auto slot_sel = 0; slot_sel < repetitions; ++slot_sel) {
+    // add node and elements
+    std::string element_tag = "C3D8";
     for (auto el_it = elements_map.begin(); el_it != elements_map.end(); ++el_it) {
         if (std::get<0>(el_it->second) == element_tag) {
             auto new_elem = std::make_shared<ChElementHexa_8>();
@@ -430,7 +405,6 @@ int main(int argc, char* argv[]) {
                 else
                     throw ChException("Node not found\n");
             }
-            // Add new element
             new_elem->SetNodes(nodes[0], nodes[1], nodes[2], nodes[3], nodes[4], nodes[5], nodes[6], nodes[7]);
             new_elem->SetMaterial(element_material);
             
@@ -442,19 +416,8 @@ int main(int argc, char* argv[]) {
     GetLog() << "Added " << inserted_nodes.size() << " nodes over " << nodes_map.size() << ".\n";
     GetLog() << "Added " << my_mesh->GetElements().size() << " elements over " << elements_map.size() << ".\n";
 
-    //// Clean duplicated nodes
-    //// pick lateral nodes
-    // double lateral_threshold = 2e-3;
-    // auto nodesmesh = my_mesh->GetNodes();
-    // for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
-    //    auto node = std::dynamic_pointer_cast<ChNodeFEAxyzrot>(nodesmesh[node_sel]);
-    //    if (abs(atan2(node->GetPos().y(), node->GetPos().x()) - slot_sel * CH_C_2PI / repetitions) < lateral_threshold
-    //    || abs(atan2(node->GetPos().y(), node->GetPos().x()) - slot_sel * CH_C_2PI / repetitions) < lateral_threshold)
-    //    {
-    //        nodes_to_check.push_back(node);
-    //    }
-    //}
 
+    // identify internal and external nodes
     double rotor_external_radius = 80.22e-3;
     double rotor_internal_radius = 25.5e-3;
     double external_threshold = rotor_external_radius - 1e-4;
@@ -479,11 +442,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // fix nodes
     for (auto it = internal_nodes.begin(); it != internal_nodes.end(); ++it) {
         (*it)->SetFixed(true);
     }
 
+
+    ////////////// Apply forces given by EM pressure //////////////
     CSVwriter forces("forces.txt", DEBUG);
     for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
         double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
@@ -508,14 +472,6 @@ int main(int argc, char* argv[]) {
         sigma_loc[0] += (index - index_int) * (sigma_n[next_index] - sigma_n[index_int]);
         sigma_loc[1] += (index - index_int) * (sigma_t[next_index] - sigma_t[index_int]);
         sigma_loc[2] = 0.0;
-
-        //ChMatrix33<double> rot_mat;
-        //rot_mat(0, 0) = cos(angle);
-        //rot_mat(1, 0) = sin(angle);
-        //rot_mat(0, 1) = -sin(angle);
-        //rot_mat(1, 1) = cos(angle);
-        //rot_mat(2, 2) = 1.0;
-        //ChVector<> forces_glob = rot_mat * sigma_loc;
 
 
         ChVector<> sigma_glob;
@@ -542,26 +498,22 @@ int main(int argc, char* argv[]) {
         double archLength_previous, archLength_next;
         getArcLength(angles, archLength_previous, archLength_next, angle, rotor_external_radius);
 
-        double hom_area = CH_C_2PI * rotor_external_radius / external_nodes.size();
+        //double hom_area = CH_C_2PI * rotor_external_radius / external_nodes.size();
 
-        ChVector<> forces_glob = 0.5*(archLength_previous*element_thickness*sigma_glob_previous + archLength_next * element_thickness*sigma_glob_next);
-        ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next * element_thickness*sigma_glob_center);
+        ChVector<> EMforces_glob = 0.5*(archLength_previous*element_thickness*sigma_glob_previous + archLength_next * element_thickness*sigma_glob_next);
+        //ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next * element_thickness*sigma_glob_center);
 
-        forces.AppendRow(angle, 0.0,0.0,0.0, forces_glob[0], forces_glob[1], forces_glob[2]);
+        forces.AppendRow(angle, EMforces_glob[0], EMforces_glob[1], EMforces_glob[2]);
 
 #endif
-
-
-
         //GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
 
-        (*it)->SetForce(forces_glob);
+        (*it)->SetForce(EMforces_glob);
     }
 
     GetLog() << "External nodes: " << external_nodes.size() << "\n";
     GetLog() << "Internal nodes: " << internal_nodes.size() << "\n";
-    //    }
-    //}
+
     tim.stop();
     GetLog() << "Load and set element: " << tim() << "\n";
 
@@ -591,10 +543,14 @@ int main(int argc, char* argv[]) {
     application.AssetUpdateAll();
 #endif
 
-    tim.reset();
     tim.start();
     my_system.SetupInitial();
+    tim.stop();
+    GetLog() << "SetupInitial time: " << tim() << "\n";
 
+    ////////////// Apply centrifugal forces //////////////
+    // must be done after SetupInitial: volume is evaluated only at that time
+    tim.start();
     CSVwriter b("centrifugal_forces.txt", DEBUG);
     for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
     {
@@ -620,36 +576,16 @@ int main(int argc, char* argv[]) {
 
         }
     }
+    tim.stop();
+    GetLog() << "CentrifugalForces time: " << tim() << "\n";
 
-    
 
-//
-// THE SOFT-REAL-TIME CYCLE
-//
-// Change solver to MKL
-#ifdef USE_MKL
-    auto mkl_solver = std::make_shared<ChSolverMKL<>>();
-    mkl_solver->SetSparsityPatternLock(true);
-    mkl_solver->ForceSparsityPatternUpdate(true);
-    my_system.SetSolver(mkl_solver);
-#else
-    my_system.SetSolverType(ChSolver::Type::MINRES);  // <- NEEDED THIS or Matlab or MKL solver
-    my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
-    my_system.SetMaxItersSolverSpeed(200);
-    my_system.SetMaxItersSolverStab(200);
-    my_system.SetTolForce(1e-13);
-    auto msolver = std::static_pointer_cast<ChSolverMINRES>(my_system.GetSolver());
-    msolver->SetVerbose(false);
-    msolver->SetDiagonalPreconditioning(true);
-#endif
 
     my_system.Setup();
     my_system.Update();
 
-    tim.stop();
-    GetLog() << "Setup Initial time: " << tim() << "\n";
 
-    tim.reset();
+
     tim.start();
     application.GetSystem()->DoStaticLinear();
     tim.stop();
@@ -670,12 +606,12 @@ int main(int argc, char* argv[]) {
 
             stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises()
 #ifdef FULL_STRESS_OUTPUT
-                ,stress.XX(),
-                stress.YY(),
-                stress.ZZ(),
-                stress.XY(),
-                stress.YZ(),
-                stress.XZ()
+                ,stress.XX()
+                ,stress.YY()
+                ,stress.ZZ()
+                ,stress.XY()
+                ,stress.YZ()
+                ,stress.XZ()
 #endif
             );
 
