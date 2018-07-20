@@ -17,10 +17,6 @@
 // =============================================================================
 
 #include <vector>
-
-#include "chrono/core/ChFileutils.h"
-
-#include "chrono/physics/ChBodyEasy.h"
 #include "chrono/physics/ChSystemNSC.h"
 
 
@@ -30,7 +26,6 @@
 #include "chrono_fea/ChLinkPointFrame.h"
 #include "chrono_fea/ChMesh.h"
 #include "chrono_fea/ChMeshFileLoader.h"
-#include "chrono_fea/ChRotUtils.h"
 #include "chrono_fea/ChVisualizationFEAmesh.h"
 #include "chrono_irrlicht/ChIrrApp.h"
 #include "chrono_mkl/ChSolverMKL.h"
@@ -47,21 +42,15 @@ using namespace chrono::postprocess;
 using namespace irr;
 
 // Output directory
-std::string filename_sigma_t = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_t.txt";
-std::string filename_sigma_n = "D:/SVN_MeltingLab/structural_EM/mesh/stressPriusCPSR.sigma_n.txt";
-//std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm.INP";
-//std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm_coarse.INP";
-//std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_3D_thickness_5mm.INP";
-std::string filename_mesh = "D:/SVN_MeltingLab/structural_EM/mesh/prius_full_rotor_3D_5mm_intermediate_clean.INP";
-
-int test_num = 12345;
-double omega = 5000*CH_C_2PI/60.0;
+std::string motor_prefix = "prius";
+std::string drivingcyle_prefix = "CPSR";
+std::string datafilepath = "D:/SVN_MeltingLab/structural_EM/mesh/";
 
 #define USE_MKL
-#define USE_IRRLICHT
+//#define USE_IRRLICHT
 #define FULL_STRESS_OUTPUT
 //#define EQUAL_ELEMENT_SPACING
-#define DEBUG true
+#define LOG_OUTPUT true
 
 
 class CSVwriter
@@ -142,9 +131,7 @@ public:
     template <typename type_t>
     void ParseRow(std::vector<type_t>& vector_out, unsigned int rownum, unsigned int skip_columns = 0)
     {
-
         GoToLine(rownum);
-
         this->ParseCurrentRow(vector_out, skip_columns);
     }
 
@@ -152,19 +139,22 @@ public:
     template <typename type_t>
     void ParseCurrentRow(std::vector<type_t>& vector_out, unsigned int skip_columns = 0)
     {
-
-        std::string tmp;
+        std::string linepiece;
+        std::string line;
+        std::getline(myfile, line); // gets line until \n
+        std::istringstream line_ss(line);
         type_t val;
 
         unsigned int current_col = 0;
-        while (std::getline(myfile, tmp, delim)) {
+        while (std::getline(line_ss, linepiece, delim)) {
+
             if (current_col < skip_columns)
             {
                 ++current_col;
                 continue;
             }
 
-            std::istringstream stoken(tmp);
+            std::istringstream stoken(linepiece);
             stoken >> val;
             vector_out.push_back(val);
             ++current_col;
@@ -175,7 +165,7 @@ public:
     void GoToLine(unsigned int rownum)
     {
         myfile.seekg(std::ios::beg);
-        for (auto line_sel = 0; line_sel < rownum; ++line_sel) {
+        for (unsigned int line_sel = 0; line_sel < rownum; ++line_sel) {
             myfile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
     }
@@ -185,17 +175,21 @@ public:
     {
         GoToLine(rownum);
 
-        std::string tmp;
+        std::string linepiece;
+        std::string line;
+        std::getline(myfile, line, delim);
+        std::istringstream line_ss(line);
 
         unsigned int current_col = 0;
-        while (std::getline(myfile, tmp, delim)) {
+        while (std::getline(line_ss, linepiece, delim)) {
             if (current_col == colnum)
             {
-                std::istringstream stoken(tmp);
+                std::istringstream stoken(linepiece);
                 stoken >> val_out;
                 return true;
             }
             ++current_col;
+
         }
 
         return false;
@@ -235,7 +229,7 @@ void getSigmaGlob(const std::vector<ChVector<>>& sigma_glob_set, ChVector<>& sig
     double index = angle / CH_C_2PI * (sigma_glob_set.size()-1);
     auto index_int = static_cast<size_t>(floor(index));
     //int next_index = index_int > sigma_glob_set.size() ? index_int - sigma_glob_set.size() : index_int;
-    int next_index = std::min(index_int + 1, sigma_glob_set.size()-1);
+    auto next_index = std::min(index_int + 1, sigma_glob_set.size()-1);
 
     sigma_glob = sigma_glob_set[index_int] + (index - index_int) * (sigma_glob_set[next_index] - sigma_glob_set[index_int]);
     
@@ -270,6 +264,62 @@ void getArcLength(const std::set<double>& angles, double& length_previous, doubl
 
 int main(int argc, char* argv[]) {
 
+    ////////////// Parse input arguments //////////////
+    std::vector<unsigned int> test_list;
+    std::string datafilepath = "D:/SVN_MeltingLab/structural_EM/mesh/";
+    std::string motor_prefix = "prius";
+    std::string drivingcyle_prefix = "CPSR";
+
+    if (argc>1)
+    {
+        datafilepath = argv[1];
+        motor_prefix = argv[2];
+        drivingcyle_prefix = argv[3];
+        
+        unsigned int parsed_num;
+        for (auto arg_sel = 4; arg_sel < argc; ++arg_sel)
+        {
+            std::stringstream argv_string(argv[arg_sel]);
+            argv_string >> parsed_num;
+            test_list.push_back(parsed_num);
+        }
+    }
+    else
+    {
+        GetLog() << "This program has to be called with the following syntax\n";
+        GetLog() << argv[0] << " <datafolder> <motor_name> <driving_cycle_name> <sigmafile_rowindexes...>\n";
+        GetLog() << "where:\n";
+        GetLog() << "<motor_name> is the name of the simulated motor;\n";
+        GetLog() << "<driving_cycle_name> is the name of the simulated driving cycle;\n";
+        GetLog() << "<sigmafile_rowindexes...> is the number of the row that has to be simulated;\n";
+        GetLog() << "<datafolder> must poin to the folder that contains:\n";
+        GetLog() << "- mesh file with the following naming convention\n";
+        GetLog() << "  <motor_name>_mesh.INP\n";
+        GetLog() << "- 'sigma_n' and 'sigma_t' files with the following naming convention\n";
+        GetLog() << "  <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
+        GetLog() << "Please mind that <datafolder> must end with a / sign.\n";
+
+        //TODO: uncomment in the final version
+        //return -1;
+
+        // can be removed; just for testing purposes
+        test_list.push_back(0);
+        test_list.push_back(1);
+        test_list.push_back(2);
+    }
+
+    auto filename_mesh = datafilepath + motor_prefix + "_mesh.INP";
+    auto filename_sigma_n = datafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_n.csv";
+    auto filename_sigma_t = datafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_t.csv";
+
+    GetLog() << "The motor is " << motor_prefix << "\n";
+    GetLog() << "The driving cycle is " << drivingcyle_prefix << "\n";
+    GetLog() << "Required files are:\n" <<
+        " - mesh file: " << filename_mesh << "\n"
+        " - sigma_n file: " << filename_sigma_n << "\n"
+        " - sigma_t file: " << filename_sigma_t << "\n";
+
+    ////////////// Chrono setup //////////////
     ChTimer<> tim;
     // Create a Chrono::Engine physical system
     ChSystemNSC my_system;
@@ -315,7 +365,6 @@ int main(int argc, char* argv[]) {
     // Remember to add the mesh to the system!
     my_system.Add(my_mesh);
 
-    // my_system.Set_G_acc(VNULL); or
     my_mesh->SetAutomaticGravity(false);
 
     CSVreader csv_utility;
@@ -327,44 +376,18 @@ int main(int argc, char* argv[]) {
     auto element_thickness = 5e-3;
     auto element_material = std::make_shared<ChContinuumElastic>(E, nu, rho);
 
-    tim.start();
-
-
-    ////////////// Acquire EM pressure //////////////
-    std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements_ptr_to_ID;
-    //std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
-    std::vector<double> sigma_t;
-    std::vector<double> sigma_n;
-    csv_utility.SetFile(filename_sigma_n);
-    csv_utility.ParseRow(sigma_n, 0);
-
-    csv_utility.SetFile(filename_sigma_t);
-    csv_utility.ParseRow(sigma_t, 0);
-
-    CSVwriter sigma_glob_writer("sigma_glob.txt", DEBUG);
-    std::vector<ChVector<>> sigma_glob_set;
-    sigma_glob_set.resize(sigma_n.size());
-    auto delta_angle = CH_C_2PI / sigma_glob_set.size();
-    for(auto sigma_sel = 0; sigma_sel<sigma_n.size(); ++sigma_sel)
-    {
-        //sigma_n[sigma_sel] = 414e3;
-        //sigma_t[sigma_sel] = 0.0;
-        sigma_glob_set[sigma_sel].x() = sigma_n[sigma_sel] * cos(delta_angle*sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle*sigma_sel);
-        sigma_glob_set[sigma_sel].y() = sigma_n[sigma_sel] * sin(delta_angle*sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle*sigma_sel);
-        sigma_glob_set[sigma_sel].z() = 0.0;
-        sigma_glob_writer.AppendRow(delta_angle*sigma_sel, sigma_glob_set[sigma_sel].x(), sigma_glob_set[sigma_sel].y(), sigma_glob_set[sigma_sel].z());
-    }
-
-
-
 
     ////////////// Load mesh from Abaqus file and identify nodes //////////////
+    tim.start();
     std::map<unsigned, std::tuple<std::string, std::vector<unsigned>>> elements_map;
     std::map<unsigned, std::vector<double>> nodes_map;
     std::map<std::string, std::vector<unsigned int>> nset_map;
     std::map<std::string, std::vector<unsigned int>> elset_map;
     std::map<unsigned int, std::shared_ptr<ChNodeFEAxyz>> inserted_nodes;
+    std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements_ptr_to_ID;
+    //std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
 
+    
     // parse Abaqus INP file
     try {
         ChMeshFileLoader::FromAbaqusFileMOD(filename_mesh, elements_map, nodes_map, nset_map, elset_map);
@@ -388,12 +411,7 @@ int main(int argc, char* argv[]) {
                     // check if the node specified by the current has not been inserted yet
                     auto node_found = inserted_nodes.find(nodeid_vect[node_sel]);
                     if (node_found == inserted_nodes.end()) {
-                        // nodes[node_sel] = std::make_shared<ChNodeFEAxyz>(ChFrame<>(ChVector<>(node->second[0],
-                        // node->second[1], node->second[2]), QUNIT));  nodes[node_sel] =
-                        // std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]),
-                        // VECT_Z);
-                        nodes[node_sel] =
-                            std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]));
+                        nodes[node_sel] = std::make_shared<ChNodeFEAxyz>(ChVector<>(node->second[0], node->second[1], node->second[2]));
                         my_mesh->AddNode(nodes[node_sel]);
                         inserted_nodes.emplace_hint(inserted_nodes.end(), nodeid_vect[node_sel], nodes[node_sel]);
                         //inserted_nodes_ptr_to_ID.emplace_hint(inserted_nodes_ptr_to_ID.end(), nodes[node_sel], nodeid_vect[node_sel]);
@@ -426,7 +444,6 @@ int main(int argc, char* argv[]) {
     std::vector<std::shared_ptr<ChNodeFEAxyz>> external_nodes;
     std::vector<std::shared_ptr<ChNodeFEAxyz>> internal_nodes;
     std::set<double> angles;
-
     for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
         auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(nodesmesh[node_sel]);
         auto dist_from_center = sqrt(node->GetPos().x()*node->GetPos().x() + node->GetPos().y()*node->GetPos().y());
@@ -442,80 +459,44 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // fix internal nodes
     for (auto it = internal_nodes.begin(); it != internal_nodes.end(); ++it) {
         (*it)->SetFixed(true);
     }
 
+    // find elements of the bridges
+    std::set<std::shared_ptr<ChElementHexa_8>> bridge_elements;
+    double bridge_radius_min = 0.0600;
+    double bridge_radius_max = 0.0725;
+    double bridge_period = 22.5*CH_C_PI / 180.0;
+    double bridge_angle_tolerance = 1.0*CH_C_PI / 180.0;
+    auto& element_list = my_mesh->GetElements();
+    for (auto el_sel = 0; el_sel != element_list.size(); ++el_sel) {
+        auto el = std::dynamic_pointer_cast<ChElementHexa_8>(element_list[el_sel]);
+        ChVector<> mean_point;
+        for (auto node_sel = 0; node_sel < 8; ++node_sel) {
+            mean_point += std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetX0();
+        }
+        mean_point *= 1.0 / 8.0;
+        auto dist_from_center = sqrt(mean_point.x() * mean_point.x() + mean_point.y() * mean_point.y());
+        auto angle = atan2(mean_point.y(), mean_point.x());
 
-    ////////////// Apply forces given by EM pressure //////////////
-    CSVwriter forces("forces.txt", DEBUG);
-    for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
-        double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
-
-        // assure angle between [0, 2*pi)
-        angle = fmod(angle, CH_C_2PI);
-        if (angle < 0)
-            angle += CH_C_2PI;
-
-        assert(angle <= CH_C_2PI);
-        assert(angle >= 0);
-
-#ifdef EQUAL_ELEMENT_SPACING
-        double index = angle / CH_C_2PI * (sigma_n.size() - 1);
-        auto index_int = static_cast<size_t>(floor(index));
-        //int next_index = index_int > sigma_glob_set.size() ? index_int - sigma_glob_set.size() : index_int;
-        int next_index = std::min(index_int + 1, sigma_n.size() - 1);
-
-        ChVector<> sigma_loc;
-        sigma_loc[0] = sigma_n[index_int];
-        sigma_loc[1] = sigma_t[index_int];
-        sigma_loc[0] += (index - index_int) * (sigma_n[next_index] - sigma_n[index_int]);
-        sigma_loc[1] += (index - index_int) * (sigma_t[next_index] - sigma_t[index_int]);
-        sigma_loc[2] = 0.0;
+        // check if this element center is within the limits
+        if (dist_from_center > bridge_radius_min && dist_from_center < bridge_radius_max &&
+            abs(angle - bridge_period*std::round(angle/ bridge_period)) < bridge_angle_tolerance)
+        {
+            bridge_elements.emplace_hint(bridge_elements.end(),el);
+        }
 
 
-        ChVector<> sigma_glob;
-        sigma_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
-        sigma_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
-        sigma_glob[2] = 0;
-
-
-        ChVector<> forces_glob = sigma_glob;
-        forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (external_nodes.size()));
-        forces.AppendRow(angle, sigma_loc[0], sigma_loc[1], sigma_loc[2], forces_glob[0], forces_glob[1], forces_glob[2]);
-
-
-#else
-        auto iter_prev = angles.lower_bound(angle);
-        auto iter_next = iter_prev;
-        double halfangle_previous = 0.5*((iter_prev != angles.begin() ? *--iter_prev : *(--angles.end()))+angle);
-        double halfangle_next = 0.5*(((iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin()))+angle);
-        ChVector<> sigma_glob_previous, sigma_glob_next, sigma_glob_center;
-
-        getSigmaGlob(sigma_glob_set, sigma_glob_previous, halfangle_previous);
-        getSigmaGlob(sigma_glob_set, sigma_glob_next, halfangle_next);
-        getSigmaGlob(sigma_glob_set, sigma_glob_center, angle);
-        double archLength_previous, archLength_next;
-        getArcLength(angles, archLength_previous, archLength_next, angle, rotor_external_radius);
-
-        //double hom_area = CH_C_2PI * rotor_external_radius / external_nodes.size();
-
-        ChVector<> EMforces_glob = 0.5*(archLength_previous*element_thickness*sigma_glob_previous + archLength_next * element_thickness*sigma_glob_next);
-        //ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next * element_thickness*sigma_glob_center);
-
-        forces.AppendRow(angle, EMforces_glob[0], EMforces_glob[1], EMforces_glob[2]);
-
-#endif
-        //GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
-
-        (*it)->SetForce(EMforces_glob);
     }
 
+    GetLog() << "Bridge elements: " << bridge_elements.size() << "\n";
     GetLog() << "External nodes: " << external_nodes.size() << "\n";
     GetLog() << "Internal nodes: " << internal_nodes.size() << "\n";
 
     tim.stop();
-    GetLog() << "Load and set element: " << tim() << "\n";
+    GetLog() << "Load and identify elements: " << tim() << "\n";
 
 #ifdef USE_IRRLICHT
 
@@ -548,93 +529,239 @@ int main(int argc, char* argv[]) {
     tim.stop();
     GetLog() << "SetupInitial time: " << tim() << "\n";
 
-    ////////////// Apply centrifugal forces //////////////
-    // must be done after SetupInitial: volume is evaluated only at that time
-    tim.start();
-    CSVwriter b("centrifugal_forces.txt", DEBUG);
-    for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
-    {
-        auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
-        ChVector<> mean_node;
-        for (auto node_sel = 0; node_sel<8; ++node_sel)
+
+    ///////////////////////////////////////////////////////////////
+    ///// Different working points affect only the code below /////
+    ///////////////////////////////////////////////////////////////
+    GetLog() << "\nTest Loop\n";
+
+    for (auto test_sel = 0; test_sel < test_list.size(); ++test_sel) {
+
+        ////////////// Clear state of the nodes //////////////
+        for (auto node_it = my_mesh->GetNodes().begin(); node_it != my_mesh->GetNodes().end(); ++node_it)
         {
-            mean_node += std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetPos();
+            auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(*node_it);
+            node->SetPos(node->GetX0());
+            node->SetForce(VNULL);
+            node->SetNoSpeedNoAcceleration();
         }
-        mean_node *= 1.0 / 8.0;
-        auto dist_from_center = sqrt(mean_node.x()*mean_node.x() + mean_node.y()*mean_node.y());
-        auto centrifugal_force = el->GetVolume()*element_material->Get_density()*omega*omega*dist_from_center;
-        for (auto node_sel = 0; node_sel<8; ++node_sel)
+
+        ////////////// Acquire EM pressure //////////////
+        std::vector<double> sigma_t;
+        std::vector<double> sigma_n;
+        double omega;
         {
-            auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel));
-            auto old_force = node->GetForce();
+            const unsigned int OMEGA_POSITION_IN_CSV = 0;
+            const unsigned int TORQUE_POSITION_IN_CSV = 1;
+            const unsigned int POSROT_POSITION_IN_CSV = 2;
+            double omega_n, omega_t, torque_n, torque_t, posrot_n, posrot_t;
+            const unsigned int skip_columns = 3;
+            csv_utility.SetFile(filename_sigma_n);
+            csv_utility.ParseRow(sigma_n, test_list[test_sel], skip_columns);
+            csv_utility.ParseElement(omega_n, test_list[test_sel], OMEGA_POSITION_IN_CSV);
+            csv_utility.ParseElement(torque_n, test_list[test_sel], TORQUE_POSITION_IN_CSV);
+            csv_utility.ParseElement(posrot_n, test_list[test_sel], POSROT_POSITION_IN_CSV);
 
-            auto centrifugal_force_vector = ChVector<>(mean_node.x(), mean_node.y(), 0.0);
-            centrifugal_force_vector.Normalize();
-            centrifugal_force_vector *= centrifugal_force / 8.0;
-            node->SetForce(old_force + centrifugal_force_vector);
-            b.AppendRow(mean_node.x(), mean_node.y(), centrifugal_force_vector.x(), centrifugal_force_vector.y(), centrifugal_force_vector.z());
+            csv_utility.SetFile(filename_sigma_t);
+            csv_utility.ParseRow(sigma_t, test_list[test_sel], skip_columns);
+            csv_utility.ParseElement(omega_t, test_list[test_sel], OMEGA_POSITION_IN_CSV);
+            csv_utility.ParseElement(torque_t, test_list[test_sel], TORQUE_POSITION_IN_CSV);
+            csv_utility.ParseElement(posrot_t, test_list[test_sel], POSROT_POSITION_IN_CSV);
 
+            if (abs(omega_n - omega_t) > 1e-12 || abs(torque_n - torque_t) > 1e-12 || abs(posrot_n - posrot_t) > 1e-12)
+            {
+                GetLog() << "Test with row index " << test_list[test_sel] << " has been skipped because different values of omega, torque or posrot have been found between sigma files\n";
+                continue;
+            }
+
+            //omega = omega_n * CH_C_2PI / 60.0;
+            omega = omega_n;
         }
-    }
-    tim.stop();
-    GetLog() << "CentrifugalForces time: " << tim() << "\n";
 
 
+        CSVwriter sigma_glob_writer(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_sigma_glob.txt", LOG_OUTPUT);
+        std::vector<ChVector<>> sigma_glob_set;
+        sigma_glob_set.resize(sigma_n.size());
+        auto delta_angle = CH_C_2PI / sigma_glob_set.size();
+        for (auto sigma_sel = 0; sigma_sel < sigma_n.size(); ++sigma_sel) {
+            // sigma_n[sigma_sel] = 414e3;
+            // sigma_t[sigma_sel] = 0.0;
+            sigma_glob_set[sigma_sel].x() =
+                sigma_n[sigma_sel] * cos(delta_angle * sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle * sigma_sel);
+            sigma_glob_set[sigma_sel].y() =
+                sigma_n[sigma_sel] * sin(delta_angle * sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle * sigma_sel);
+            sigma_glob_set[sigma_sel].z() = 0.0;
+            sigma_glob_writer.AppendRow(delta_angle * sigma_sel,
+                sigma_glob_set[sigma_sel].x(),
+                sigma_glob_set[sigma_sel].y(),
+                sigma_glob_set[sigma_sel].z());
+        }
 
-    my_system.Setup();
-    my_system.Update();
+        ////////////// Apply additional centrifugal forces to emulate magnets //////////////
+        auto magnet_nodes = nset_map.find("MAGNETNODES");
+        double mass_radius = 0.0 / magnet_nodes->second.size();
+        if (magnet_nodes!= nset_map.end())
+        {
+            for(auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
+            {
+                auto node = inserted_nodes.at(*node_id_it);
+                auto old_force = node->GetForce();
+                node->SetForce(old_force + mass_radius*omega*omega);
+            }
+        }
+
+        ////////////// Apply forces given by EM pressure //////////////
+        CSVwriter forces(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_EMforces.txt", LOG_OUTPUT);
+        for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
+            double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
+
+            // assure angle between [0, 2*pi)
+            angle = fmod(angle, CH_C_2PI);
+            if (angle < 0)
+                angle += CH_C_2PI;
+
+            assert(angle <= CH_C_2PI);
+            assert(angle >= 0);
+
+#ifdef EQUAL_ELEMENT_SPACING
+            double index = angle / CH_C_2PI * (sigma_n.size() - 1);
+            auto index_int = static_cast<size_t>(floor(index));
+            // int next_index = index_int > sigma_glob_set.size() ? index_int - sigma_glob_set.size() : index_int;
+            int next_index = std::min(index_int + 1, sigma_n.size() - 1);
+
+            ChVector<> sigma_loc;
+            sigma_loc[0] = sigma_n[index_int];
+            sigma_loc[1] = sigma_t[index_int];
+            sigma_loc[0] += (index - index_int) * (sigma_n[next_index] - sigma_n[index_int]);
+            sigma_loc[1] += (index - index_int) * (sigma_t[next_index] - sigma_t[index_int]);
+            sigma_loc[2] = 0.0;
+
+            ChVector<> sigma_glob;
+            sigma_glob[0] = sigma_loc[0] * cos(angle) - sigma_loc[1] * sin(angle);
+            sigma_glob[1] = sigma_loc[0] * sin(angle) + sigma_loc[1] * cos(angle);
+            sigma_glob[2] = 0;
+
+            ChVector<> forces_glob = sigma_glob;
+            forces_glob.Scale(CH_C_2PI * rotor_external_radius * element_thickness / (external_nodes.size()));
+            forces.AppendRow(angle, sigma_loc[0], sigma_loc[1], sigma_loc[2], forces_glob[0], forces_glob[1],
+                forces_glob[2]);
+
+#else
+            auto iter_prev = angles.lower_bound(angle);
+            auto iter_next = iter_prev;
+            double halfangle_previous =
+                0.5 * ((iter_prev != angles.begin() ? *--iter_prev : *(--angles.end())) + angle);
+            double halfangle_next =
+                0.5 *
+                (((iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin())) + angle);
+            ChVector<> sigma_glob_previous, sigma_glob_next, sigma_glob_center;
+
+            getSigmaGlob(sigma_glob_set, sigma_glob_previous, halfangle_previous);
+            getSigmaGlob(sigma_glob_set, sigma_glob_next, halfangle_next);
+            getSigmaGlob(sigma_glob_set, sigma_glob_center, angle);
+            double archLength_previous, archLength_next;
+            getArcLength(angles, archLength_previous, archLength_next, angle, rotor_external_radius);
+
+            // double hom_area = CH_C_2PI * rotor_external_radius / external_nodes.size();
+
+            auto EMforces_glob = 0.5 * element_thickness *(archLength_previous * sigma_glob_previous + archLength_next * sigma_glob_next);
+            // ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next
+            // * element_thickness*sigma_glob_center);
+
+            forces.AppendRow(angle, EMforces_glob[0], EMforces_glob[1], EMforces_glob[2]);
+
+#endif
+            // GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
+            auto old_force = (*it)->GetForce();
+            (*it)->SetForce(old_force + EMforces_glob);
+        }
+
+        ////////////// Apply centrifugal forces //////////////
+        // must be done after SetupInitial: volume is evaluated only at that time
+        // we could check if the omega is changed from the previous run and avoid re-evaluation
+        tim.start();
+        CSVwriter b(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_centrifugal_forces.txt", LOG_OUTPUT);
+        // std::map<std::shared_ptr<ChNodeFEAxyz>, ChVector<>> centrifugal_forces_map;
+        for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it) {
+            auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
+            ChVector<> mean_point;
+            for (auto node_sel = 0; node_sel < 8; ++node_sel) {
+                mean_point += std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetX0();
+            }
+            mean_point *= 1.0 / 8.0;
+            auto dist_from_center = sqrt(mean_point.x() * mean_point.x() + mean_point.y() * mean_point.y());
+            auto centrifugal_force = el->GetVolume() * element_material->Get_density() * omega * omega * dist_from_center;
+            for (auto node_sel = 0; node_sel < 8; ++node_sel) {
+                auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel));
+
+                auto centrifugal_force_vector = ChVector<>(mean_point.x(), mean_point.y(), 0.0);
+                centrifugal_force_vector.Normalize();
+                centrifugal_force_vector *= centrifugal_force / 8.0;
+                // store the centrifugal force and then apply it
+                // centrifugal_forces_map[node] = centrifugal_force_vector;
+                auto old_force = node->GetForce();
+                node->SetForce(old_force + centrifugal_force_vector);
+                b.AppendRow(mean_point.x(), mean_point.y(), centrifugal_force_vector.x(), centrifugal_force_vector.y(),
+                    centrifugal_force_vector.z());
+            }
+        }
 
 
-
-    tim.start();
-    application.GetSystem()->DoStaticLinear();
-    tim.stop();
-    GetLog() << "Simulation time: " << tim() << "\n";
+        tim.stop();
+        GetLog() << "Forces application time: " << tim() << "\n";
 
 
-    // Export results
-    {
+        my_system.Setup();
+        my_system.Update();
+
+
+        tim.start();
+        my_system.DoStaticLinear();
+        tim.stop();
+        GetLog() << "Simulation time: " << tim() << "\n";
+
+
+        // Export results
+
         tim.reset();
         tim.start();
-        CSVwriter stress_file("stress.txt");
+        CSVwriter stress_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress.csv");
+        CSVwriter stressbridge_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress_bridges.csv");
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
-            std::ostringstream line;
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
             auto stress = el->GetStress(0, 0, 0);
-
-            stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises()
-#ifdef FULL_STRESS_OUTPUT
-                ,stress.XX()
-                ,stress.YY()
-                ,stress.ZZ()
-                ,stress.XY()
-                ,stress.YZ()
-                ,stress.XZ()
-#endif
-            );
-
+            stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+            if (bridge_elements.find(el)!= bridge_elements.end())
+            {
+                stressbridge_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+            }
         }
 
         tim.stop();
         GetLog() << "Export time: " << tim() << "\n";
-    }
-    GetLog() << "Done\n";
+
+        GetLog() << "Done\n";
+
+
 
 #ifdef USE_IRRLICHT
-    while (application.GetDevice()->run()) {
-        application.BeginScene();
+        while (application.GetDevice()->run()) {
+            application.BeginScene();
 
-        application.DrawAll();
+            application.DrawAll();
 
-        if (!application.GetPaused()) {
+            if (!application.GetPaused()) {
 
+            }
+
+            application.EndScene();
         }
-
-        application.EndScene();
-    }
 #endif
 
+    }
+
+     getchar();
     return 0;
 }
