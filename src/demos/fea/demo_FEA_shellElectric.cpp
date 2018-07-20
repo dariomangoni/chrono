@@ -70,8 +70,11 @@ private:
     bool enabled = true;
 public:
 
-    CSVwriter(std::string filename, bool enabled = true):enabled(enabled)
+    CSVwriter(const std::string& filename, bool enabled = true):enabled(enabled)
     {
+        if (myfile.is_open())
+            myfile.close();
+
         myfile.open(filename, std::ios_base::out);
         if (!myfile.good())
             throw ChException("File with name: " + filename + "cannot be found");
@@ -103,6 +106,115 @@ public:
 
 
     ~CSVwriter()
+    {
+        myfile.close();
+    }
+};
+
+class CSVreader
+{
+private:
+    std::ifstream myfile;
+    char delim = ',';
+public:
+
+    CSVreader() {}
+
+    explicit CSVreader(const std::string& filename, char delim = ',')
+    {
+        SetFile(filename, delim);
+    }
+
+    void SetFile(const std::string& filename, char delimiter = ',')
+    {
+        delim = delimiter;
+
+        if (myfile.is_open())
+            myfile.close();
+
+        myfile.open(filename, std::ios_base::in);
+        if (!myfile.good())
+            throw ChException("File with name: " + filename + "cannot be found");
+    }
+
+    template <typename type_t>
+    void ParseRow(std::vector<type_t>& vector_out, unsigned int rownum, unsigned int skip_columns = 0)
+    {
+
+        GoToLine(rownum);
+
+        this->ParseCurrentRow(vector_out, skip_columns);
+    }
+
+
+    template <typename type_t>
+    void ParseCurrentRow(std::vector<type_t>& vector_out, unsigned int skip_columns = 0)
+    {
+
+        std::string tmp;
+        type_t val;
+
+        unsigned int current_col = 0;
+        while (std::getline(myfile, tmp, delim)) {
+            if (current_col < skip_columns)
+            {
+                ++current_col;
+                continue;
+            }
+
+            std::istringstream stoken(tmp);
+            stoken >> val;
+            vector_out.push_back(val);
+            ++current_col;
+
+        }
+    }
+
+    void GoToLine(unsigned int rownum)
+    {
+        myfile.seekg(std::ios::beg);
+        for (auto line_sel = 0; line_sel < rownum; ++line_sel) {
+            myfile.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        }
+    }
+
+    template <typename type_t>
+    bool ParseElement(type_t& val_out, unsigned int rownum, unsigned int colnum)
+    {
+        GoToLine(rownum);
+
+        std::string tmp;
+
+        unsigned int current_col = 0;
+        while (std::getline(myfile, tmp, delim)) {
+            if (current_col == colnum)
+            {
+                std::istringstream stoken(tmp);
+                stoken >> val_out;
+                return true;
+            }
+            ++current_col;
+        }
+
+        return false;
+    }
+
+    template <typename type_t>
+    void ParseFile(std::vector<std::vector<type_t>>& vector_out, unsigned int skip_rows = 0, unsigned int skip_columns = 0)
+    {
+
+        GoToLine(skip_rows);
+
+        // create vector to store values for the current line
+        while(!myfile.eof())
+        {
+            auto current_vector = vector_out.insert(vector_out.end(), std::vector<type_t>());
+            this->ParseCurrentRow(vector_out, skip_columns);
+        }
+
+    }
+
+    ~CSVreader()
     {
         myfile.close();
     }
