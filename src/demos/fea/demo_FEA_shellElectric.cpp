@@ -291,13 +291,22 @@ int main(int argc, char* argv[]) {
         GetLog() << "where:\n";
         GetLog() << "<motor_name> is the name of the simulated motor;\n";
         GetLog() << "<driving_cycle_name> is the name of the simulated driving cycle;\n";
-        GetLog() << "<sigmafile_rowindexes...> is the number of the row that has to be simulated;\n";
+        GetLog() << "<sigmafile_rowindexes...> is the row index that holds useful data about the desired simulation;\n";
         GetLog() << "<datafolder> must poin to the folder that contains:\n";
         GetLog() << "- mesh file with the following naming convention\n";
         GetLog() << "  <motor_name>_mesh.INP\n";
         GetLog() << "- 'sigma_n' and 'sigma_t' files with the following naming convention\n";
         GetLog() << "  <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
         GetLog() << "Please mind that <datafolder> must end with a / sign.\n";
+        GetLog() << "'sigma_n' and 'sigma_t' are CSV files in which each line:\n";
+        GetLog() << "holds information about a specific working point and must have the following structure:\n";
+        GetLog() << "| angularspeed | torque | rotor position | sigmas... |\n";
+        GetLog() << "\n";
+        GetLog() << "The output will be in:\n";
+        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_stress.csv\n";
+        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_stress_bridges.csv\n";
+        GetLog() << "with the following convection:\n";
+        GetLog() << "| ElementID | Stress VonMises | StressXX | StressYY | StressZZ | StressXY | StressYZ | StressXZ |\n";
 
         //TODO: uncomment in the final version
         //return -1;
@@ -725,8 +734,14 @@ int main(int argc, char* argv[]) {
 
         tim.reset();
         tim.start();
-        CSVwriter stress_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress.csv");
-        CSVwriter stressbridge_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress_bridges.csv");
+        auto filename_stress(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress.csv");
+        auto filename_stress_bridges(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress_bridges.csv");
+        CSVwriter stress_file(filename_stress);
+        CSVwriter stressbridge_file(filename_stress_bridges);
+
+        GetLog() << "Output files:\n";
+        GetLog() << " - stresses: " << filename_stress << "\n";
+        GetLog() << " - bridge stresses: " << filename_stress_bridges << "\n";
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
@@ -762,6 +777,5 @@ int main(int argc, char* argv[]) {
 
     }
 
-     getchar();
     return 0;
 }
