@@ -236,10 +236,14 @@ void ChMeshFileLoader::FromAbaqusFileMOD(
             // check if entering a NODE section
             if (line.find("*NODE") == 0) {
                 std::string::size_type nse = line.find("NSET=");
-                if (nse > 0) {
+                if (nse != string::npos) {
                     std::string::size_type ncom = line.find(",", nse);
                     current_set = line.substr(nse + 5, ncom - (nse + 5));
-                    GetLog() << "| parsing nodes " << current_set << "\n";
+                    GetLog() << "| parsing nodes from set " << current_set << "\n";
+                }
+                else
+                {
+                    GetLog() << "| parsing nodes\n";
                 }
                 e_parse_section = E_PARSE_NODES;
             }
@@ -247,7 +251,7 @@ void ChMeshFileLoader::FromAbaqusFileMOD(
             // check if entering an ELEMENT section
             if (line.find("*ELEMENT") == 0) {
                 std::string::size_type nty = line.find("TYPE=");
-                if (nty > 0) {
+                if (nty != string::npos) {
                     std::string::size_type ncom = line.find(",", nty);
                     current_type = line.substr(nty + 5, ncom - (nty + 5));
                     e_parse_section = E_PARSE_ELEMENTS;
@@ -266,13 +270,24 @@ void ChMeshFileLoader::FromAbaqusFileMOD(
 
             // check if entering an NSET section
             if (line.find("*NSET") == 0) {
-                std::string::size_type nse = line.find("NSET=", 5);
-                if (nse > 0) {
+                std::string::size_type nse = line.find("NSET=", 6);
+                if (nse != string::npos) {
                     std::string::size_type ncom = line.find(",", nse);
                     current_set = line.substr(nse + 5, ncom - (nse + 5));
                     GetLog() << "| parsing nodeset: " << current_set << "\n";
                 }
                 e_parse_section = E_PARSE_NSET;
+            }
+
+            // check if entering an NSET section
+            if (line.find("*ELSET") == 0) {
+                std::string::size_type nse = line.find("ELSET=", 7);
+                if (nse != string::npos) {
+                    std::string::size_type ncom = line.find(",", nse);
+                    current_set = line.substr(nse + 5, ncom - (nse + 5));
+                    GetLog() << "| parsing elset: " << current_set << "\n";
+                }
+                e_parse_section = E_PARSE_ELSET;
             }
 
             continue;
@@ -326,23 +341,41 @@ void ChMeshFileLoader::FromAbaqusFileMOD(
             if (current_set.length() > 0)
                 elset_map[current_set].push_back(idelem);
         }
-    }
 
-    // parsing nodesets
-    if (e_parse_section == E_PARSE_NSET) {
-        unsigned int val;  // strictly speaking, the maximum is 16 nodes for each line
-        int ntoken = 0;
-        std::string token;
-        std::istringstream ss(line);
-        while (std::getline(ss, token, ',') && ntoken < 16) {
-            std::istringstream stoken(token);
-            stoken >> val;
-            nset_map[current_set].push_back(val);
-            ++ntoken;
+        // parsing nodesets
+        if (e_parse_section == E_PARSE_NSET) {
+            unsigned int val;  // strictly speaking, the maximum is 16 nodes for each line
+            int ntoken = 0;
+            std::string token;
+            std::istringstream ss(line);
+            while (std::getline(ss, token, ',')) {
+                std::istringstream stoken(token);
+                stoken >> val;
+                nset_map[current_set].push_back(val);
+                ++ntoken;
+            }
         }
-    }
 
-}  // end while
+        // parsing nodesets
+        if (e_parse_section == E_PARSE_ELSET) {
+            unsigned int val;  // strictly speaking, the maximum is 16 elements for each line
+            int ntoken = 0;
+            std::string token;
+            std::istringstream ss(line);
+            while (std::getline(ss, token, ',')) {
+                std::istringstream stoken(token);
+                stoken >> val;
+                elset_map[current_set].push_back(val);
+                ++ntoken;
+            }
+        }
+
+
+    } // end while
+
+
+
+}  
 
 void ChMeshFileLoader::ANCFShellFromGMFFile(std::shared_ptr<ChMesh> mesh,
                                             const char* filename,
