@@ -31,7 +31,7 @@ using namespace irr;
 //#define USE_IRRLICHT
 #define FULL_STRESS_OUTPUT
 //#define EQUAL_ELEMENT_SPACING
-#define LOG_OUTPUT true
+#define LOG_OUTPUT false
 
 
 class CSVwriter
@@ -43,14 +43,18 @@ private:
     char delim = ',';
 public:
 
-    CSVwriter(const std::string& filename, bool enabled = true, char delimiter = ','):enabled(enabled), delim(delimiter)
+    explicit CSVwriter(const std::string& filename, bool enabled = true, char delimiter = ',') : enabled(enabled), delim(delimiter)
     {
         if (myfile.is_open())
             myfile.close();
 
-        myfile.open(filename, std::ios_base::out);
-        if (!myfile.good())
-            throw ChException("File with name: " + filename + "cannot be found.");
+        if (enabled)
+        {
+            myfile.open(filename, std::ios_base::out);
+            if (!myfile.good())
+                throw ChException("File with name: " + filename + "cannot be found.");
+        }
+
     }
 
     template<typename T, typename... args_t>
@@ -178,7 +182,7 @@ public:
     }
 
     template <typename type_t>
-    void ParseFile(std::vector<std::vector<type_t>>& vector_out, unsigned int skip_rows = 0, unsigned int skip_columns = 0)
+    void ParseFile(std::list<std::vector<type_t>>& vector_out, unsigned int skip_rows = 0, unsigned int skip_columns = 0)
     {
 
         GoToLine(skip_rows);
