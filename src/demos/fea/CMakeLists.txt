@@ -7,6 +7,7 @@ SET(FEA_DEMOS
 )
 
 SET(FEA_DEMOS_MKL
+    structural_EM
 )
 
 # List all FEA demos that use Irrlicht
@@ -37,7 +38,6 @@ SET(FEA_DEMOS_IRR_MKL
     demo_FEA_cablesMKL
     demo_FEA_abaqus_wheel
     demo_FEA_shells
-    structural_EM
     demo_FEA_ContactANCF
     demo_FEA_Brick9
 	demo_FEA_beamsIGA
