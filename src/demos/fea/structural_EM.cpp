@@ -1,18 +1,6 @@
 // =============================================================================
-// PROJECT CHRONO - http://projectchrono.org
 //
-// Copyright (c) 2014 projectchrono.org
-// All rights reserved.
-//
-// Use of this source code is governed by a BSD-style license that can be found
-// in the LICENSE file at the top level of the distribution and at
-// http://projectchrono.org/license-chrono.txt.
-//
-// =============================================================================
-// Authors: Alessandro Tasora
-// =============================================================================
-//
-// FEA for shells of Reissner 6-field type
+// FEA analysis for electric motors
 //
 // =============================================================================
 
@@ -32,19 +20,12 @@
 #include "chrono_postprocess/ChGnuPlot.h"
 #include "utils/ChUtilsInputOutput.h"
 
-// Remember to use the namespace 'chrono' because all classes
-// of Chrono::Engine belong to this namespace and its children...
 
 using namespace chrono;
 using namespace chrono::fea;
 using namespace chrono::irrlicht;
 using namespace chrono::postprocess;
 using namespace irr;
-
-// Output directory
-std::string motor_prefix = "prius";
-std::string drivingcyle_prefix = "CPSR";
-std::string datafilepath = "D:/SVN_MeltingLab/structural_EM/mesh/";
 
 #define USE_MKL
 //#define USE_IRRLICHT
@@ -59,16 +40,17 @@ private:
     std::ofstream myfile;
     std::ostringstream outbuffer;
     bool enabled = true;
+    char delim = ',';
 public:
 
-    CSVwriter(const std::string& filename, bool enabled = true):enabled(enabled)
+    CSVwriter(const std::string& filename, bool enabled = true, char delimiter = ','):enabled(enabled), delim(delimiter)
     {
         if (myfile.is_open())
             myfile.close();
 
         myfile.open(filename, std::ios_base::out);
         if (!myfile.good())
-            throw ChException("File with name: " + filename + "cannot be found");
+            throw ChException("File with name: " + filename + "cannot be found.");
     }
 
     template<typename T, typename... args_t>
@@ -77,7 +59,7 @@ public:
         if (!enabled)
             return;
 
-        outbuffer << objects << ", ";
+        outbuffer << objects << delim;
         this->AppendRow(objects_other...);
     }
 
@@ -125,7 +107,7 @@ public:
 
         myfile.open(filename, std::ios_base::in);
         if (!myfile.good())
-            throw ChException("File with name: " + filename + "cannot be found");
+            throw ChException("File with name: " + filename + "cannot be found.");
     }
 
     template <typename type_t>
@@ -286,38 +268,38 @@ int main(int argc, char* argv[]) {
     }
     else
     {
-        GetLog() << "This program has to be called with the following syntax\n";
-        GetLog() << argv[0] << " <datafolder> <motor_name> <driving_cycle_name> <sigmafile_rowindexes...>\n";
+        GetLog() << "structural_EM has to be called with the following syntax:\n";
+        GetLog() << argv[0] << " <datafolder> <motor_name> <driving_cycle_name> <testindexes...>\n";
         GetLog() << "where:\n";
         GetLog() << "<motor_name> is the name of the simulated motor;\n";
         GetLog() << "<driving_cycle_name> is the name of the simulated driving cycle;\n";
-        GetLog() << "<sigmafile_rowindexes...> is the row index that holds useful data about the desired simulation;\n";
-        GetLog() << "<datafolder> must poin to the folder that contains:\n";
-        GetLog() << "- mesh file with the following naming convention\n";
-        GetLog() << "  <motor_name>_mesh.INP\n";
-        GetLog() << "- 'sigma_n' and 'sigma_t' files with the following naming convention\n";
-        GetLog() << "  <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
-        GetLog() << "Please mind that <datafolder> must end with a / sign.\n";
-        GetLog() << "'sigma_n' and 'sigma_t' are CSV files in which each line:\n";
-        GetLog() << "holds information about a specific working point and must have the following structure:\n";
-        GetLog() << "| angularspeed | torque | rotor position | sigmas... |\n";
+        GetLog() << "<testindexes...> is the row index that holds useful data about the desired simulation in 'sigma_n' and 'sigma_t' files;\n";
+        GetLog() << "<datafolder> must point to the folder that contains:\n";
+        GetLog() << " - mesh file with the following naming convention:\n";
+        GetLog() << "   <motor_name>_mesh.INP\n";
+        GetLog() << " - mesh info file with the following naming convention:\n";
+        GetLog() << "   <motor_name>_meshinfo.csv\n";
+        GetLog() << " - 'sigma_n' and 'sigma_t' files with the following naming convention:\n";
+        GetLog() << "   <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
+        GetLog() << "Please mind that <datafolder> must end with a / sign or just put double double-quotes to specify current folder.\n";
+        GetLog() << "<motor_name>_sigma_n.csv (and similarly for sigma_t) has multiple lines, each of which\n";
+        GetLog() << "    holds information about a specific working point and must have the following structure:\n";
+        GetLog() << "    | angularspeed | torque | rotor position | sigmas... |\n";
+        GetLog() << "<motor_name>_meshinfo.csv holds additional information about the mesh:\n";
+        GetLog() << "    | mr_magnets | bridge_angular_period | bridge_angular_offset | bridge_angular_width | bridge_radius_min | bridge_radius_max |\n";
+        GetLog() << "Please mind that <motor_name>_meshinfo.csv has a one-line header.\n";
         GetLog() << "\n";
         GetLog() << "The output will be in:\n";
-        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_stress.csv\n";
-        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_stress_bridges.csv\n";
+        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_<testindex>_stress.csv\n";
+        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_<testindex>_stress_bridges.csv\n";
         GetLog() << "with the following convection:\n";
         GetLog() << "| ElementID | Stress VonMises | StressXX | StressYY | StressZZ | StressXY | StressYZ | StressXZ |\n";
 
-        //TODO: uncomment in the final version
-        //return -1;
-
-        // can be removed; just for testing purposes
-        test_list.push_back(0);
-        test_list.push_back(1);
-        test_list.push_back(2);
+        return -1;
     }
 
     auto filename_mesh = datafilepath + motor_prefix + "_mesh.INP";
+    auto filename_meshinfo = datafilepath + motor_prefix + "_meshinfo.csv";
     auto filename_sigma_n = datafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_n.csv";
     auto filename_sigma_t = datafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_t.csv";
 
@@ -325,6 +307,7 @@ int main(int argc, char* argv[]) {
     GetLog() << "The driving cycle is " << drivingcyle_prefix << "\n";
     GetLog() << "Required files are:\n" <<
         " - mesh file: " << filename_mesh << "\n"
+        " - meshinfo file: " << filename_meshinfo << "\n"
         " - sigma_n file: " << filename_sigma_n << "\n"
         " - sigma_t file: " << filename_sigma_t << "\n";
 
@@ -474,11 +457,15 @@ int main(int argc, char* argv[]) {
     }
 
     // find elements of the bridges
+    csv_utility.SetFile(filename_meshinfo);
+    std::vector<double> meshinfo_data;
+    csv_utility.ParseRow(meshinfo_data, 1, 0);
     std::set<std::shared_ptr<ChElementHexa_8>> bridge_elements;
-    double bridge_radius_min = 0.0600;
-    double bridge_radius_max = 0.0725;
-    double bridge_period = 22.5*CH_C_PI / 180.0;
-    double bridge_angle_tolerance = 1.0*CH_C_PI / 180.0;
+    double bridge_angular_period = meshinfo_data[1]*CH_C_PI / 180.0;
+    double bridge_angular_offset = meshinfo_data[2]*CH_C_PI / 180.0;
+    double bridge_angular_width = meshinfo_data[3]*CH_C_PI / 180.0;
+    double bridge_radius_min = meshinfo_data[4];
+    double bridge_radius_max = meshinfo_data[5];
     auto& element_list = my_mesh->GetElements();
     for (auto el_sel = 0; el_sel != element_list.size(); ++el_sel) {
         auto el = std::dynamic_pointer_cast<ChElementHexa_8>(element_list[el_sel]);
@@ -492,7 +479,7 @@ int main(int argc, char* argv[]) {
 
         // check if this element center is within the limits
         if (dist_from_center > bridge_radius_min && dist_from_center < bridge_radius_max &&
-            abs(angle - bridge_period*std::round(angle/ bridge_period)) < bridge_angle_tolerance)
+            abs(angle - bridge_angular_offset - bridge_angular_period *std::round((angle - bridge_angular_offset) / bridge_angular_period)) < bridge_angular_width/2.0)
         {
             bridge_elements.emplace_hint(bridge_elements.end(),el);
         }
@@ -542,7 +529,7 @@ int main(int argc, char* argv[]) {
     ///////////////////////////////////////////////////////////////
     ///// Different working points affect only the code below /////
     ///////////////////////////////////////////////////////////////
-    GetLog() << "\nTest Loop\n";
+    GetLog() << "\nTest Loop:\n";
 
     for (auto test_sel = 0; test_sel < test_list.size(); ++test_sel) {
 
@@ -588,18 +575,16 @@ int main(int argc, char* argv[]) {
         }
 
 
-        CSVwriter sigma_glob_writer(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_sigma_glob.txt", LOG_OUTPUT);
+        CSVwriter sigma_glob_writer(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_sigma_glob.csv", LOG_OUTPUT);
         std::vector<ChVector<>> sigma_glob_set;
         sigma_glob_set.resize(sigma_n.size());
         auto delta_angle = CH_C_2PI / sigma_glob_set.size();
         for (auto sigma_sel = 0; sigma_sel < sigma_n.size(); ++sigma_sel) {
-            // sigma_n[sigma_sel] = 414e3;
-            // sigma_t[sigma_sel] = 0.0;
-            sigma_glob_set[sigma_sel].x() =
-                sigma_n[sigma_sel] * cos(delta_angle * sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle * sigma_sel);
-            sigma_glob_set[sigma_sel].y() =
-                sigma_n[sigma_sel] * sin(delta_angle * sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle * sigma_sel);
+
+            sigma_glob_set[sigma_sel].x() = sigma_n[sigma_sel] * cos(delta_angle * sigma_sel) - sigma_t[sigma_sel] * sin(delta_angle * sigma_sel);
+            sigma_glob_set[sigma_sel].y() = sigma_n[sigma_sel] * sin(delta_angle * sigma_sel) + sigma_t[sigma_sel] * cos(delta_angle * sigma_sel);
             sigma_glob_set[sigma_sel].z() = 0.0;
+
             sigma_glob_writer.AppendRow(delta_angle * sigma_sel,
                 sigma_glob_set[sigma_sel].x(),
                 sigma_glob_set[sigma_sel].y(),
@@ -608,7 +593,7 @@ int main(int argc, char* argv[]) {
 
         ////////////// Apply additional centrifugal forces to emulate magnets //////////////
         auto magnet_nodes = nset_map.find("MAGNETNODES");
-        double mass_radius = 0.0 / magnet_nodes->second.size();
+        double mass_radius = meshinfo_data[0] / magnet_nodes->second.size();
         if (magnet_nodes!= nset_map.end())
         {
             for(auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
@@ -620,7 +605,7 @@ int main(int argc, char* argv[]) {
         }
 
         ////////////// Apply forces given by EM pressure //////////////
-        CSVwriter forces(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_EMforces.txt", LOG_OUTPUT);
+        CSVwriter forces(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_EMforces.csv", LOG_OUTPUT);
         for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
             double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
 
@@ -658,11 +643,8 @@ int main(int argc, char* argv[]) {
 #else
             auto iter_prev = angles.lower_bound(angle);
             auto iter_next = iter_prev;
-            double halfangle_previous =
-                0.5 * ((iter_prev != angles.begin() ? *--iter_prev : *(--angles.end())) + angle);
-            double halfangle_next =
-                0.5 *
-                (((iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin())) + angle);
+            double halfangle_previous = 0.5 * ((iter_prev != angles.begin() ? *--iter_prev : *(--angles.end())) + angle);
+            double halfangle_next = 0.5 * (((iter_next != angles.end()) && ++iter_next != angles.end() ? *iter_next : *(angles.begin())) + angle);
             ChVector<> sigma_glob_previous, sigma_glob_next, sigma_glob_center;
 
             getSigmaGlob(sigma_glob_set, sigma_glob_previous, halfangle_previous);
@@ -671,25 +653,20 @@ int main(int argc, char* argv[]) {
             double archLength_previous, archLength_next;
             getArcLength(angles, archLength_previous, archLength_next, angle, rotor_external_radius);
 
-            // double hom_area = CH_C_2PI * rotor_external_radius / external_nodes.size();
-
             auto EMforces_glob = 0.5 * element_thickness *(archLength_previous * sigma_glob_previous + archLength_next * sigma_glob_next);
-            // ChVector<> forces_glob2 = 0.5*(archLength_previous*element_thickness*sigma_glob_center + archLength_next
-            // * element_thickness*sigma_glob_center);
-
+            
             forces.AppendRow(angle, EMforces_glob[0], EMforces_glob[1], EMforces_glob[2]);
 
 #endif
-            // GetLog() << "Angle " << angle * 180.0 / CH_C_PI << "\n Forces" << forces_glob << "\n";
             auto old_force = (*it)->GetForce();
             (*it)->SetForce(old_force + EMforces_glob);
         }
 
         ////////////// Apply centrifugal forces //////////////
-        // must be done after SetupInitial: volume is evaluated only at that time
+        // must be done after SetupInitial: volume is evaluated only at that time;
         // we could check if the omega is changed from the previous run and avoid re-evaluation
         tim.start();
-        CSVwriter b(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_centrifugal_forces.txt", LOG_OUTPUT);
+        CSVwriter b(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_centrifugal_forces.csv", LOG_OUTPUT);
         // std::map<std::shared_ptr<ChNodeFEAxyz>, ChVector<>> centrifugal_forces_map;
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it) {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
@@ -700,54 +677,42 @@ int main(int argc, char* argv[]) {
             mean_point *= 1.0 / 8.0;
             auto dist_from_center = sqrt(mean_point.x() * mean_point.x() + mean_point.y() * mean_point.y());
             auto centrifugal_force = el->GetVolume() * element_material->Get_density() * omega * omega * dist_from_center;
+            auto centrifugal_force_vector = ChVector<>(mean_point.x(), mean_point.y(), 0.0);
+            centrifugal_force_vector.Normalize();
+            centrifugal_force_vector *= centrifugal_force / 8.0;
             for (auto node_sel = 0; node_sel < 8; ++node_sel) {
                 auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel));
-
-                auto centrifugal_force_vector = ChVector<>(mean_point.x(), mean_point.y(), 0.0);
-                centrifugal_force_vector.Normalize();
-                centrifugal_force_vector *= centrifugal_force / 8.0;
                 // store the centrifugal force and then apply it
                 // centrifugal_forces_map[node] = centrifugal_force_vector;
                 auto old_force = node->GetForce();
                 node->SetForce(old_force + centrifugal_force_vector);
-                b.AppendRow(mean_point.x(), mean_point.y(), centrifugal_force_vector.x(), centrifugal_force_vector.y(),
-                    centrifugal_force_vector.z());
             }
+            b.AppendRow(mean_point.x(), mean_point.y(), centrifugal_force_vector.x(), centrifugal_force_vector.y());
         }
-
 
         tim.stop();
         GetLog() << "Forces application time: " << tim() << "\n";
 
-
+        tim.start();
         my_system.Setup();
         my_system.Update();
-
-
-        tim.start();
         my_system.DoStaticLinear();
         tim.stop();
         GetLog() << "Simulation time: " << tim() << "\n";
 
 
-        // Export results
-
+        ////////////// Export stress to file //////////////
         tim.reset();
         tim.start();
-        auto filename_stress(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress.csv");
-        auto filename_stress_bridges(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress_bridges.csv");
-        CSVwriter stress_file(filename_stress);
-        CSVwriter stressbridge_file(filename_stress_bridges);
-
-        GetLog() << "Output files:\n";
-        GetLog() << " - stresses: " << filename_stress << "\n";
-        GetLog() << " - bridge stresses: " << filename_stress_bridges << "\n";
+        CSVwriter stress_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress.csv");
+        CSVwriter stressbridge_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress_bridges.csv");
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
             auto stress = el->GetStress(0, 0, 0);
             stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+            // output bridge elements stress to separate file
             if (bridge_elements.find(el)!= bridge_elements.end())
             {
                 stressbridge_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
@@ -756,12 +721,12 @@ int main(int argc, char* argv[]) {
 
         tim.stop();
         GetLog() << "Export time: " << tim() << "\n";
-
-        GetLog() << "Done\n";
+        GetLog() << "Done\n\n";
 
 
 
 #ifdef USE_IRRLICHT
+        ////////////// Rendering //////////////
         while (application.GetDevice()->run()) {
             application.BeginScene();
 
