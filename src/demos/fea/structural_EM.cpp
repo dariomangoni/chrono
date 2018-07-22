@@ -15,17 +15,12 @@
 #include "chrono_fea/ChMesh.h"
 #include "chrono_fea/ChMeshFileLoader.h"
 #include "chrono_fea/ChVisualizationFEAmesh.h"
-#include "chrono_irrlicht/ChIrrApp.h"
 #include "chrono_mkl/ChSolverMKL.h"
-#include "chrono_postprocess/ChGnuPlot.h"
 #include "utils/ChUtilsInputOutput.h"
 
 
 using namespace chrono;
 using namespace chrono::fea;
-using namespace chrono::irrlicht;
-using namespace chrono::postprocess;
-using namespace irr;
 
 #define USE_MKL
 //#define USE_IRRLICHT
@@ -33,6 +28,11 @@ using namespace irr;
 //#define EQUAL_ELEMENT_SPACING
 #define LOG_OUTPUT false
 
+#ifdef USE_IRRLICHT
+#include "chrono_irrlicht/ChIrrApp.h"
+using namespace chrono::irrlicht;
+using namespace irr;
+#endif
 
 class CSVwriter
 {
