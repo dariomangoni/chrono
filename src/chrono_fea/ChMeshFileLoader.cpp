@@ -279,12 +279,12 @@ void ChMeshFileLoader::FromAbaqusFileMOD(
                 e_parse_section = E_PARSE_NSET;
             }
 
-            // check if entering an NSET section
+            // check if entering an ELSET section
             if (line.find("*ELSET") == 0) {
                 std::string::size_type nse = line.find("ELSET=", 7);
                 if (nse != string::npos) {
                     std::string::size_type ncom = line.find(",", nse);
-                    current_set = line.substr(nse + 5, ncom - (nse + 5));
+                    current_set = line.substr(nse + 6, ncom - (nse + 6));
                     GetLog() << "| parsing elset: " << current_set << "\n";
                 }
                 e_parse_section = E_PARSE_ELSET;
