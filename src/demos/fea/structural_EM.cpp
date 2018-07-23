@@ -27,8 +27,10 @@ using namespace chrono::fea;
 #define FULL_STRESS_OUTPUT
 //#define EQUAL_ELEMENT_SPACING
 #define LOG_OUTPUT false
+//#define AUTOMATIC_BRIDGE_SELECTION
 
-#ifdef USE_IRRLICHT
+
+#ifdef USE_IRRLICHT 
 #include "chrono_irrlicht/ChIrrApp.h"
 using namespace chrono::irrlicht;
 using namespace irr;
@@ -251,24 +253,23 @@ void getArcLength(const std::set<double>& angles, double& length_previous, doubl
 int main(int argc, char* argv[]) {
 
     ////////////// Parse input arguments //////////////
-    std::vector<unsigned int> test_list;
     std::string datafilepath = "D:/SVN_MeltingLab/structural_EM/mesh/";
     std::string motor_prefix = "prius";
     std::string drivingcyle_prefix = "CPSR";
+    unsigned int testindex_first;
+    unsigned int testindex_last;
 
     if (argc>1)
     {
         datafilepath = argv[1];
         motor_prefix = argv[2];
         drivingcyle_prefix = argv[3];
-        
-        unsigned int parsed_num;
-        for (auto arg_sel = 4; arg_sel < argc; ++arg_sel)
-        {
-            std::stringstream argv_string(argv[arg_sel]);
-            argv_string >> parsed_num;
-            test_list.push_back(parsed_num);
-        }
+        std::stringstream testindex_first_ss(argv[4]);
+        testindex_first_ss >> testindex_first;
+        std::stringstream testindex_last_ss(argv[5]);
+        testindex_last_ss >> testindex_last;
+
+        GetLog() << "Running tests from: " << testindex_first << " to " << testindex_last << "\n";
     }
     else
     {
@@ -281,17 +282,17 @@ int main(int argc, char* argv[]) {
         GetLog() << "<datafolder> must point to the folder that contains:\n";
         GetLog() << " - mesh file with the following naming convention:\n";
         GetLog() << "   <motor_name>_mesh.INP\n";
-        GetLog() << " - mesh info file with the following naming convention:\n";
-        GetLog() << "   <motor_name>_meshinfo.csv\n";
+        //GetLog() << " - mesh info file with the following naming convention:\n";
+        //GetLog() << "   <motor_name>_meshinfo.csv\n";
         GetLog() << " - 'sigma_n' and 'sigma_t' files with the following naming convention:\n";
         GetLog() << "   <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
         GetLog() << "Please mind that <datafolder> must end with a / sign or just put double double-quotes to specify current folder.\n";
         GetLog() << "<motor_name>_sigma_n.csv (and similarly for sigma_t) has multiple lines, each of which\n";
         GetLog() << "    holds information about a specific working point and must have the following structure:\n";
         GetLog() << "    | angularspeed | torque | rotor position | sigmas... |\n";
-        GetLog() << "<motor_name>_meshinfo.csv holds additional information about the mesh:\n";
-        GetLog() << "    | mr_magnets | bridge_angular_period | bridge_angular_offset | bridge_angular_width | bridge_radius_min | bridge_radius_max |\n";
-        GetLog() << "Please mind that <motor_name>_meshinfo.csv has a one-line header.\n";
+        //GetLog() << "<motor_name>_meshinfo.csv holds additional information about the mesh:\n";
+        //GetLog() << "    | mr_magnets | bridge_angular_period | bridge_angular_offset | bridge_angular_width | bridge_radius_min | bridge_radius_max |\n";
+        //GetLog() << "Please mind that <motor_name>_meshinfo.csv has a one-line header.\n";
         GetLog() << "\n";
         GetLog() << "The output will be in:\n";
         GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_<testindex>_stress.csv\n";
@@ -311,7 +312,7 @@ int main(int argc, char* argv[]) {
     GetLog() << "The driving cycle is " << drivingcyle_prefix << "\n";
     GetLog() << "Required files are:\n" <<
         " - mesh file: " << filename_mesh << "\n"
-        " - meshinfo file: " << filename_meshinfo << "\n"
+        //" - meshinfo file: " << filename_meshinfo << "\n"
         " - sigma_n file: " << filename_sigma_n << "\n"
         " - sigma_t file: " << filename_sigma_t << "\n";
 
@@ -381,6 +382,7 @@ int main(int argc, char* argv[]) {
     std::map<std::string, std::vector<unsigned int>> elset_map;
     std::map<unsigned int, std::shared_ptr<ChNodeFEAxyz>> inserted_nodes;
     std::map<std::shared_ptr<ChElementHexa_8>, unsigned int> inserted_elements_ptr_to_ID;
+    std::map<unsigned int, std::shared_ptr<ChElementHexa_8>> inserted_elements_ID_to_ptr;
     //std::map<std::shared_ptr<ChNodeFEAxyz>, unsigned int> inserted_nodes_ptr_to_ID;
 
     
@@ -424,6 +426,8 @@ int main(int argc, char* argv[]) {
             
             my_mesh->AddElement(new_elem);
             inserted_elements_ptr_to_ID.emplace_hint(inserted_elements_ptr_to_ID.end(), new_elem, el_it->first);
+            inserted_elements_ID_to_ptr.emplace_hint(inserted_elements_ID_to_ptr.end(), el_it->first, new_elem);
+
         }
     }
 
@@ -431,35 +435,10 @@ int main(int argc, char* argv[]) {
     GetLog() << "Added " << my_mesh->GetElements().size() << " elements over " << elements_map.size() << ".\n";
 
 
-    // identify internal and external nodes
-    double rotor_external_radius = 80.22e-3;
-    double rotor_internal_radius = 25.5e-3;
-    double external_threshold = rotor_external_radius - 1e-4;
-    double internal_threshold = rotor_internal_radius + 1e-4;
-    auto nodesmesh = my_mesh->GetNodes();
-    std::vector<std::shared_ptr<ChNodeFEAxyz>> external_nodes;
-    std::vector<std::shared_ptr<ChNodeFEAxyz>> internal_nodes;
-    std::set<double> angles;
-    for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
-        auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(nodesmesh[node_sel]);
-        auto dist_from_center = sqrt(node->GetPos().x()*node->GetPos().x() + node->GetPos().y()*node->GetPos().y());
-        if (dist_from_center > external_threshold) {
-            external_nodes.push_back(node);
-            double angle = atan2(node->GetPos().y(), node->GetPos().x());
-            if (angle < 0)
-                angle += CH_C_2PI;
-            angles.insert(angle);
-        }
-        else if (dist_from_center < internal_threshold) {
-            internal_nodes.push_back(node);
-        }
-    }
 
-    // fix internal nodes
-    for (auto it = internal_nodes.begin(); it != internal_nodes.end(); ++it) {
-        (*it)->SetFixed(true);
-    }
 
+
+#ifdef AUTOMATIC_BRIDGE_SELECTION
     // find elements of the bridges
     csv_utility.SetFile(filename_meshinfo);
     std::vector<double> meshinfo_data;
@@ -487,11 +466,87 @@ int main(int argc, char* argv[]) {
         {
             bridge_elements.emplace_hint(bridge_elements.end(),el);
         }
+    }
+#else
+    // Get magnets mass*radius info from Abaqus header section
+    std::ifstream fin(filename_mesh);
+    if (!fin.good())
+        throw ChException("ERROR opening Abaqus INP file: " + std::string(filename_mesh) + "\n");
 
+    // look for mass*radius value
+    std::string line;
+    double rotor_external_radius = -1e30;
+    double rotor_internal_radius = -1e30;
+    double magnets_mass_radius = -1e30;
+    while (getline(fin, line)) {
+        // trims white space from the beginning of the std::string
+        line.erase(line.begin(), find_if(line.begin(), line.end(), std::not1(std::ptr_fun<int, int>(isspace))));
+        // convert parsed line to uppercase (since std::string::find is case sensitive and Abaqus INP is not)
+        std::for_each(line.begin(), line.end(), [](char& c) { c = toupper(static_cast<unsigned char>(c)); });
+
+        std::string string_to_find = "MAGNETS_MASS_RADIUS=";
+        auto nse = line.find(string_to_find);
+        if (nse != std::string::npos) {
+            std::string::size_type ncom = line.find(",", nse + string_to_find.size());
+            std::string magnets_mass_radius_s = line.substr(nse + string_to_find.size(), ncom - (nse + 5));
+            std::stringstream magnets_mass_radius_ss(magnets_mass_radius_s);
+            magnets_mass_radius_ss >> magnets_mass_radius;
+            GetLog() << "Magnets mass*radius: " << magnets_mass_radius << "\n";
+        }
+
+        string_to_find = "INTERNAL_RADIUS=";
+        nse = line.find(string_to_find);
+        if (nse != std::string::npos) {
+            std::string::size_type ncom = line.find(",", nse + string_to_find.size());
+            std::string rotor_internal_radius_s = line.substr(nse + string_to_find.size(), ncom - (nse + 5));
+            std::stringstream rotor_internal_radius_ss(rotor_internal_radius_s);
+            rotor_internal_radius_ss >> rotor_internal_radius;
+            GetLog() << "Internal radius:  " << rotor_internal_radius << "\n";
+        }
+
+        string_to_find = "EXTERNAL_RADIUS=";
+        nse = line.find(string_to_find);
+        if (nse != std::string::npos) {
+            std::string::size_type ncom = line.find(",", nse + string_to_find.size());
+            std::string rotor_external_radius_s = line.substr(nse + string_to_find.size(), ncom - (nse + 5));
+            std::stringstream rotor_external_radius_ss(rotor_external_radius_s);
+            rotor_external_radius_ss >> rotor_external_radius;
+            GetLog() << "External radius: " << rotor_external_radius << "\n";
+        }
 
     }
 
-    GetLog() << "Bridge elements: " << bridge_elements.size() << "\n";
+#endif
+
+    // identify internal and external nodes
+    //double rotor_external_radius = 80.22e-3;
+    //double rotor_internal_radius = 25.5e-3;
+    double external_threshold = rotor_external_radius - 1e-4;
+    double internal_threshold = rotor_internal_radius + 1e-4;
+    auto nodesmesh = my_mesh->GetNodes();
+    std::vector<std::shared_ptr<ChNodeFEAxyz>> external_nodes;
+    std::vector<std::shared_ptr<ChNodeFEAxyz>> internal_nodes;
+    std::set<double> angles;
+    for (auto node_sel = 0; node_sel < nodesmesh.size(); ++node_sel) {
+        auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(nodesmesh[node_sel]);
+        auto dist_from_center = sqrt(node->GetPos().x()*node->GetPos().x() + node->GetPos().y()*node->GetPos().y());
+        if (dist_from_center > external_threshold) {
+            external_nodes.push_back(node);
+            double angle = atan2(node->GetPos().y(), node->GetPos().x());
+            if (angle < 0)
+                angle += CH_C_2PI;
+            angles.insert(angle);
+        }
+        else if (dist_from_center < internal_threshold) {
+            internal_nodes.push_back(node);
+        }
+    }
+
+    // fix internal nodes
+    for (auto it = internal_nodes.begin(); it != internal_nodes.end(); ++it) {
+        (*it)->SetFixed(true);
+    }
+
     GetLog() << "External nodes: " << external_nodes.size() << "\n";
     GetLog() << "Internal nodes: " << internal_nodes.size() << "\n";
 
@@ -534,9 +589,9 @@ int main(int argc, char* argv[]) {
     ///// Different working points affect only the code below /////
     ///////////////////////////////////////////////////////////////
     GetLog() << "\nTest Loop:\n";
-
-    for (auto test_sel = 0; test_sel < test_list.size(); ++test_sel) {
-
+    for (auto test_sel = testindex_first; test_sel <= testindex_last; ++test_sel) {
+        tim.start();
+        GetLog() << "Running test: " << test_sel << "\n";
         ////////////// Clear state of the nodes //////////////
         for (auto node_it = my_mesh->GetNodes().begin(); node_it != my_mesh->GetNodes().end(); ++node_it)
         {
@@ -557,29 +612,29 @@ int main(int argc, char* argv[]) {
             double omega_n, omega_t, torque_n, torque_t, posrot_n, posrot_t;
             const unsigned int skip_columns = 3;
             csv_utility.SetFile(filename_sigma_n);
-            csv_utility.ParseRow(sigma_n, test_list[test_sel], skip_columns);
-            csv_utility.ParseElement(omega_n, test_list[test_sel], OMEGA_POSITION_IN_CSV);
-            csv_utility.ParseElement(torque_n, test_list[test_sel], TORQUE_POSITION_IN_CSV);
-            csv_utility.ParseElement(posrot_n, test_list[test_sel], POSROT_POSITION_IN_CSV);
+            csv_utility.ParseRow(sigma_n, test_sel, skip_columns);
+            csv_utility.ParseElement(omega_n, test_sel, OMEGA_POSITION_IN_CSV);
+            csv_utility.ParseElement(torque_n, test_sel, TORQUE_POSITION_IN_CSV);
+            csv_utility.ParseElement(posrot_n, test_sel, POSROT_POSITION_IN_CSV);
 
             csv_utility.SetFile(filename_sigma_t);
-            csv_utility.ParseRow(sigma_t, test_list[test_sel], skip_columns);
-            csv_utility.ParseElement(omega_t, test_list[test_sel], OMEGA_POSITION_IN_CSV);
-            csv_utility.ParseElement(torque_t, test_list[test_sel], TORQUE_POSITION_IN_CSV);
-            csv_utility.ParseElement(posrot_t, test_list[test_sel], POSROT_POSITION_IN_CSV);
+            csv_utility.ParseRow(sigma_t, test_sel, skip_columns);
+            csv_utility.ParseElement(omega_t, test_sel, OMEGA_POSITION_IN_CSV);
+            csv_utility.ParseElement(torque_t, test_sel, TORQUE_POSITION_IN_CSV);
+            csv_utility.ParseElement(posrot_t, test_sel, POSROT_POSITION_IN_CSV);
 
             if (abs(omega_n - omega_t) > 1e-12 || abs(torque_n - torque_t) > 1e-12 || abs(posrot_n - posrot_t) > 1e-12)
             {
-                GetLog() << "Test with row index " << test_list[test_sel] << " has been skipped because different values of omega, torque or posrot have been found between sigma files\n";
+                GetLog() << "Test with row index " << test_sel << " has been skipped because different values of omega, torque or posrot have been found between sigma files\n";
                 continue;
             }
 
-            //omega = omega_n * CH_C_2PI / 60.0;
-            omega = omega_n;
+            omega = omega_n * CH_C_2PI / 60.0;
+            //omega = omega_n;
         }
 
 
-        CSVwriter sigma_glob_writer(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_sigma_glob.csv", LOG_OUTPUT);
+        CSVwriter sigma_glob_writer(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_sigma_glob.csv", LOG_OUTPUT);
         std::vector<ChVector<>> sigma_glob_set;
         sigma_glob_set.resize(sigma_n.size());
         auto delta_angle = CH_C_2PI / sigma_glob_set.size();
@@ -597,19 +652,19 @@ int main(int argc, char* argv[]) {
 
         ////////////// Apply additional centrifugal forces to emulate magnets //////////////
         auto magnet_nodes = nset_map.find("MAGNETNODES");
-        double mass_radius = meshinfo_data[0] / magnet_nodes->second.size();
+        double magnets_mass_radius_scattered = magnets_mass_radius / magnet_nodes->second.size();
         if (magnet_nodes!= nset_map.end())
         {
             for(auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
             {
                 auto node = inserted_nodes.at(*node_id_it);
                 auto old_force = node->GetForce();
-                node->SetForce(old_force + mass_radius*omega*omega);
+                node->SetForce(old_force + magnets_mass_radius_scattered*omega*omega);
             }
         }
 
         ////////////// Apply forces given by EM pressure //////////////
-        CSVwriter forces(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_EMforces.csv", LOG_OUTPUT);
+        CSVwriter forces(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_EMforces.csv", LOG_OUTPUT);
         for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
             double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
 
@@ -669,8 +724,7 @@ int main(int argc, char* argv[]) {
         ////////////// Apply centrifugal forces //////////////
         // must be done after SetupInitial: volume is evaluated only at that time;
         // we could check if the omega is changed from the previous run and avoid re-evaluation
-        tim.start();
-        CSVwriter b(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_centrifugal_forces.csv", LOG_OUTPUT);
+        CSVwriter b(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_centrifugal_forces.csv", LOG_OUTPUT);
         // std::map<std::shared_ptr<ChNodeFEAxyz>, ChVector<>> centrifugal_forces_map;
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it) {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
@@ -708,18 +762,24 @@ int main(int argc, char* argv[]) {
         ////////////// Export stress to file //////////////
         tim.reset();
         tim.start();
-        CSVwriter stress_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress.csv");
-        CSVwriter stressbridge_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_list[test_sel]) + "_stress_bridges.csv");
+        CSVwriter stress_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress.csv");
+        CSVwriter stressbridge_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_bridges.csv");
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
             auto stress = el->GetStress(0, 0, 0);
             stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
-            // output bridge elements stress to separate file
-            if (bridge_elements.find(el)!= bridge_elements.end())
+        }
+
+        for (auto el_it = elset_map["BRIDGES"].begin(); el_it != elset_map["BRIDGES"].end(); ++el_it)
+        {
+            auto el_found = inserted_elements_ID_to_ptr.find(*el_it);
+            if (el_found != inserted_elements_ID_to_ptr.end())
             {
-                stressbridge_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+                auto el = std::dynamic_pointer_cast<ChElementHexa_8>(el_found->second);
+                auto stress = el->GetStress(0, 0, 0);
+                stressbridge_file.AppendRow(*el_it, stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
             }
         }
 
