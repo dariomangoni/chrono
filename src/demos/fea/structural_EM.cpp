@@ -27,7 +27,6 @@ using namespace chrono::fea;
 #define FULL_STRESS_OUTPUT
 //#define EQUAL_ELEMENT_SPACING
 #define LOG_OUTPUT false
-//#define AUTOMATIC_BRIDGE_SELECTION
 
 
 #ifdef USE_IRRLICHT 
@@ -282,17 +281,12 @@ int main(int argc, char* argv[]) {
         GetLog() << "<datafolder> must point to the folder that contains:\n";
         GetLog() << " - mesh file with the following naming convention:\n";
         GetLog() << "   <motor_name>_mesh.INP\n";
-        //GetLog() << " - mesh info file with the following naming convention:\n";
-        //GetLog() << "   <motor_name>_meshinfo.csv\n";
         GetLog() << " - 'sigma_n' and 'sigma_t' files with the following naming convention:\n";
         GetLog() << "   <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
         GetLog() << "Please mind that <datafolder> must end with a / sign or just put double double-quotes to specify current folder.\n";
         GetLog() << "<motor_name>_sigma_n.csv (and similarly for sigma_t) has multiple lines, each of which\n";
         GetLog() << "    holds information about a specific working point and must have the following structure:\n";
         GetLog() << "    | angularspeed | torque | rotor position | sigmas... |\n";
-        //GetLog() << "<motor_name>_meshinfo.csv holds additional information about the mesh:\n";
-        //GetLog() << "    | mr_magnets | bridge_angular_period | bridge_angular_offset | bridge_angular_width | bridge_radius_min | bridge_radius_max |\n";
-        //GetLog() << "Please mind that <motor_name>_meshinfo.csv has a one-line header.\n";
         GetLog() << "\n";
         GetLog() << "The output will be in:\n";
         GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_<testindex>_stress.csv\n";
@@ -312,7 +306,6 @@ int main(int argc, char* argv[]) {
     GetLog() << "The driving cycle is " << drivingcyle_prefix << "\n";
     GetLog() << "Required files are:\n" <<
         " - mesh file: " << filename_mesh << "\n"
-        //" - meshinfo file: " << filename_meshinfo << "\n"
         " - sigma_n file: " << filename_sigma_n << "\n"
         " - sigma_t file: " << filename_sigma_t << "\n";
 
@@ -436,38 +429,6 @@ int main(int argc, char* argv[]) {
 
 
 
-
-
-#ifdef AUTOMATIC_BRIDGE_SELECTION
-    // find elements of the bridges
-    csv_utility.SetFile(filename_meshinfo);
-    std::vector<double> meshinfo_data;
-    csv_utility.ParseRow(meshinfo_data, 1, 0);
-    std::set<std::shared_ptr<ChElementHexa_8>> bridge_elements;
-    double bridge_angular_period = meshinfo_data[1]*CH_C_PI / 180.0;
-    double bridge_angular_offset = meshinfo_data[2]*CH_C_PI / 180.0;
-    double bridge_angular_width = meshinfo_data[3]*CH_C_PI / 180.0;
-    double bridge_radius_min = meshinfo_data[4];
-    double bridge_radius_max = meshinfo_data[5];
-    auto& element_list = my_mesh->GetElements();
-    for (auto el_sel = 0; el_sel != element_list.size(); ++el_sel) {
-        auto el = std::dynamic_pointer_cast<ChElementHexa_8>(element_list[el_sel]);
-        ChVector<> mean_point;
-        for (auto node_sel = 0; node_sel < 8; ++node_sel) {
-            mean_point += std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel))->GetX0();
-        }
-        mean_point *= 1.0 / 8.0;
-        auto dist_from_center = sqrt(mean_point.x() * mean_point.x() + mean_point.y() * mean_point.y());
-        auto angle = atan2(mean_point.y(), mean_point.x());
-
-        // check if this element center is within the limits
-        if (dist_from_center > bridge_radius_min && dist_from_center < bridge_radius_max &&
-            abs(angle - bridge_angular_offset - bridge_angular_period *std::round((angle - bridge_angular_offset) / bridge_angular_period)) < bridge_angular_width/2.0)
-        {
-            bridge_elements.emplace_hint(bridge_elements.end(),el);
-        }
-    }
-#else
     // Get magnets mass*radius info from Abaqus header section
     std::ifstream fin(filename_mesh);
     if (!fin.good())
@@ -516,7 +477,6 @@ int main(int argc, char* argv[]) {
 
     }
 
-#endif
 
     // identify internal and external nodes
     //double rotor_external_radius = 80.22e-3;
