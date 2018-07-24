@@ -253,6 +253,7 @@ int main(int argc, char* argv[]) {
 
     ////////////// Parse input arguments //////////////
     std::string datafilepath = "D:/SVN_MeltingLab/structural_EM/mesh/";
+    std::string resultspath = "D:/SVN_MeltingLab/structural_EM/mesh/";
     std::string motor_prefix = "prius";
     std::string drivingcyle_prefix = "CPSR";
     unsigned int testindex_first;
@@ -261,11 +262,12 @@ int main(int argc, char* argv[]) {
     if (argc>1)
     {
         datafilepath = argv[1];
-        motor_prefix = argv[2];
-        drivingcyle_prefix = argv[3];
-        std::stringstream testindex_first_ss(argv[4]);
+        resultspath = argv[2];
+        motor_prefix = argv[3];
+        drivingcyle_prefix = argv[4];
+        std::stringstream testindex_first_ss(argv[5]);
         testindex_first_ss >> testindex_first;
-        std::stringstream testindex_last_ss(argv[5]);
+        std::stringstream testindex_last_ss(argv[6]);
         testindex_last_ss >> testindex_last;
 
         GetLog() << "Running tests from: " << testindex_first << " to " << testindex_last << "\n";
@@ -594,7 +596,7 @@ int main(int argc, char* argv[]) {
         }
 
 
-        CSVwriter sigma_glob_writer(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_sigma_glob.csv", LOG_OUTPUT);
+        CSVwriter sigma_glob_writer(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_sigma_glob.csv", LOG_OUTPUT);
         std::vector<ChVector<>> sigma_glob_set;
         sigma_glob_set.resize(sigma_n.size());
         auto delta_angle = CH_C_2PI / sigma_glob_set.size();
@@ -624,7 +626,7 @@ int main(int argc, char* argv[]) {
         }
 
         ////////////// Apply forces given by EM pressure //////////////
-        CSVwriter forces(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_EMforces.csv", LOG_OUTPUT);
+        CSVwriter forces(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_EMforces.csv", LOG_OUTPUT);
         for (auto it = external_nodes.begin(); it != external_nodes.end(); ++it) {
             double angle = atan2((*it)->GetPos().y(), (*it)->GetPos().x());
 
@@ -684,7 +686,7 @@ int main(int argc, char* argv[]) {
         ////////////// Apply centrifugal forces //////////////
         // must be done after SetupInitial: volume is evaluated only at that time;
         // we could check if the omega is changed from the previous run and avoid re-evaluation
-        CSVwriter b(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_centrifugal_forces.csv", LOG_OUTPUT);
+        CSVwriter b(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_centrifugal_forces.csv", LOG_OUTPUT);
         // std::map<std::shared_ptr<ChNodeFEAxyz>, ChVector<>> centrifugal_forces_map;
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it) {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
@@ -722,8 +724,8 @@ int main(int argc, char* argv[]) {
         ////////////// Export stress to file //////////////
         tim.reset();
         tim.start();
-        CSVwriter stress_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress.csv");
-        CSVwriter stressbridge_file(motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_bridges.csv");
+        CSVwriter stress_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress.csv");
+        CSVwriter stressbridge_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_bridges.csv");
 
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
