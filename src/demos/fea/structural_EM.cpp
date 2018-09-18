@@ -26,7 +26,7 @@ using namespace chrono::fea;
 //#define USE_IRRLICHT
 #define FULL_STRESS_OUTPUT
 //#define EQUAL_ELEMENT_SPACING
-#define LOG_OUTPUT false
+#define LOG_OUTPUT true
 
 
 #ifdef USE_IRRLICHT 
@@ -252,22 +252,24 @@ void getArcLength(const std::set<double>& angles, double& length_previous, doubl
 int main(int argc, char* argv[]) {
 
     ////////////// Parse input arguments //////////////
-    std::string datafilepath = "D:/SVN_MeltingLab/structural_EM/mesh/";
-    std::string resultspath = "D:/SVN_MeltingLab/structural_EM/mesh/";
-    std::string motor_prefix = "prius";
-    std::string drivingcyle_prefix = "CPSR";
+    std::string meshfilepath;
+    std::string sigmafilepath;
+    std::string resultspath;
+    std::string motor_prefix;
+    std::string drivingcyle_prefix;
     unsigned int testindex_first;
     unsigned int testindex_last;
 
     if (argc>1)
     {
-        datafilepath = argv[1];
-        resultspath = argv[2];
-        motor_prefix = argv[3];
-        drivingcyle_prefix = argv[4];
-        std::stringstream testindex_first_ss(argv[5]);
+        meshfilepath = argv[1];
+        sigmafilepath = argv[2];
+        resultspath = argv[3];
+        motor_prefix = argv[4];
+        drivingcyle_prefix = argv[5];
+        std::stringstream testindex_first_ss(argv[6]);
         testindex_first_ss >> testindex_first;
-        std::stringstream testindex_last_ss(argv[6]);
+        std::stringstream testindex_last_ss(argv[7]);
         testindex_last_ss >> testindex_last;
 
         GetLog() << "Running tests from: " << testindex_first << " to " << testindex_last << "\n";
@@ -275,34 +277,39 @@ int main(int argc, char* argv[]) {
     else
     {
         GetLog() << "structural_EM has to be called with the following syntax:\n";
-        GetLog() << argv[0] << " <datafolder> <motor_name> <driving_cycle_name> <testindexes...>\n";
+        GetLog() << argv[0] << " <meshfolder> <stressEMfolder> <resultsfolder> <motor_name> <driving_cycle_name> <testindex_start> <testindex_end>\n";
         GetLog() << "where:\n";
+        GetLog() << "<meshfolder> must point to the folder that contains <motor_name>_mesh.INP\n";
+        GetLog() << "<stressEMfolder> must point to the folder that contains 'sigma_n' and 'sigma_t' files with the following naming convention:\n";
+        GetLog() << "   <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
+        GetLog() << "<resultsfolder> is the output folder in which results are stored;\n";
         GetLog() << "<motor_name> is the name of the simulated motor;\n";
         GetLog() << "<driving_cycle_name> is the name of the simulated driving cycle;\n";
-        GetLog() << "<testindexes...> is the row index that holds useful data about the desired simulation in 'sigma_n' and 'sigma_t' files;\n";
-        GetLog() << "<datafolder> must point to the folder that contains:\n";
-        GetLog() << " - mesh file with the following naming convention:\n";
-        GetLog() << "   <motor_name>_mesh.INP\n";
-        GetLog() << " - 'sigma_n' and 'sigma_t' files with the following naming convention:\n";
-        GetLog() << "   <motor_name>_sigma_n.csv and <motor_name>_sigma_t.csv\n";
-        GetLog() << "Please mind that <datafolder> must end with a / sign or just put double double-quotes to specify current folder.\n";
+        GetLog() << "<testindex_start> and <testindex_end> specify the range of test that has to be run\n";
+        GetLog() << "    the testindex value refers to the row (of 'sigma_n' and 'sigma_t' files) that holds information about the current test (zero-based);\n";
+        GetLog() << "Please mind that folders must end with a / sign. Just put double double-quotes to specify current folder.\n";
+        GetLog() << "\n";
         GetLog() << "<motor_name>_sigma_n.csv (and similarly for sigma_t) has multiple lines, each of which\n";
         GetLog() << "    holds information about a specific working point and must have the following structure:\n";
-        GetLog() << "    | angularspeed | torque | rotor position | sigmas... |\n";
+        GetLog() << "    | angularspeed [rpm] | torque [Nm] | rotor position | sigmas...[Pa] |\n";
         GetLog() << "\n";
         GetLog() << "The output will be in:\n";
-        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_<testindex>_stress.csv\n";
-        GetLog() << "<datafolder><motor_name>_<driving_cycle_name>_<testindex>_stress_bridges.csv\n";
+        GetLog() << "<resultsfolder>/<motor_name>_<driving_cycle_name>_<testindex>_stress_allelements.csv\n";
+        GetLog() << "with the following convection:\n";
+        GetLog() << "| ElementID | Stress VonMises |\n";
+        GetLog() << "<resultsfolder>/<motor_name>_<driving_cycle_name>_<testindex>_stress_bridges.csv\n";
+        GetLog() << "<resultsfolder>/<motor_name>_<driving_cycle_name>_<testindex>_stress_forfatigue.csv\n";
         GetLog() << "with the following convection:\n";
         GetLog() << "| ElementID | Stress VonMises | StressXX | StressYY | StressZZ | StressXY | StressYZ | StressXZ |\n";
+        GetLog() << "\n";
 
         return -1;
     }
 
-    auto filename_mesh = datafilepath + motor_prefix + "_mesh.INP";
-    auto filename_meshinfo = datafilepath + motor_prefix + "_meshinfo.csv";
-    auto filename_sigma_n = datafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_n.csv";
-    auto filename_sigma_t = datafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_t.csv";
+    auto filename_mesh = meshfilepath + motor_prefix + "_mesh.INP";
+    auto filename_meshinfo = meshfilepath + motor_prefix + "_meshinfo.csv";
+    auto filename_sigma_n = sigmafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_n.csv";
+    auto filename_sigma_t = sigmafilepath + motor_prefix + "_" + drivingcyle_prefix + "_sigma_t.csv";
 
     GetLog() << "The motor is " << motor_prefix << "\n";
     GetLog() << "The driving cycle is " << drivingcyle_prefix << "\n";
@@ -310,6 +317,7 @@ int main(int argc, char* argv[]) {
         " - mesh file: " << filename_mesh << "\n"
         " - sigma_n file: " << filename_sigma_n << "\n"
         " - sigma_t file: " << filename_sigma_t << "\n";
+    GetLog() << "Results will be stored in: "<< resultspath <<"\n\n";
 
     ////////////// Chrono setup //////////////
     ChTimer<> tim;
@@ -479,6 +487,12 @@ int main(int argc, char* argv[]) {
 
     }
 
+    if (rotor_external_radius < 0 || rotor_internal_radius < 0 || magnets_mass_radius < 0)
+    {
+        GetLog() << "Radius info contained in mesh file cannot be loaded.\n";
+        throw ChException("Radius info contained in mesh file cannot be loaded.");
+    }
+
 
     // identify internal and external nodes
     //double rotor_external_radius = 80.22e-3;
@@ -593,6 +607,9 @@ int main(int argc, char* argv[]) {
 
             omega = omega_n * CH_C_2PI / 60.0;
             //omega = omega_n;
+
+            //GetLog() << "WARNING: omega 0\n";
+            //omega = 0;
         }
 
 
@@ -696,10 +713,10 @@ int main(int argc, char* argv[]) {
             }
             mean_point *= 1.0 / 8.0;
             auto dist_from_center = sqrt(mean_point.x() * mean_point.x() + mean_point.y() * mean_point.y());
-            auto centrifugal_force = el->GetVolume() * element_material->Get_density() * omega * omega * dist_from_center;
+            auto centrifugal_force_modulus = el->GetVolume() * element_material->Get_density() * omega * omega * dist_from_center;
             auto centrifugal_force_vector = ChVector<>(mean_point.x(), mean_point.y(), 0.0);
             centrifugal_force_vector.Normalize();
-            centrifugal_force_vector *= centrifugal_force / 8.0;
+            centrifugal_force_vector *= centrifugal_force_modulus / 8.0;
             for (auto node_sel = 0; node_sel < 8; ++node_sel) {
                 auto node = std::dynamic_pointer_cast<ChNodeFEAxyz>(el->GetNodeN(node_sel));
                 // store the centrifugal force and then apply it
@@ -713,6 +730,7 @@ int main(int argc, char* argv[]) {
         tim.stop();
         GetLog() << "Forces application time: " << tim() << "\n";
 
+        ////////////// Run simulation //////////////
         tim.start();
         my_system.Setup();
         my_system.Update();
@@ -724,16 +742,20 @@ int main(int argc, char* argv[]) {
         ////////////// Export stress to file //////////////
         tim.reset();
         tim.start();
-        CSVwriter stress_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress.csv");
-        CSVwriter stressbridge_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_bridges.csv");
 
+        // element stress export: all elements
+        CSVwriter stress_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_allelements.csv");
         for (auto el_it = my_mesh->GetElements().begin(); el_it != my_mesh->GetElements().end(); ++el_it)
         {
             auto el = std::dynamic_pointer_cast<ChElementHexa_8>(*el_it);
             auto stress = el->GetStress(0, 0, 0);
-            stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+            //stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+            stress_file.AppendRow(inserted_elements_ptr_to_ID.at(el), stress.GetEquivalentVonMises());
         }
+ 
 
+        // element stress export: bridge elements (subset of all elements)
+        CSVwriter stressbridge_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_bridges.csv");
         for (auto el_it = elset_map["BRIDGES"].begin(); el_it != elset_map["BRIDGES"].end(); ++el_it)
         {
             auto el_found = inserted_elements_ID_to_ptr.find(*el_it);
@@ -742,6 +764,20 @@ int main(int argc, char* argv[]) {
                 auto el = std::dynamic_pointer_cast<ChElementHexa_8>(el_found->second);
                 auto stress = el->GetStress(0, 0, 0);
                 stressbridge_file.AppendRow(*el_it, stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
+            }
+        }
+
+
+        // element stress export: bridge elements (subset of all elements)
+        CSVwriter stressfatigue_file(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_stress_forfatigue.csv");
+        for (auto el_it = elset_map["FORFATIGUE"].begin(); el_it != elset_map["FORFATIGUE"].end(); ++el_it)
+        {
+            auto el_found = inserted_elements_ID_to_ptr.find(*el_it);
+            if (el_found != inserted_elements_ID_to_ptr.end())
+            {
+                auto el = std::dynamic_pointer_cast<ChElementHexa_8>(el_found->second);
+                auto stress = el->GetStress(0, 0, 0);
+                stressfatigue_file.AppendRow(*el_it, stress.GetEquivalentVonMises(), stress.XX(), stress.YY(), stress.ZZ(), stress.XY(), stress.YZ(), stress.XZ());
             }
         }
 
