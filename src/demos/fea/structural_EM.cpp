@@ -295,11 +295,11 @@ int main(int argc, char* argv[]) {
         GetLog() << "\n";
         GetLog() << "The output will be in:\n";
         GetLog() << "<resultsfolder>/<motor_name>_<driving_cycle_name>_<testindex>_stress_allelements.csv\n";
-        GetLog() << "with the following convection:\n";
+        GetLog() << "with the following convention:\n";
         GetLog() << "| ElementID | Stress VonMises |\n";
         GetLog() << "<resultsfolder>/<motor_name>_<driving_cycle_name>_<testindex>_stress_bridges.csv\n";
         GetLog() << "<resultsfolder>/<motor_name>_<driving_cycle_name>_<testindex>_stress_forfatigue.csv\n";
-        GetLog() << "with the following convection:\n";
+        GetLog() << "with the following convention:\n";
         GetLog() << "| ElementID | Stress VonMises | StressXX | StressYY | StressZZ | StressXY | StressYZ | StressXZ |\n";
         GetLog() << "\n";
 
@@ -630,7 +630,7 @@ int main(int argc, char* argv[]) {
         }
 
         ////////////// Apply additional centrifugal forces to emulate magnets //////////////
-        auto magnet_nodes = nset_map.find("MAGNETNODES");
+        auto magnet_nodes = nset_map.find("MAGNETS");
         double magnets_mass_radius_scattered = magnets_mass_radius / magnet_nodes->second.size();
         if (magnet_nodes!= nset_map.end())
         {
