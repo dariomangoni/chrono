@@ -612,7 +612,7 @@ int main(int argc, char* argv[]) {
             //omega = 0;
         }
 
-
+        // store EM pressure (in global coordinates)
         CSVwriter sigma_glob_writer(resultspath + motor_prefix + "_" + drivingcyle_prefix + "_" + std::to_string(test_sel) + "_sigma_glob.csv", LOG_OUTPUT);
         std::vector<ChVector<>> sigma_glob_set;
         sigma_glob_set.resize(sigma_n.size());
@@ -631,14 +631,20 @@ int main(int argc, char* argv[]) {
 
         ////////////// Apply additional centrifugal forces to emulate magnets //////////////
         auto magnet_nodes = nset_map.find("MAGNETS");
+        if (magnet_nodes== nset_map.end())
+        {
+            std::cout << "WARNING: MAGNETS nodeset not found." << std::endl;
+        }
         double magnets_mass_radius_scattered = magnets_mass_radius / magnet_nodes->second.size();
         if (magnet_nodes!= nset_map.end())
         {
             for(auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
             {
                 auto node = inserted_nodes.at(*node_id_it);
+                auto centrifugal_force_vector = ChVector<>(node->GetPos().x(), node->GetPos().y(), 0.0);
+                centrifugal_force_vector.Normalize();
                 auto old_force = node->GetForce();
-                node->SetForce(old_force + magnets_mass_radius_scattered*omega*omega);
+                node->SetForce(old_force + magnets_mass_radius_scattered*omega*omega*centrifugal_force_vector);
             }
         }
 
