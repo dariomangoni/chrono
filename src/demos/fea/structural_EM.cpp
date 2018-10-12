@@ -448,21 +448,32 @@ int main(int argc, char* argv[]) {
     std::string line;
     double rotor_external_radius = -1e30;
     double rotor_internal_radius = -1e30;
-    double magnets_mass_radius = -1e30;
+    double magnets_mass_radius_outer = -1e30;
+    double magnets_mass_radius_median = -1e30;
     while (getline(fin, line)) {
         // trims white space from the beginning of the std::string
         line.erase(line.begin(), find_if(line.begin(), line.end(), std::not1(std::ptr_fun<int, int>(isspace))));
         // convert parsed line to uppercase (since std::string::find is case sensitive and Abaqus INP is not)
         std::for_each(line.begin(), line.end(), [](char& c) { c = toupper(static_cast<unsigned char>(c)); });
 
-        std::string string_to_find = "MAGNETS_MASS_RADIUS=";
+        std::string string_to_find = "MAGNETS_MASS_RADIUS_OUTER=";
         auto nse = line.find(string_to_find);
         if (nse != std::string::npos) {
             std::string::size_type ncom = line.find(",", nse + string_to_find.size());
             std::string magnets_mass_radius_s = line.substr(nse + string_to_find.size(), ncom - (nse + 5));
             std::stringstream magnets_mass_radius_ss(magnets_mass_radius_s);
-            magnets_mass_radius_ss >> magnets_mass_radius;
-            GetLog() << "Magnets mass*radius: " << magnets_mass_radius << "\n";
+            magnets_mass_radius_ss >> magnets_mass_radius_outer;
+            GetLog() << "Outer magnets mass*radius: " << magnets_mass_radius_outer << "\n";
+        }
+
+        string_to_find = "MAGNETS_MASS_RADIUS_MEDIAN=";
+        nse = line.find(string_to_find);
+        if (nse != std::string::npos) {
+            std::string::size_type ncom = line.find(",", nse + string_to_find.size());
+            std::string magnets_mass_radius_s = line.substr(nse + string_to_find.size(), ncom - (nse + 5));
+            std::stringstream magnets_mass_radius_ss(magnets_mass_radius_s);
+            magnets_mass_radius_ss >> magnets_mass_radius_median;
+            GetLog() << "Median magnets mass*radius: " << magnets_mass_radius_median << "\n";
         }
 
         string_to_find = "INTERNAL_RADIUS=";
@@ -487,7 +498,7 @@ int main(int argc, char* argv[]) {
 
     }
 
-    if (rotor_external_radius < 0 || rotor_internal_radius < 0 || magnets_mass_radius < 0)
+    if (rotor_external_radius < 0 || rotor_internal_radius < 0 || magnets_mass_radius_outer < 0 || magnets_mass_radius_median < 0)
     {
         GetLog() << "Radius info contained in mesh file cannot be loaded.\n";
         throw ChException("Radius info contained in mesh file cannot be loaded.");
@@ -630,21 +641,45 @@ int main(int argc, char* argv[]) {
         }
 
         ////////////// Apply additional centrifugal forces to emulate magnets //////////////
-        auto magnet_nodes = nset_map.find("MAGNETS");
-        if (magnet_nodes== nset_map.end())
         {
-            std::cout << "WARNING: MAGNETS nodeset not found." << std::endl;
-        }
-        double magnets_mass_radius_scattered = magnets_mass_radius / magnet_nodes->second.size();
-        if (magnet_nodes!= nset_map.end())
-        {
-            for(auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
+            auto magnet_nodes = nset_map.find("MAGNETS_OUTER");
+            if (magnet_nodes == nset_map.end())
             {
-                auto node = inserted_nodes.at(*node_id_it);
-                auto centrifugal_force_vector = ChVector<>(node->GetPos().x(), node->GetPos().y(), 0.0);
-                centrifugal_force_vector.Normalize();
-                auto old_force = node->GetForce();
-                node->SetForce(old_force + magnets_mass_radius_scattered*omega*omega*centrifugal_force_vector);
+                std::cout << "WARNING: MAGNETS_OUTER nodeset not found." << std::endl;
+            }
+            double magnets_mass_radius_scattered = magnets_mass_radius_outer / magnet_nodes->second.size();
+            if (magnet_nodes != nset_map.end())
+            {
+                for (auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
+                {
+                    auto node = inserted_nodes.at(*node_id_it);
+                    auto centrifugal_force_vector = ChVector<>(node->GetPos().x(), node->GetPos().y(), 0.0);
+                    centrifugal_force_vector.Normalize();
+                    auto old_force = node->GetForce();
+                    node->SetForce(old_force + magnets_mass_radius_scattered * omega*omega*centrifugal_force_vector);
+                }
+            }
+        }
+
+
+        ////////////// Apply additional centrifugal forces to emulate magnets //////////////
+        {
+            auto magnet_nodes = nset_map.find("MAGNETS_MEDIAN");
+            if (magnet_nodes == nset_map.end())
+            {
+                std::cout << "WARNING: MAGNETS_MEDIAN nodeset not found." << std::endl;
+            }
+            double magnets_mass_radius_scattered = magnets_mass_radius_median / magnet_nodes->second.size();
+            if (magnet_nodes != nset_map.end())
+            {
+                for (auto node_id_it = magnet_nodes->second.begin(); node_id_it != magnet_nodes->second.end(); ++node_id_it)
+                {
+                    auto node = inserted_nodes.at(*node_id_it);
+                    auto centrifugal_force_vector = ChVector<>(node->GetPos().x(), node->GetPos().y(), 0.0);
+                    centrifugal_force_vector.Normalize();
+                    auto old_force = node->GetForce();
+                    node->SetForce(old_force + magnets_mass_radius_scattered * omega*omega*centrifugal_force_vector);
+                }
             }
         }
 
