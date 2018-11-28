@@ -19,13 +19,13 @@
 
 #include <limits>
 
+#include <functional>
 #include "chrono/core/ChAlignedAllocator.h"
 #include "chrono/core/ChSparseMatrix.h"
-#include <functional>
 
 namespace chrono {
-	/// @addtogroup chrono
-/// @{		
+/// @addtogroup chrono
+/// @{
 
 /** \class ChSparsityPatternLearner
 \brief A dummy matrix that acquires the sparsity pattern.
@@ -133,7 +133,7 @@ class ChApi ChCSMatrix : public ChSparseMatrix {
 #endif
 
     index_vector_t leadIndex;   ///< CS vector: #leadIndex[i] tells that #trailIndex[#leadIndex[i]] is the first element
-                                ///of the i-th row (if row-major)
+                                /// of the i-th row (if row-major)
     index_vector_t trailIndex;  ///< CS vector: #trailIndex[j] tells the column index of #values[j] (if row-major)
     values_vector_t values;     ///< CS vector: non-zero values
     std::vector<bool> initialized_element;  ///< flag if a space in #trailIndex is initialized or not
@@ -166,11 +166,11 @@ class ChApi ChCSMatrix : public ChSparseMatrix {
         index_vector_t& trailIndex_dest,                   ///< trailing dimension index (destination)
         values_vector_t& values_dest,                      ///< values array (destination)
         std::vector<bool>& initialized_element_dest,       ///< array with initialization flags (destination)
-        int& trail_ins,                                    ///< the position in the trailIndex where a new element must be inserted (the element that
-                                                           ///caused the insertion)
-        int lead_ins,                                      ///< the position, referred to the leading dimension, where a new element must be inserted (the
-                                                           ///element that caused the insertion)
-        int storage_augm                                   ///< number of not-initialized spaces to add
+        int& trail_ins,  ///< the position in the trailIndex where a new element must be inserted (the element that
+                         /// caused the insertion)
+        int lead_ins,    ///< the position, referred to the leading dimension, where a new element must be inserted (the
+                         /// element that caused the insertion)
+        int storage_augm  ///< number of not-initialized spaces to add
     );
 
   public:
@@ -309,23 +309,34 @@ class ChApi ChCSMatrix : public ChSparseMatrix {
 
     /// Apply the given function \p func to any existent and initialized element in the matrix.
     /// To the function \p func will be passed the pointer to the existing element.
-    void ForEachExistentValue(std::function<void(double*)> func)
-    {
+    void ForEachExistentValue(std::function<void(double*)> func) {
         ForEachExistentValueInRange(func, 0, GetNumRows() - 1, 0, GetNumColumns() - 1);
     }
 
-    /// Apply the given function \p func to any existent and initialized element in the matrix in the range [\p start_row, \p end_row] and [\p start_col, \p end_col].
-    /// To the function \p func will be passed the pointer to the existing element.
+    /// Apply the given function \p func to any existent and initialized element in the matrix in the range [\p
+    /// start_row, \p end_row] and [\p start_col, \p end_col]. To the function \p func will be passed the pointer to the
+    /// existing element.
     void ForEachExistentValueInRange(std::function<void(double*)> func,
                                      int start_row,
                                      int end_row,
                                      int start_col,
                                      int end_col);
 
+    /// Apply the given function \p func to any existent and initialized element in the matrix in the range [\p
+    /// start_row, \p end_row] and [\p start_col, \p end_col]. To the function \p func will be passed by value the
+    /// triplet: row index, column index, value pointer. The most useful way to call this function is with \code func =
+    /// std::bind(foo(), other_arguments, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3); \endcode
+    /// where, in particular, \a foo() can even be a class method and \a other_arguments can also be \a this
+    void ForEachExistentValueInRange(std::function<void(int, int, double*)> func,
+                                     int start_row,
+                                     int end_row,
+                                     int start_col,
+                                     int end_col);
 
-    /// Apply the given function \p func to any existent and initialized element in the matrix in the range [\p start_row, \p end_row] and [\p start_col, \p end_col].
-    /// To the function \p func will be passed by value the triplet: row index, column index, value.
-    /// The most useful way to call this function is with \code func = std::bind(foo(), other_arguments, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3); \endcode
+    /// Apply the given function \p func to any existent and initialized element in the matrix in the range [\p
+    /// start_row, \p end_row] and [\p start_col, \p end_col]. To the function \p func will be passed by value the
+    /// triplet: row index, column index, value. The most useful way to call this function is with \code func =
+    /// std::bind(foo(), other_arguments, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3); \endcode
     /// where, in particular, \a foo() can even be a class method and \a other_arguments can also be \a this
     void ForEachExistentValueInRange(std::function<void(int, int, double)> func,
                                      int start_row,
@@ -333,19 +344,17 @@ class ChApi ChCSMatrix : public ChSparseMatrix {
                                      int start_col,
                                      int end_col) const;
 
-    /// Apply the given function \p func to any existent and initialized element in the matrix that meets the \p requirement.
-    /// To the function \p requirement will be passed by value the triplet: row index, column index, value;
+    /// Apply the given function \p func to any existent and initialized element in the matrix that meets the \p
+    /// requirement. To the function \p requirement will be passed by value the triplet: row index, column index, value;
     /// only if the returned boolean is true, then the function \p func will be called as well, with the same arguments.
-    /// The most useful way to call this function is with \code func = std::bind(foo(), other_arguments, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3); \endcode
-    /// where, in particular, \a foo() can even be a class method and \a other_arguments can also be \a this
+    /// The most useful way to call this function is with \code func = std::bind(foo(), other_arguments,
+    /// std::placeholders::_1, std::placeholders::_2, std::placeholders::_3); \endcode where, in particular, \a foo()
+    /// can even be a class method and \a other_arguments can also be \a this
     void ForEachExistentValueThatMeetsRequirement(std::function<void(int, int, double)> func,
                                                   std::function<bool(int, int, double)> requirement) const;
-
-
-
 };
 
-	/// @} chrono
+/// @} chrono
 };  // end namespace chrono
 
 #endif

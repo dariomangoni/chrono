@@ -341,14 +341,23 @@ void ChCSMatrix::ExportToDatFile(std::string filepath, int precision) const {
     ja_file << std::scientific << std::setprecision(precision);
     ia_file << std::scientific << std::setprecision(precision);
 
-    for (auto trailInd_sel = 0; trailInd_sel < leadIndex[*leading_dimension]; trailInd_sel++) {
-        a_file << values[trailInd_sel] << "\n";
-        ja_file << trailIndex[trailInd_sel] << "\n";
+    if (a_file.is_open() && ja_file.is_open() && ia_file.is_open())
+    {
+        for (auto trailInd_sel = 0; trailInd_sel < leadIndex[*leading_dimension]; trailInd_sel++) {
+            a_file << values[trailInd_sel] << "\n";
+            ja_file << trailIndex[trailInd_sel] << "\n";
+        }
+
+        for (auto leadInd_sel = 0; leadInd_sel <= *leading_dimension; leadInd_sel++) {
+            ia_file << leadIndex[leadInd_sel] << "\n";
+        }
+    }
+    else
+    {
+        GetLog() << "Unable to export matrix to file.\n";
     }
 
-    for (auto leadInd_sel = 0; leadInd_sel <= *leading_dimension; leadInd_sel++) {
-        ia_file << leadIndex[leadInd_sel] << "\n";
-    }
+
 
     a_file.close();
     ja_file.close();
@@ -794,7 +803,30 @@ void ChCSMatrix::ForEachExistentValueInRange(std::function<void(double*)> func,
     }
 }
 
-void ChCSMatrix::ForEachExistentValueInRange(std::function<void(int, int, double)> func,
+    void ChCSMatrix::ForEachExistentValueInRange(std::function<void(int, int, double*)> func, int start_row, int end_row, int start_col, int end_col)
+    {
+        auto start_lead = IsRowMajor() ? start_row : start_col;
+        auto end_lead = IsRowMajor() ? end_row : end_col;
+        auto start_trail = IsRowMajor() ? start_col : start_row;
+        auto end_trail = IsRowMajor() ? end_col : end_row;
+
+        for (auto lead_i = start_lead; lead_i <= end_lead; lead_i++) {
+            for (auto trail_i = leadIndex[lead_i]; trail_i < leadIndex[lead_i + 1] && initialized_element[trail_i];
+                ++trail_i) {
+                if (!initialized_element[trail_i] || trailIndex[trail_i] > end_trail)
+                    break;
+
+                if (trailIndex[trail_i] < start_trail)
+                    continue;
+
+                IsRowMajor() ? func(lead_i, trailIndex[trail_i], &values[trail_i])
+                    : func(trailIndex[trail_i], lead_i, &values[trail_i]);
+
+            }
+        }
+    }
+
+    void ChCSMatrix::ForEachExistentValueInRange(std::function<void(int, int, double)> func,
                                              int start_row,
                                              int end_row,
                                              int start_col,
