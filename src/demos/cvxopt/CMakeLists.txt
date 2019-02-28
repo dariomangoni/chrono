@@ -28,8 +28,8 @@ IF (ENABLE_MODULE_IRRLICHT)
     set(CVXOPT_DEMOS_IRRLICHT
         demo_CVXOPT_SolverConeQp
         demo_CVXOPT_friction
-        demo_CVXOPT_beamsIGA
-        demo_CVXOPT_FEAcontacts
+        demo_CVXOPT_IGAwrapping
+        demo_CVXOPT_ThreePointBending
     )
     
     FOREACH(PROGRAM ${CVXOPT_DEMOS_IRRLICHT})
