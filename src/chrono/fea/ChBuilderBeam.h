@@ -225,7 +225,7 @@ class ChApi ChExtruderBeamEuler {
     double mytime;
     double speed;
   
-    std::shared_ptr<ChMaterialSurfaceSMC> contact_material;
+    std::shared_ptr<ChMaterialSurface> contact_material;
 
     std::shared_ptr<ChContactSurfaceNodeCloud> contactcloud;
     double contact_radius;
@@ -246,7 +246,7 @@ class ChApi ChExtruderBeamEuler {
     /// Sets the material for the beam, and enables collision detection for the beam nodes.
     /// By default, collision not enabled.
     void SetContact(
-            std::shared_ptr<ChMaterialSurfaceSMC> mcontact_material, ///< material to use for surface
+            std::shared_ptr<ChMaterialSurface> mcontact_material, ///< material to use for surface
             double mcontact_radius  ///< radius of colliding spheres at each node (usually = to avg.beam thickness)
             );    
 
@@ -286,7 +286,7 @@ class ChApi ChExtruderBeamIGA {
     double mytime;
     double speed;
   
-    std::shared_ptr<ChMaterialSurfaceSMC> contact_material;
+    std::shared_ptr<ChMaterialSurface> contact_material;
 
     std::shared_ptr<ChContactSurfaceNodeCloud> contactcloud;
     double contact_radius;
@@ -308,7 +308,7 @@ class ChApi ChExtruderBeamIGA {
     /// Sets the material for the beam, and enables collision detection for the beam nodes.
     /// By default, collision not enabled.
     void SetContact(
-            std::shared_ptr<ChMaterialSurfaceSMC> mcontact_material, ///< material to use for surface
+            std::shared_ptr<ChMaterialSurface> mcontact_material, ///< material to use for surface
             double mcontact_radius  ///< radius of colliding spheres at each node (usually = to avg.beam thickness)
             );    
 
