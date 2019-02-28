@@ -86,8 +86,6 @@ class ChApiCvxopt ChCvxoptConeQpEngine {
     double GetRelativeGap() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "relative gap")); }
     double GetPrimalInfeasibility() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "primal infeasibility")); }
     double GetDualInfeasibility() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "dual infeasibility")); }
-    double GetPrimalSlack() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "dual infeasibility")); }
-    double GetDualSlack() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "dual infeasibility")); }
 
     void CheckMatrices() const;
 
