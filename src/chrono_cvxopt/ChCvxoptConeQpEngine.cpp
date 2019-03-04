@@ -56,6 +56,7 @@ ChCvxoptConeQpEngine::ChCvxoptConeQpEngine() {
     Py_INCREF(b);
 
     PyDict_SetItemString(dims, "s", PyList_New(0));  // semidefinite cones; not implemented
+    
 }
 
 void ChCvxoptConeQpEngine::SetPMatrix(ChCSMatrixIndexType<int_t>& Pmat) {
@@ -137,8 +138,7 @@ void ChCvxoptConeQpEngine::GetLagrangianMultUnilateral(ChMatrix<>& z) const {
 }
 
 bool ChCvxoptConeQpEngine::IsSolutionOptimal() const {
-    auto sol_status_string = std::string(PyString_AsString(PyObject_Str(PyDict_GetItemString(sol, "status"))));
-    return sol_status_string.compare("optimal") ? false : true;
+    return sol && strcmp(PyString_AsString(PyDict_GetItemString(sol, "status")), "optimal") == 0 ? true : false;
 }
 
 void ChCvxoptConeQpEngine::CheckMatrices() const {
@@ -251,8 +251,8 @@ ChCvxoptConeQpEngine::~ChCvxoptConeQpEngine() {
     Py_DECREF(programSolver);
     Py_XDECREF(sol);
 
-    // reference counter to P, G, etc... are still +1
-    // however, before decreasing it they should be resized to 0,0 dimension
+    // reference counters to P, G, etc... are still +1
+    // however, before decreasing them they should be resized to 0,0 dimension
 
     Py_Finalize();
 }

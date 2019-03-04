@@ -80,12 +80,12 @@ class ChApiCvxopt ChCvxoptConeQpEngine {
     double GetFeasTol() const { return PyFloat_AsDouble(PyDict_GetItemString(PyObject_GetAttrString(solverModule, "options"), "feastol")); }
     int_t GetRefinement() const { return PyInt_AsSsize_t(PyDict_GetItemString(PyObject_GetAttrString(solverModule, "options"), "refinement")); }
 
-    double GetPrimalObjective() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "primal objective")); }
-    double GetDualObjective() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "dual objective")); }
-    double GetGap() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "gap")); }
-    double GetRelativeGap() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "relative gap")); }
-    double GetPrimalInfeasibility() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "primal infeasibility")); }
-    double GetDualInfeasibility() const { return PyFloat_AsDouble(PyDict_GetItemString(sol, "dual infeasibility")); }
+    double GetPrimalObjective() const { return IsSolutionOptimal() ? PyFloat_AsDouble(PyDict_GetItemString(sol, "primal objective")) : -1.0; }
+    double GetDualObjective() const { return IsSolutionOptimal() ? PyFloat_AsDouble(PyDict_GetItemString(sol, "dual objective")) : -1.0; }
+    double GetGap() const { return IsSolutionOptimal() ? PyFloat_AsDouble(PyDict_GetItemString(sol, "gap")) : -1.0; }
+    double GetRelativeGap() const { return IsSolutionOptimal() ? PyFloat_AsDouble(PyDict_GetItemString(sol, "relgap")) : -1.0; }
+    double GetPrimalInfeasibility() const { return IsSolutionOptimal() ? PyFloat_AsDouble(PyDict_GetItemString(sol, "primal infeasibility")) : -1.0; }
+    double GetDualInfeasibility() const { return IsSolutionOptimal() ? PyFloat_AsDouble(PyDict_GetItemString(sol, "dual infeasibility")) : -1.0; }
 
     void CheckMatrices() const;
 
