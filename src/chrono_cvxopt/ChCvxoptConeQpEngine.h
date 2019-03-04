@@ -91,7 +91,7 @@ class ChApiCvxopt ChCvxoptConeQpEngine {
 
     void Run();
 
-    static void GetPyhtonError(bool print_fulltrace = false);
+    static void GetPythonError(bool print_fulltrace = false);
 
     bool SetShowProgress(bool sel) const { return !PyDict_SetItemString(PyObject_GetAttrString(solverModule, "options"), "show_progress", sel ? Py_True : Py_False); }
 

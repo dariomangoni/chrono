@@ -178,7 +178,7 @@ void ChCvxoptConeQpEngine::Run() {
 
     sol = PyObject_CallObject(programSolver, pArgs);
     if (!sol) {
-        GetPyhtonError(true);
+        GetPythonError(true);
         Py_DECREF(solverModule);
         Py_DECREF(programSolver);
     }
@@ -186,7 +186,7 @@ void ChCvxoptConeQpEngine::Run() {
     Py_DECREF(pArgs);
 }
 
-void ChCvxoptConeQpEngine::GetPyhtonError(bool print_fulltrace) {
+void ChCvxoptConeQpEngine::GetPythonError(bool print_fulltrace) {
     auto err = PyErr_Occurred();
     if (err != nullptr) {
         std::string full_backtrace;
