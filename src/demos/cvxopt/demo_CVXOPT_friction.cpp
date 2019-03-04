@@ -160,9 +160,14 @@ int main(int argc, char* argv[]) {
         application.DrawAll();
 
         if (!application.GetPaused()) {
+            application.DoStep();
+            std::cout << "Gap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetGap() << "; "
+                    << "RelGap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetRelativeGap() << "; "
+                    << "PrimInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetPrimalInfeasibility() << "; "
+                    << "DualInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetDualInfeasibility() << "; "
+                    << std::endl;
         }
 
-        application.DoStep();
 
         application.GetVideoDriver()->endScene();
     }

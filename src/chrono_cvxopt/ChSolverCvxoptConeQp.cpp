@@ -50,7 +50,7 @@ double ChSolverCvxoptConeQp::Solve(ChSystemDescriptor& sysd) {
         A.LoadSparsityPattern(sl_A);
         G.LoadSparsityPattern(sl_G);
         P.LoadSparsityPattern(sl_P);
-    } else {
+    }else {
         // If an NNZ value for the underlying matrix was specified, perform an initial resizing, *before*
         // a call to ChSystemDescriptor::ConvertToMatrixForm(), to allow for possible size optimizations.
         // Otherwise, do this only at the first call, using the default sparsity fill-in.
@@ -93,10 +93,10 @@ double ChSolverCvxoptConeQp::Solve(ChSystemDescriptor& sysd) {
     G *= -1;
 
     // Scale G in order to project constraints on self-dual cones
-    G.ExportToDatFile("C:/orig", 6);
+    //G.ExportToDatFile("C:/orig", 6);
     std::function<void(int, int, double*)> func = [this](int r, int c, double* v) { *v = *v * this->fric_coeff(r, 0); };
     G.ForEachExistentValueInRange(func, 0, G.GetNumRows() - 1, 0, G.GetNumColumns() - 1);
-    G.ExportToDatFile("C:/mod", 6);
+    //G.ExportToDatFile("C:/mod", 6);
 
     h.MatrScale(fric_coeff);
 
