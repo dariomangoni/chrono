@@ -9,6 +9,7 @@ SET(IP_DEMOS
 	demo_IP_FEA_threepointbending
 	demo_IP_criticalball
 	demo_IP_ballpile
+    demo_IP_torqueIGA
 )
 
 INCLUDE_DIRECTORIES( ${CH_IRRLICHTINC} )
