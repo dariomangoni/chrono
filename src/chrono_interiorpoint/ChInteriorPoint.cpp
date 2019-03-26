@@ -343,7 +343,9 @@ void ChInteriorPoint::iterate() {
     {
         if( logfile_stream.is_open() )
         {
-            logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / m_eq << ", " << res.rp_lambda.NormTwo() / m_ineq  << ", " << res.mu << ", " << evaluate_objective_function();
+            //logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / m_eq << ", " << res.rp_lambda.NormTwo() / m_ineq  << ", " << res.mu << ", " << evaluate_objective_function();
+            logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / std::max(std::max(std::abs(rhs.b_eq.Max()), std::abs(rhs.b_eq.Min())), 1.0)
+                           << ", " << res.rp_gamma.NormTwo() / std::max(std::max(std::abs(rhs.b_ineq.Max()), std::abs(rhs.b_ineq.Min())), 1.0) << ", " << res.mu << ", " << evaluate_objective_function();
         }
         else
         {
@@ -352,9 +354,11 @@ void ChInteriorPoint::iterate() {
             if( logfile_stream.is_open() )
             {
                 logfile_stream << std::scientific << std::setprecision(6);
-                logfile_stream << "r_{D} r_{P_{\\gamma}} r_{P_{\\lambda}} \\mu objfun";
+                logfile_stream << "rd, rpgamma, rplambda, mu, objfun";
 
-				logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / m_eq << ", " << res.rp_lambda.NormTwo() / m_ineq << ", " << res.mu << ", " << evaluate_objective_function();
+				//logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / m_eq << ", " << res.rp_lambda.NormTwo() / m_ineq << ", " << res.mu << ", " << evaluate_objective_function();
+                logfile_stream << std::endl << res.rd.NormTwo() / n << ", " << res.rp_gamma.NormTwo() / std::max(std::max(std::abs(rhs.b_eq.Max()), std::abs(rhs.b_eq.Min())), 1.0)
+                    << ", " << res.rp_gamma.NormTwo() / std::max(std::max(std::abs(rhs.b_ineq.Max()), std::abs(rhs.b_ineq.Min())), 1.0) << ", " << res.mu << ", " << evaluate_objective_function();
 
 #ifdef CHRONO_POSTPROCESS
                 postprocess::ChGnuPlot mplot(("__" + logfile_name + ".gpl").c_str());
