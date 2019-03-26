@@ -28,14 +28,12 @@ FOREACH(PROGRAM ${IP_DEMOS})
 	TARGET_LINK_LIBRARIES(${PROGRAM}
 		${CH_IRRLICHTLIB}
 		ChronoEngine
-		ChronoEngine_fea
 		ChronoEngine_irrlicht
 		ChronoEngine_interiorpoint
 		)
 		
 	ADD_DEPENDENCIES(${PROGRAM}
 		ChronoEngine
-		ChronoEngine_fea
 		ChronoEngine_irrlicht
 		ChronoEngine_interiorpoint
 		)

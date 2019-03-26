@@ -22,10 +22,11 @@
 #include "ChApiInteriorPoint.h"
 #include "chrono/solver/ChSystemDescriptor.h"
 #include "chrono/solver/ChSolver.h"
+#include "core/ChTimer.h"
 
 
 #ifdef CHRONO_MUMPS
-#include "chrono_mumps/ChCOOMatrix.h"
+#include "chrono/core/ChCOOMatrix.h"
 #include "chrono_mumps/ChMumpsEngine.h"
 #endif
 

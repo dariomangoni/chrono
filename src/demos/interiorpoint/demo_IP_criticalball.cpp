@@ -111,8 +111,6 @@ int main(int argc, char* argv[]) {
 
 	std::cout << alfa * 180 / CH_C_PI << std::endl;
 
-	ChLinkLimit wall_link_lim[box_edges];
-
 	// Create Polyhedron
 	for (int edge_k = 0; edge_k < box_edges; edge_k++)
 	{
@@ -134,9 +132,9 @@ int main(int argc, char* argv[]) {
 		auto wall_link_function = std::make_shared<ChFunction_Ramp>();
 		wall_link_function->Set_ang(+1.0);
 		wall_link_function->Set_y0(0.0);
-		wall_link_lim[edge_k].Set_min(-0.5);
-		wall_link_lim[edge_k].Set_max(+0.5);
-		wall_link->SetLimit_Z(&wall_link_lim[edge_k]);
+  //      auto wall_link_lim = std::make_unique<ChLinkLimit>();
+		//wall_link_lim->SetMin(-0.5);
+		//wall_link_lim->SetMax(+0.5);
 		wall_link->SetMotion_Z(wall_link_function);
 		mphysicalSystem.AddLink(wall_link);
 

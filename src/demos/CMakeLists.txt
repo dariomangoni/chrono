@@ -90,8 +90,6 @@ if(ENABLE_MODULE_MUMPS)
   endif()
 endif()
 
-<<<<<<< HEAD
-=======
 if(ENABLE_MODULE_INTERIORPOINT)
 	option(BUILD_DEMOS_INTERIORPOINT "Build demo programs for InteriorPoint module" TRUE)
 	mark_as_advanced(FORCE BUILD_DEMOS_INTERIORPOINT)
@@ -100,7 +98,6 @@ if(ENABLE_MODULE_INTERIORPOINT)
 	endif()
 endif()
 	
->>>>>>> Create build infrastructure for Chrono::interiorpoint
 #if(ENABLE_MODULE_MPI)
 #	add_subdirectory(mpi)
 #endif()

@@ -16,14 +16,14 @@
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/physics/ChLoadContainer.h"
 
-#include "chrono_fea/ChElementTetra_4.h"
-#include "chrono_fea/ChMesh.h"
-#include "chrono_fea/ChMeshFileLoader.h"
-#include "chrono_fea/ChContactSurfaceMesh.h"
-#include "chrono_fea/ChContactSurfaceNodeCloud.h"
-#include "chrono_fea/ChVisualizationFEAmesh.h"
-#include "chrono_fea/ChElementCableANCF.h"
-#include "chrono_fea/ChBuilderBeam.h"
+#include "chrono/fea/ChElementTetra_4.h"
+#include "chrono/fea/ChMesh.h"
+#include "chrono/fea/ChMeshFileLoader.h"
+#include "chrono/fea/ChContactSurfaceMesh.h"
+#include "chrono/fea/ChContactSurfaceNodeCloud.h"
+#include "chrono/fea/ChVisualizationFEAmesh.h"
+#include "chrono/fea/ChElementCableANCF.h"
+#include "chrono/fea/ChBuilderBeam.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
 #include <chrono_interiorpoint/ChInteriorPoint.h>

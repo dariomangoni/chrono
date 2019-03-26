@@ -15,6 +15,7 @@
 #include "ChInteriorPoint.h"
 #include <algorithm>
 #include "solver/ChConstraintTwoTuplesFrictionT.h"
+#include <iomanip>
 
 #ifdef CHRONO_POSTPROCESS
 #include "chrono_postprocess/ChGnuPlot.h"

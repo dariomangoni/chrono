@@ -16,11 +16,11 @@
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/physics/ChLoadContainer.h"
 
-#include "chrono_fea/ChElementTetra_4.h"
-#include "chrono_fea/ChMesh.h"
-#include "chrono_fea/ChMeshFileLoader.h"
-#include "chrono_fea/ChContactSurfaceMesh.h"
-#include "chrono_fea/ChVisualizationFEAmesh.h"
+#include "chrono/fea/ChElementTetra_4.h"
+#include "chrono/fea/ChMesh.h"
+#include "chrono/fea/ChMeshFileLoader.h"
+#include "chrono/fea/ChContactSurfaceMesh.h"
+#include "chrono/fea/ChVisualizationFEAmesh.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
 #include <chrono_interiorpoint/ChInteriorPoint.h>
@@ -281,9 +281,9 @@ int main(int argc, char* argv[]) {
 	cyl_motion_function->Set_ang(-1);
 	cyl_motion_function->Set_y0(0.0);
 	cyl_motion->SetMotion_Z(cyl_motion_function);
-	ChLinkLimit link_lim;
-	link_lim.Set_max(-2.0);
-	cyl_motion->SetLimit_Z(&link_lim);
+	//ChLinkLimit link_lim;
+	//link_lim.SetMax(-2.0);
+	//cyl_motion->SetLimit_Z(&link_lim);
 	my_system.AddLink(cyl_motion);
 
 	// Visualization settings

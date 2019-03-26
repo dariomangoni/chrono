@@ -26,15 +26,18 @@
 #include "chrono/utils/ChUtilsCreators.h"
 #include "chrono/collision/ChCCollisionSystemBullet.h"
 
-#include "chrono_fea/ChElementBeamEuler.h"
-#include "chrono_fea/ChBuilderBeam.h"
-#include "chrono_fea/ChMesh.h"
-#include "chrono_fea/ChVisualizationFEAmesh.h"
-#include "chrono_fea/ChLinkPointFrame.h"
-#include "chrono_fea/ChLinkDirFrame.h"
-#include "chrono_fea/ChContactSurfaceMesh.h"
-#include "chrono_fea/ChContactSurfaceNodeCloud.h"
+#include "chrono/fea/ChElementBeamEuler.h"
+#include "chrono/fea/ChBuilderBeam.h"
+#include "chrono/fea/ChMesh.h"
+#include "chrono/fea/ChVisualizationFEAmesh.h"
+#include "chrono/fea/ChLinkPointFrame.h"
+#include "chrono/fea/ChLinkDirFrame.h"
+#include "chrono/fea/ChContactSurfaceMesh.h"
+#include "chrono/fea/ChContactSurfaceNodeCloud.h"
 #include "chrono_irrlicht/ChIrrApp.h"
+
+#include "chrono_interiorpoint/ChInteriorPoint.h"
+#include <iomanip>
 
 using namespace chrono;
 using namespace chrono::fea;
@@ -44,7 +47,7 @@ using namespace irr;
 
 bool include_plasticity = false;
 
-//#define USE_NSC
+#define USE_NSC
 
 int main(int argc, char* argv[]) {
     GetLog() << "Copyright (c) 2017 projectchrono.org\nChrono version: " << CHRONO_VERSION << "\n\n";
@@ -224,13 +227,12 @@ int main(int argc, char* argv[]) {
     msolver->SetVerbose(false);
     msolver->SetDiagonalPreconditioning(true);
 #ifdef USE_NSC
-    auto ip_solver_stab = std::make_shared<ChSolverCvxoptConeQp>();
-    auto ip_solver_speed = std::make_shared<ChSolverCvxoptConeQp>();
+    auto ip_solver_stab = std::make_shared<ChInteriorPoint>();
+    auto ip_solver_speed = std::make_shared<ChInteriorPoint>();
     my_system.SetStabSolver(ip_solver_stab);
     my_system.SetSolver(ip_solver_speed);
-    ip_solver_speed->SetSparsityPatternLock(true);
-    ip_solver_speed->ForceSparsityPatternUpdate(true);
-    ip_solver_speed->GetEngine().SetShowProgress(true);
+    ip_solver_speed->GetEngine()->SetSparsityPatternLock(true);
+    ip_solver_speed->GetEngine()->ForceSparsityPatternUpdate(true);
     // ip_solver_speed->SetVerbose(true);
     application.GetSystem()->Update();
 #endif
@@ -252,10 +254,6 @@ int main(int argc, char* argv[]) {
 #ifdef USE_NSC
             std::cout << std::setprecision(8)
                 << "RotAngle: " << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << "; "
-                << "Gap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetGap() << "; "
-                << "RelGap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetRelativeGap() << "; "
-                << "PrimInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetPrimalInfeasibility() << "; "
-                << "DualInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetDualInfeasibility() << "; "
                 << std::endl;
 #else
             std::cout << "RotAngle: " << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << std::endl;
