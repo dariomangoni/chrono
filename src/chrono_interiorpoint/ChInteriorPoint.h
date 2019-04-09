@@ -275,6 +275,7 @@ class ChApiInteriorPoint ChInteriorPoint : public ChSolver {
     void DumpIPStatus(std::string suffix = "") const;
     void RecordHistory(bool on_off, std::string file_name = "interior_point_log");
 	void PrintIPStatus() const;
+    ChMumpsEngine* GetEngine() { return &mumps_engine; }
     int GetSolverCalls() const { return solver_call; }
     int GetIPSolverCalls() const { return ip_solver_call; } ///< it may differ from GetSolverCalls() in case no inequality constraint is found
     int GetIPIterations() const { return iteration_count_tot; } ///< total number of iterations of the IP

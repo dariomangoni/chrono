@@ -48,7 +48,7 @@ using namespace irr;
 
 bool include_plasticity = false;
 
-#define USE_NSC
+//#define USE_NSC
 
 int main(int argc, char* argv[]) {
     GetLog() << "Copyright (c) 2017 projectchrono.org\nChrono version: " << CHRONO_VERSION << "\n\n";
@@ -228,11 +228,15 @@ int main(int argc, char* argv[]) {
     ChIrrApp application(&my_system, L"Torquing IGA beams", core::dimension2d<u32>(1200, 900), false, true);
 
     // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
-    application.AddTypicalLogo();
+    //application.AddTypicalLogo();
     application.AddTypicalSky();
-    application.AddTypicalLights();
-    auto targ = core::vector3df(mFlangeEnd->GetPos().x(), mFlangeEnd->GetPos().y(), mFlangeEnd->GetPos().z());
-    application.AddTypicalCamera(targ + core::vector3df(+0.1f, +0.2f, -0.2f), targ);
+    //application.AddTypicalLights();
+    application.AddLightWithShadow(100 * irr::core::vector3df(0.50867, 0.306668, 0.264132), 100 * irr::core::vector3df(0.178601, 0.081, 0.275477), 150, 50, 150, 90);
+    //auto targ = core::vector3df(0.172294, 0.180592, 0.038451 | -0.0228889, 4.4704e-10, 0.177341);
+    application.AddTypicalCamera(irr::core::vector3df(0.172294, 0.180592, 0.038451), irr::core::vector3df(-0.0228889, 4.4704e-10, 0.177341));
+    //application.AddTypicalLights(targ + core::vector3df(+0.1f, +0.2f, -0.2f), targ);
+
+    application.AddShadowAll();
 
     // Initial setup
     application.AssetBindAll();
@@ -243,8 +247,8 @@ int main(int argc, char* argv[]) {
     // Solver and timestepper
     my_system.SetSolverType(ChSolver::Type::MINRES);
     my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
-    my_system.SetMaxItersSolverSpeed(460);
-    my_system.SetMaxItersSolverStab(460);
+    my_system.SetMaxItersSolverSpeed(1000);
+    my_system.SetMaxItersSolverStab(1000);
     my_system.SetTolForce(1e-13);
     auto msolver = std::static_pointer_cast<ChSolverMINRES>(my_system.GetSolver());
     msolver->SetVerbose(false);
@@ -259,33 +263,49 @@ int main(int argc, char* argv[]) {
 #endif
 
     
-    utils::CSV_writer csv_out;
+    utils::CSV_writer csv_problem;
     //application.SetPlotLinkFrames(true);
-    application.SetContactsDrawMode(ChIrrTools::eCh_ContactsDrawMode::CONTACT_NORMALS);
-    auto timestep = contact_model_NSC ? 0.005 : 0.001;
+    //application.SetContactsDrawMode(ChIrrTools::eCh_ContactsDrawMode::CONTACT_NORMALS);
+    auto timestep = contact_model_NSC ? 0.025 : 0.001;
+
+    ChTimer<> tim;
 
     application.SetTimestep(timestep);
-    //application.SetVideoframeSaveInterval(1);
+    application.SetVideoframeSaveInterval(1);
+    application.SetVideoframeSave(true);
+    //application.SetPaused(true);
     while (application.GetDevice()->run()) {
         application.BeginScene();
 
         application.DrawAll();
 
+        tim.start();
         application.DoStep();
+        tim.stop();
 
         if (!application.GetPaused()) {
-#ifdef USE_NSC
-            std::cout << std::setprecision(2)
+            std::cout << std::setprecision(6)
                 << "RotAngle: " << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << "; "
                 << "Beam Force: " << test_force_constraint[0]->Get_react_force().Length() << "; "
                 << std::endl;
-            csv_out << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << test_force_constraint[0]->Get_react_force().Length();
-            csv_out << std::endl;
-            //ip_solver_speed->PrintIPStatus();
-#else
-            std::cout << "RotAngle: " << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << std::endl;
-#endif
+            
+            double reactForceTot = 0;
+            for (auto link_sel = 0; link_sel < test_force_constraint.size(); ++link_sel)
+            {
+                reactForceTot += test_force_constraint[link_sel]->Get_react_force().Length();
+            }
+
+            csv_problem << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << reactForceTot << tim();
+            csv_problem << std::endl;
         }
+
+        //std::cout << application.GetSceneManager()->getActiveCamera()->getAbsolutePosition().X << ", "
+        //          << application.GetSceneManager()->getActiveCamera()->getAbsolutePosition().Y << ", "
+        //          << application.GetSceneManager()->getActiveCamera()->getAbsolutePosition().Z << " | "
+        //          << application.GetSceneManager()->getActiveCamera()->getTarget().X << ", "
+        //          << application.GetSceneManager()->getActiveCamera()->getTarget().Y << ", "
+        //          << application.GetSceneManager()->getActiveCamera()->getTarget().Z << std::endl;
+
 
         if (rotMot->GetMotorRot()*CH_C_RAD_TO_DEG > 360.0)
             break;
@@ -293,7 +313,12 @@ int main(int argc, char* argv[]) {
         application.EndScene();
     }
 
-    csv_out.write_to_file("iplog.txt", "rotangle, linkforce\n");
+    std::ostringstream outfile;
+    outfile << "iplog_" << (contact_model_NSC ? "NSC" : "SMC") << "dt" << std::defaultfloat << timestep << ".txt";
+    csv_problem.write_to_file(outfile.str(), "rotangle, linkforce, time\n");
+
+    std::cout << "Elapsed time: " << tim() << "s" << std::endl;
+
 
     return 0;
 }
