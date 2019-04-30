@@ -87,6 +87,7 @@ int main(int argc, char* argv[]) {
     auto floorColor = std::make_shared<ChColorAsset>();
     floorColor->SetColor(ChColor(0.25, 0.25, 0.25));
     const double box_edge = 1.0;
+    std::array<std::shared_ptr<ChBodyEasyBox>, num_bodies> mrigidBoxes;
 
     for (auto body_sel = 0; body_sel < num_bodies; ++body_sel) {
         // create the floor
@@ -104,18 +105,18 @@ int main(int argc, char* argv[]) {
         color->SetColor(ChColor::ComputeRainbowColor(body_sel, num_bodies));
 
         // Create a box that will collides with the floor
-        auto mrigidBox = std::make_shared<ChBodyEasyBox>(1, 1, 1, 1000, true, true, ChMaterialSurface::NSC);
-        mrigidBox->SetRot(Q_from_AngAxis(inclination[body_sel], VECT_X));
-        mrigidBox->SetPos(ChMatrix33<>(Q_from_AngAxis(inclination[body_sel], VECT_X)) *
+        mrigidBoxes[body_sel] = std::make_shared<ChBodyEasyBox>(1, 1, 1, 1000, true, true, ChMaterialSurface::NSC);
+        mrigidBoxes[body_sel]->SetRot(Q_from_AngAxis(inclination[body_sel], VECT_X));
+        mrigidBoxes[body_sel]->SetPos(ChMatrix33<>(Q_from_AngAxis(inclination[body_sel], VECT_X)) *
                               ChVector<>(0, +0.5 * box_edge, 0) +
                           ChVector<>(body_sel * box_edge * 2, 0, 0));
-        mrigidBox->Set_Scr_force(VECT_Z * forces_additional[body_sel]);
-        mrigidBox->Set_Scr_torque(mrigidBox->Get_Scr_force().Cross(VECT_Y * 0.5 * box_edge));
-        mrigidBox->SetMaterialSurface(mmaterial);
-        mrigidBox->SetMass(body_mass);
-        mrigidBox->AddAsset(color);
+        mrigidBoxes[body_sel]->Set_Scr_force(VECT_Z * forces_additional[body_sel]);
+        mrigidBoxes[body_sel]->Set_Scr_torque(mrigidBoxes[body_sel]->Get_Scr_force().Cross(VECT_Y * 0.5 * box_edge));
+        mrigidBoxes[body_sel]->SetMaterialSurface(mmaterial);
+        mrigidBoxes[body_sel]->SetMass(body_mass);
+        mrigidBoxes[body_sel]->AddAsset(color);
 
-        mphysicalSystem.Add(mrigidBox);
+        mphysicalSystem.Add(mrigidBoxes[body_sel]);
 
         //// Apply forces to body
         // auto force = std::make_shared<ChForce>();
@@ -148,11 +149,11 @@ int main(int argc, char* argv[]) {
     // application.GetSystem()->Update();
 
     application.SetStepManage(true);
-    application.SetTimestep(0.01);
+    application.SetTimestep(0.001);
     application.SetTryRealtime(true);
     // application.SetPaused(true);
     application.SetContactsDrawMode(irrlicht::ChIrrTools::eCh_ContactsDrawMode::CONTACT_FORCES);
-    application.SetContactsLabelMode(irrlicht::ChIrrTools::eCh_ContactsLabelMode::CONTACT_FORCES_N_VAL);
+    application.SetContactsLabelMode(irrlicht::ChIrrTools::eCh_ContactsLabelMode::CONTACT_FORCES_T_VAL);
     int step_counter = 0;
     while (application.GetDevice()->run()) {
         application.GetVideoDriver()->beginScene(true, true, SColor(255, 140, 161, 192));
@@ -161,11 +162,24 @@ int main(int argc, char* argv[]) {
 
         if (!application.GetPaused()) {
             application.DoStep();
-            std::cout << "Gap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetGap() << "; "
-                    << "RelGap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetRelativeGap() << "; "
-                    << "PrimInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetPrimalInfeasibility() << "; "
-                    << "DualInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetDualInfeasibility() << "; "
-                    << std::endl;
+
+            for (auto body_sel = 0; body_sel < num_bodies; ++body_sel) {
+                auto force = mrigidBoxes[body_sel]->GetContactForce();
+
+                //// Apply forces to body
+                // auto force = std::make_shared<ChForce>();
+                // mrigidBox->AddForce(force);
+                // force->SetMode(ChForce::FORCE);
+                // force->SetFrame(ChForce::WORLD);
+                // force->SetDir(VECT_Z);
+                // force->SetMforce(forces_additional[body_sel]);
+            }
+
+            //std::cout << "Gap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetGap() << "; "
+            //        << "RelGap: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetRelativeGap() << "; "
+            //        << "PrimInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetPrimalInfeasibility() << "; "
+            //        << "DualInfeas: " << std::static_pointer_cast<ChSolverCvxoptConeQp>(application.GetSystem()->GetSolver())->GetEngine().GetDualInfeasibility() << "; "
+            //        << std::endl;
         }
 
 

@@ -9,35 +9,23 @@
 // http://projectchrono.org/license-chrono.txt.
 //
 // =============================================================================
-// Authors: Alessandro Tasora
-// =============================================================================
-//
-// FEA contacts
-//
+// Authors: Dario Mangoni
 // =============================================================================
 
-#include "chrono/geometry/ChTriangleMeshConnected.h"
+#include "chrono/physics/ChSystemNSC.h"
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/physics/ChLoadContainer.h"
-#include "chrono/solver/ChSolverMINRES.h"
 
-#include "chrono/fea/ChBuilderBeam.h"
-#include "chrono/fea/ChContactSurfaceMesh.h"
-#include "chrono/fea/ChContactSurfaceNodeCloud.h"
-#include "chrono/fea/ChElementCableANCF.h"
 #include "chrono/fea/ChElementTetra_4.h"
 #include "chrono/fea/ChMesh.h"
 #include "chrono/fea/ChMeshFileLoader.h"
+#include "chrono/fea/ChContactSurfaceMesh.h"
 #include "chrono/fea/ChVisualizationFEAmesh.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
-#include "physics/ChSystemNSC.h"
-
-#define USE_CVXOPT
-
-#ifdef USE_CVXOPT
+#include <functional>
+#include "physics/ChSystemSMC.h"
 #include "chrono_cvxopt/ChSolverCvxoptConeQp.h"
-#endif
 
 using namespace chrono;
 using namespace chrono::geometry;
@@ -46,295 +34,304 @@ using namespace chrono::irrlicht;
 
 using namespace irr;
 
-int main(int argc, char* argv[]) {
-    GetLog() << "Copyright (c) 2017 projectchrono.org\nChrono version: " << CHRONO_VERSION << "\n\n";
 
-    // Create a Chrono::Engine physical system
-    ChSystemNSC my_system;
+class BuildTetrahedronBeam
+{
+private:
 
-    // Create the Irrlicht visualization (open the Irrlicht device,
-    // bind a simple user interface, etc. etc.)
-    ChIrrApp application(&my_system, L"FEA contacts", core::dimension2d<u32>(800, 600), false, true);
+    // There are 13 different divisions of a cube in tetrahedrons
+    // 12 in 6 tetra; 1 in 5 tetra
+    // numbers [0-7] in the table refer to node indexes for a generic cube
+    // 0  | 0137, 0147, 1237, 1267, 1457, 1567
+    // 1  | 0137, 0147, 1235, 1457, 2356, 3567
+    // 2  | 0137, 0147, 1237, 1257, 1457, 2567
+    // 3  | 0137, 0147, 1236, 1367, 1457, 1567
+    // 4  | 0137, 0157, 0457, 1237, 1257, 2567
+    // 5  | 0137, 0157, 0457, 1236, 1367, 1567
+    // 6  | 0134, 1237, 1257, 1347, 1457, 2567
+    // 7  | 0134, 1236, 1347, 1367, 1457, 1567
+    // 9  | 0137, 0147, 1235, 1457, 2357, 2567
+    // 10 | 0137, 0157, 0457, 1235, 2357, 2567
+    // 11 | 0134, 1235, 1347, 1457, 2356, 3567
+    // 12 | 0134, 1235, 1347, 1457, 2357, 2567
+    // 13 | 0134, 1236, 1346, 1456, 3467
 
-    // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
-    application.AddTypicalLogo();
-    application.AddTypicalSky();
-    application.AddTypicalLights();
-    application.AddTypicalCamera(core::vector3df(0, (f32)0.6, -1));
-    application.AddLightWithShadow(core::vector3df(1.5, 5.5, -2.5), core::vector3df(0, 0, 0), 3, 2.2, 7.2, 40, 512,
-                                   video::SColorf(1, 1, 1));
+    ChVector<int> num_elements = { 1,1,1 };
+    ChVector<double> position_offset = { 0.0, 0.0, 0.0 };
+    ChQuaternion<double> rotation_offset = { 1.0, 0.0, 0.0, 0.0 };
+    double cube_edge = 1;
 
-    application.SetContactsDrawMode(ChIrrTools::CONTACT_DISTANCES);
+    static const std::array<ChVector<int>, 8> cube_nodes_position;
+    static const std::array<std::array<int, 4>, 6> tetahedra_nodes_order;
 
-    //
-    // CREATE THE PHYSICAL SYSTEM
-    //
+    std::vector<std::shared_ptr<ChNodeFEAxyz>> nodes_list; // not needed if mesh returns a non-const vector of nodes...
 
-    // Set default effective radius of curvature for all SCM contacts.
-    collision::ChCollisionInfo::SetDefaultEffectiveCurvatureRadius(1);
-
-    // collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.0); // not needed, already 0 when using ChSystemSMC
-    collision::ChCollisionModel::SetDefaultSuggestedMargin(
-        0.006);  // max inside penetration - if not enough stiffness in material: troubles
-
-    // Use this value for an outward additional layer around meshes, that can improve
-    // robustness of mesh-mesh collision detection (at the cost of having unnatural inflate effect)
-    double sphere_swept_thickness = 0.002;
-
-    // Create the surface material, containing information
-    // about friction etc.
-    // It is a SMC (penalty) material that we will assign to
-    // all surfaces that might generate contacts.
-
-    auto mysurfmaterial = std::make_shared<ChMaterialSurfaceNSC>();
-    // mysurfmaterial->SetYoungModulus(6e4);
-    mysurfmaterial->SetFriction(0.3f);
-    mysurfmaterial->SetRestitution(0.2f);
-    // mysurfmaterial->SetAdhesion(0);
-
-    // Create a floor:
-
-    bool do_mesh_collision_floor = false;
-
-    auto mmeshbox = std::make_shared<ChTriangleMeshConnected>();
-    mmeshbox->LoadWavefrontMesh(GetChronoDataFile("cube.obj"), true, true);
-
-    if (do_mesh_collision_floor) {
-        // floor as a triangle mesh surface:
-        auto mfloor = std::make_shared<ChBody>();
-        mfloor->SetPos(ChVector<>(0, -1, 0));
-        mfloor->SetBodyFixed(true);
-        mfloor->SetMaterialSurface(mysurfmaterial);
-        my_system.Add(mfloor);
-
-        mfloor->GetCollisionModel()->ClearModel();
-        mfloor->GetCollisionModel()->AddTriangleMesh(mmeshbox, false, false, VNULL, ChMatrix33<>(1),
-                                                     sphere_swept_thickness);
-        mfloor->GetCollisionModel()->BuildModel();
-        mfloor->SetCollide(true);
-
-        auto masset_meshbox = std::make_shared<ChTriangleMeshShape>();
-        masset_meshbox->SetMesh(mmeshbox);
-        mfloor->AddAsset(masset_meshbox);
-
-        auto masset_texture = std::make_shared<ChTexture>();
-        masset_texture->SetTextureFilename(GetChronoDataFile("concrete.jpg"));
-        mfloor->AddAsset(masset_texture);
-
-    } else {
-        // floor as a simple collision primitive:
-
-        auto mfloor = std::make_shared<ChBodyEasyBox>(2, 0.1, 2, 2700, true);
-        mfloor->SetBodyFixed(true);
-        mfloor->SetMaterialSurface(mysurfmaterial);
-        my_system.Add(mfloor);
-
-        auto masset_texture = std::make_shared<ChTexture>();
-        masset_texture->SetTextureFilename(GetChronoDataFile("concrete.jpg"));
-        mfloor->AddAsset(masset_texture);
+    std::shared_ptr<ChNodeFEAxyz>& getNode(ChVector<int> element_position, int node_local_id)
+    {
+        auto num_nodes = num_elements + ChVector<int>{1, 1, 1};
+        element_position += cube_nodes_position[node_local_id];
+        return nodes_list[element_position.x() + element_position.y()*num_nodes.x() + element_position.z()*num_nodes.x()*num_nodes.y()];
     }
 
-    // two falling objects:
+public:
+    BuildTetrahedronBeam() {}
 
-    auto mcube = std::make_shared<ChBodyEasyBox>(0.1, 0.1, 0.1, 2700, true);
-    mcube->SetPos(ChVector<>(0.6, 0.5, 0.6));
-    mcube->SetMaterialSurface(mysurfmaterial);
-    my_system.Add(mcube);
+    BuildTetrahedronBeam(double cubes_edge_length, int num_elements_x, int num_elements_y, int num_elements_z)
+    {
+        SetBeamDimensions(cubes_edge_length, num_elements_x, num_elements_y, num_elements_z);
+    }
 
-    auto msphere = std::make_shared<ChBodyEasySphere>(0.1, 2700, true);
-    msphere->SetPos(ChVector<>(0.8, 0.5, 0.6));
-    msphere->SetMaterialSurface(mysurfmaterial);
-    my_system.Add(msphere);
+    BuildTetrahedronBeam(std::shared_ptr<ChMesh> mesh, std::shared_ptr<ChContinuumElastic> tetra_material, double cubes_edge_length, int num_elements_x, int num_elements_y, int num_elements_z, ChVector<double> pos = ChVector<>(), ChQuaternion<double> rot = ChQuaternion<>())
+    {
+        SetBeamDimensions(cubes_edge_length, num_elements_x, num_elements_y, num_elements_z, pos);
+        CreateBeam(mesh, tetra_material);
+    }
 
-    //
-    // Example 1: tetrahedrons, with collisions
-    //
+    void SetBeamDimensions(double cubes_edge_length, int num_elements_x, int num_elements_y, int num_elements_z, ChVector<double> pos = ChVector<double>(), ChQuaternion<double> rot = ChQuaternion<>(1.0, 0.0, 0.0, 0.0))
+    {
+        assert(num_elements_x > 0 && num_elements_y > 0 && num_elements_z > 0 && "Wrong beam dimensions");
+        num_elements = { num_elements_x, num_elements_y, num_elements_z };
+        cube_edge = cubes_edge_length;
+        position_offset = pos;
+        rotation_offset = rot;
+    }
 
-    // Create a mesh. We will use it for tetrahedrons.
-
-    auto my_mesh = std::make_shared<ChMesh>();
-
-    // 1) a FEA tetrahedron(s):
-
-    // Create a material, that must be assigned to each solid element in the mesh,
-    // and set its parameters
-    auto mmaterial = std::make_shared<ChContinuumElastic>();
-    mmaterial->Set_E(0.01e9);  // rubber 0.01e9, steel 200e9
-    mmaterial->Set_v(0.3);
-    mmaterial->Set_RayleighDampingK(0.003);
-    mmaterial->Set_density(1000);
-
-    if (false) {
-        for (int k = 0; k < 3; ++k)
-            for (int j = 0; j < 3; ++j)
-                for (int i = 0; i < 3; ++i) {
-                    // Creates the nodes for the tetrahedron
-                    ChVector<> offset(j * 0.21, i * 0.21, k * 0.21);
-                    auto mnode1 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0) + offset);
-                    auto mnode2 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.1, 0.2) + offset);
-                    auto mnode3 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0, 0.3, 0) + offset);
-                    auto mnode4 = std::make_shared<ChNodeFEAxyz>(ChVector<>(0.2, 0.1, 0) + offset);
-
-                    my_mesh->AddNode(mnode1);
-                    my_mesh->AddNode(mnode2);
-                    my_mesh->AddNode(mnode3);
-                    my_mesh->AddNode(mnode4);
-
-                    auto melement1 = std::make_shared<ChElementTetra_4>();
-                    melement1->SetNodes(mnode1, mnode2, mnode3, mnode4);
-                    melement1->SetMaterial(mmaterial);
-
-                    my_mesh->AddElement(melement1);
+    std::list<std::shared_ptr<ChNodeFEAbase>> GetNodes(std::function<bool(int, int, int)> choose_fnc) const
+    {
+        auto num_nodes = num_elements + ChVector<int>{1, 1, 1};
+        std::list<std::shared_ptr<ChNodeFEAbase>> nodes_list_export;
+        // create nodes
+        for (auto node_sel_z = 0; node_sel_z < num_nodes.z(); ++node_sel_z)
+        {
+            for (auto node_sel_y = 0; node_sel_y < num_nodes.y(); ++node_sel_y)
+            {
+                for (auto node_sel_x = 0; node_sel_x < num_nodes.x(); ++node_sel_x)
+                {
+                    if (choose_fnc(node_sel_x, node_sel_y, node_sel_z))
+                        nodes_list_export.push_back(nodes_list[node_sel_x + node_sel_y * num_nodes.x() + node_sel_z * num_nodes.x()*num_nodes.y()]);
                 }
+            }
+        }
+
+        return nodes_list_export;
     }
 
-    if (true) {
-        for (int i = 0; i < 2; ++i) {
-            try {
-                ChCoordsys<> cdown(ChVector<>(0, -0.4, 0));
-                ChCoordsys<> crot(VNULL,
-                                  Q_from_AngAxis(CH_C_2PI * ChRandom(), VECT_Y) * Q_from_AngAxis(CH_C_PI_2, VECT_X));
-                ChCoordsys<> cydisp(ChVector<>(-0.3, 0.1 + i * 0.1, -0.3));
-                ChCoordsys<> ctot = cdown >> crot >> cydisp;
-                ChMatrix33<> mrot(ctot.rot);
-                ChMeshFileLoader::FromTetGenFile(my_mesh, GetChronoDataFile("fea/beam.node").c_str(),
-                                                 GetChronoDataFile("fea/beam.ele").c_str(), mmaterial, ctot.pos, mrot);
-            } catch (ChException myerr) {
-                GetLog() << "If you are using MSVC rememember to set the project property Debugging > Working Diretory "
-                            "as $(OutDir)\n";
-                GetLog() << myerr.what();
-                return -1;
+
+    void CreateBeam(std::shared_ptr<ChMesh> mesh, std::shared_ptr<ChContinuumElastic> tetra_material)
+    {
+        auto num_nodes = num_elements + ChVector<int>{1, 1, 1};
+
+        // create nodes
+        nodes_list.resize(num_nodes.x()*num_nodes.y()*num_nodes.z());
+        for (auto node_sel_z = 0; node_sel_z < num_nodes.z(); ++node_sel_z)
+        {
+            for (auto node_sel_y = 0; node_sel_y < num_nodes.y(); ++node_sel_y)
+            {
+                for (auto node_sel_x = 0; node_sel_x < num_nodes.x(); ++node_sel_x)
+                {
+                    nodes_list[node_sel_x + node_sel_y * num_nodes.x() + node_sel_z * num_nodes.x()*num_nodes.y()] = std::make_shared<ChNodeFEAxyz>(rotation_offset.Rotate(ChVector<double>(node_sel_x*cube_edge, node_sel_y*cube_edge, node_sel_z*cube_edge)) + position_offset);
+                    mesh->AddNode(nodes_list[node_sel_x + node_sel_y * num_nodes.x() + node_sel_z * num_nodes.x()*num_nodes.y()]);
+                }
+            }
+        }
+
+
+        // select the element
+        ChVector<int> elem_pos;
+        for (elem_pos.z() = 0; elem_pos.z() < num_elements.z(); ++elem_pos.z())
+        {
+            for (elem_pos.y() = 0; elem_pos.y() < num_elements.y(); ++elem_pos.y())
+            {
+                for (elem_pos.x() = 0; elem_pos.x() < num_elements.x(); ++elem_pos.x())
+                {
+                    // associate nodes to tetrahedra
+                    for (auto tetra_sel = 0; tetra_sel < 6; ++tetra_sel)
+                    {
+                        auto tetra_element = std::make_shared<ChElementTetra_4>();
+                        tetra_element->SetNodes(getNode(elem_pos, tetahedra_nodes_order[tetra_sel][0]),
+                            getNode(elem_pos, tetahedra_nodes_order[tetra_sel][1]),
+                            getNode(elem_pos, tetahedra_nodes_order[tetra_sel][2]),
+                            getNode(elem_pos, tetahedra_nodes_order[tetra_sel][3]));
+                        tetra_element->SetMaterial(tetra_material);
+                        mesh->AddElement(tetra_element);
+                    }
+                }
             }
         }
     }
 
-    // Create the contact surface(s).
-    // In this case it is a ChContactSurfaceMesh, that allows mesh-mesh collsions.
+
+
+
+};
+
+const std::array<ChVector<int>, 8> BuildTetrahedronBeam::cube_nodes_position = { { { 0,0,1 },{ 1,0,1 },{ 1,0,0 },{ 0,0,0 },{ 0,1,1 },{ 1,1,1 },{ 1,1,0 },{ 0,1,0 } } }; // the 1st node is on the origin
+const std::array<std::array<int, 4>, 6> BuildTetrahedronBeam::tetahedra_nodes_order = { { { 0,3,1,7 },{ 0,1,4,7 },{ 1,3,2,7 },{ 1,2,6,7 },{ 1,5,4,7 },{ 1,6,5,7 } } };
+
+#define USE_NSC
+
+int main(int argc, char* argv[]) {
+#ifdef USE_NSC
+    bool contact_model_NSC = true;
+#else
+    bool contact_model_NSC = false;
+#endif
+
+    std::cout << "Interior-Point test bench using " << (contact_model_NSC ? "NSC" : "SMC") << " contact model" << std::endl;
+
+    double cubes_edge = 0.05;
+    int cubes_x = 12;
+    int cubes_y = 3;
+    int cubes_z = 28;
+    double support_cylinder_radius = 0.05;
+    double clearance = 0.01;
+
+    // Create a Chrono::Engine physical system
+#ifdef USE_NSC
+    ChSystemNSC my_system;
+    typedef ChMaterialSurfaceNSC material_surface_class;
+#else
+    ChSystemSMC my_system;
+    typedef ChMaterialSurfaceSMC material_surface_class;
+#endif
+
+    auto timestep = contact_model_NSC ? 0.05 : 0.005;
+    auto mat_surface_type = contact_model_NSC ? ChMaterialSurface::NSC : ChMaterialSurface::SMC;
+
+
+    // Irrlicht setup
+    ChIrrApp application(&my_system, L"IP FEA contacts", core::dimension2d<u32>(1440, 1080), false, true, true, irr::video::EDT_OPENGL);
+    application.AddTypicalLogo();
+    application.AddTypicalSky();
+    application.AddTypicalLights();
+    application.AddTypicalCamera(core::vector3df(1.2f, 0.5f, 0.8f));
+    application.AddLightWithShadow(core::vector3df(2.5, 3, 2.5), core::vector3df(0, 0, 0), 3, 1, 7.2, 40, 512, video::SColorf(1, 1, 1));
+
+
+    //application.SetContactsDrawMode(ChIrrTools::CONTACT_NORMALS);
+    //application.SetPlotLinkFrames(true);
+    application.SetSymbolscale(0.25);
+
+    // Physic system
+    collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.001);
+    collision::ChCollisionModel::SetDefaultSuggestedMargin(0.001);
+
+    auto mysurfmaterial = std::make_shared<material_surface_class>();
+    mysurfmaterial->SetFriction(0.4f);
+#ifdef USE_NSC
+    mysurfmaterial->SetCompliance(0.0000005f);
+    mysurfmaterial->SetComplianceT(0.0000005f);
+    mysurfmaterial->SetDampingF(0.2f);
+#else
+    mysurfmaterial->SetYoungModulus(6e4);
+    mysurfmaterial->SetFriction(0.3f);
+    mysurfmaterial->SetRestitution(0.2f);
+    mysurfmaterial->SetAdhesion(0);
+#endif
+
+    // FEA tetahedron beam
+    auto tetra_mesh = std::make_shared<ChMesh>();
+
+    auto tetra_material = std::make_shared<ChContinuumElastic>();
+    tetra_material->Set_E(0.01e9);  // rubber 0.01e9, steel 200e9
+    tetra_material->Set_v(0.3);
+    tetra_material->Set_RayleighDampingK(0.003);
+    tetra_material->Set_density(1000);
+
+    BuildTetrahedronBeam(tetra_mesh, tetra_material, cubes_edge, cubes_x, cubes_y, cubes_z, ChVector<double>(-cubes_edge * static_cast<double>(cubes_x) / 2.0, support_cylinder_radius + clearance, -cubes_edge * static_cast<double>(cubes_z) / 2.0));
 
     auto mcontactsurf = std::make_shared<ChContactSurfaceMesh>();
-    my_mesh->AddContactSurface(mcontactsurf);
-
-    mcontactsurf->AddFacesFromBoundary(sphere_swept_thickness);  // do this after my_mesh->AddContactSurface
+    tetra_mesh->AddContactSurface(mcontactsurf);
+    mcontactsurf->AddFacesFromBoundary(0.002);
     mcontactsurf->SetMaterialSurface(mysurfmaterial);
 
-    // Remember to add the mesh to the system!
-    my_system.Add(my_mesh);
+    my_system.Add(tetra_mesh);
 
-    //
-    // Example 2: beams, with collisions
-    //
+    // Add cylinders
 
-    // Create a mesh. We will use it for beams only.
+    auto cylinder_left = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, 1, 1000, true, true, mat_surface_type);
+    cylinder_left->SetMaterialSurface(mysurfmaterial);
+    cylinder_left->SetPos(ChVector<>(0, 0, -0.5));
+    cylinder_left->SetRot(Q_from_AngZ(-CH_C_PI_2));
+    cylinder_left->SetBodyFixed(true);
+    my_system.Add(cylinder_left);
 
-    auto my_mesh_beams = std::make_shared<ChMesh>();
+    auto cylinder_right = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, 1, 1000, true, true, mat_surface_type);
+    cylinder_right->SetMaterialSurface(mysurfmaterial);
+    cylinder_right->SetPos(ChVector<>(0, 0, 0.5));
+    cylinder_right->SetRot(Q_from_AngZ(-CH_C_PI_2));
+    cylinder_right->SetBodyFixed(true);
+    my_system.Add(cylinder_right);
 
-    // 2) an ANCF cable:
+    auto cylinder_up = std::make_shared<ChBodyEasyCylinder>(support_cylinder_radius, 1, 1000, true, true, mat_surface_type);
+    cylinder_up->SetMaterialSurface(mysurfmaterial);
+    cylinder_up->SetPos(ChVector<>(0, 2 * (support_cylinder_radius + clearance) + cubes_y * cubes_edge, 0));
+    cylinder_up->SetRot(Q_from_AngZ(-CH_C_PI_2));
+    my_system.Add(cylinder_up);
 
-    auto msection_cable2 = std::make_shared<ChBeamSectionCable>();
-    msection_cable2->SetDiameter(0.05);
-    msection_cable2->SetYoungModulus(0.01e9);
-    msection_cable2->SetBeamRaleyghDamping(0.05);
+    auto fixed_truss = std::make_shared<ChBodyEasyBox>(0.1, 0.1, 0.1, 1000, false, false, mat_surface_type);
+    fixed_truss->SetBodyFixed(true);
+    fixed_truss->SetPos(cylinder_up->GetPos() + ChVector<>(0.0, clearance, 0.0));
+    my_system.Add(fixed_truss);
 
-    ChBuilderBeamANCF builder;
+    auto cyl_motion = std::make_shared<ChLinkLockLock>();
+    cyl_motion->Initialize(cylinder_up, fixed_truss, ChCoordsys<>(VNULL, Q_from_AngX(-CH_C_PI_2)));
+    auto cyl_motion_function = std::make_shared<ChFunction_Ramp>();
+    cyl_motion_function->Set_ang(-1);
+    cyl_motion_function->Set_y0(0.0);
+    cyl_motion->SetMotion_Z(cyl_motion_function);
+    ChLinkLimit link_lim;
+    link_lim.Set_max(-2.0);
+    cyl_motion->SetLimit_Z(&link_lim);
+    my_system.AddLink(cyl_motion);
 
-    builder.BuildBeam(my_mesh_beams,             // the mesh where to put the created nodes and elements
-                      msection_cable2,           // the ChBeamSectionCable to use for the ChElementCableANCF elements
-                      10,                        // the number of ChElementCableANCF to create
-                      ChVector<>(0, 0.1, -0.1),  // the 'A' point in space (beginning of beam)
-                      ChVector<>(0.5, 0.13, -0.1));  // the 'B' point in space (end of beam)
-
-    // Create the contact surface(s).
-    // In this case it is a ChContactSurfaceNodeCloud, so just pass
-    // all nodes to it.
-
-    auto mcontactcloud = std::make_shared<ChContactSurfaceNodeCloud>();
-    my_mesh_beams->AddContactSurface(mcontactcloud);
-
-    mcontactcloud->AddAllNodes(0.025);  // use larger point size to match beam section radius
-
-    mcontactcloud->SetMaterialSurface(mysurfmaterial);
-
-    // Remember to add the mesh to the system!
-    my_system.Add(my_mesh_beams);
-
-    //
-    // Optional...  visualization
-    //
-
-    // ==Asset== attach a visualization of the FEM mesh.
-    // This will automatically update a triangle mesh (a ChTriangleMeshShape
-    // asset that is internally managed) by setting  proper
-    // coordinates and vertex colors as in the FEM elements.
-    // Such triangle mesh can be rendered by Irrlicht or POVray or whatever
-    // postprocessor that can handle a colored ChTriangleMeshShape).
-    // Do not forget AddAsset() at the end!
-
-    auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
-    mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
-    mvisualizemesh->SetColorscaleMinMax(0.0, 5.50);
+    // Visualization settings
+    auto mvisualizemesh = std::make_shared<ChVisualizationFEAmesh>(*tetra_mesh.get());
+    mvisualizemesh->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_STRESS_VONMISES);
+    mvisualizemesh->SetColorscaleMinMax(0.0, 2e6);
     mvisualizemesh->SetSmoothFaces(true);
-    my_mesh->AddAsset(mvisualizemesh);
+    tetra_mesh->AddAsset(mvisualizemesh);
 
-    auto mvisualizemeshcoll = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh.get()));
+    auto mvisualizemeshcoll = std::make_shared<ChVisualizationFEAmesh>(*tetra_mesh.get());
     mvisualizemeshcoll->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_CONTACTSURFACES);
     mvisualizemeshcoll->SetWireframe(true);
     mvisualizemeshcoll->SetDefaultMeshColor(ChColor(1, 0.5, 0));
-    my_mesh->AddAsset(mvisualizemeshcoll);
+    tetra_mesh->AddAsset(mvisualizemeshcoll);
 
-    auto mvisualizemeshbeam = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
-    mvisualizemeshbeam->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NODE_SPEED_NORM);
-    mvisualizemeshbeam->SetColorscaleMinMax(0.0, 5.50);
-    mvisualizemeshbeam->SetSmoothFaces(true);
-    my_mesh->AddAsset(mvisualizemeshbeam);
-
-    auto mvisualizemeshbeamnodes = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
-    mvisualizemeshbeamnodes->SetFEMglyphType(ChVisualizationFEAmesh::E_GLYPH_NODE_DOT_POS);
-    mvisualizemeshbeamnodes->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_NONE);
-    mvisualizemeshbeamnodes->SetSymbolsThickness(0.008);
-    my_mesh->AddAsset(mvisualizemeshbeamnodes);
-
-    // ==IMPORTANT!== Use this function for adding a ChIrrNodeAsset to all items
-    // in the system. These ChIrrNodeAsset assets are 'proxies' to the Irrlicht meshes.
-    // If you need a finer control on which item really needs a visualization proxy in
-    // Irrlicht, just use application.AssetBind(myitem); on a per-item basis.
-
+    // Application settings
     application.AssetBindAll();
-
-    // ==IMPORTANT!== Use this function for 'converting' into Irrlicht meshes the assets
-    // that you added to the bodies into 3D shapes, they can be visualized by Irrlicht!
-
     application.AssetUpdateAll();
-
-    // Use shadows in realtime view
     application.AddShadowAll();
-
-    // Mark completion of system construction
     my_system.SetupInitial();
 
-    //
-    // THE SOFT-REAL-TIME CYCLE
-    //
-
-    my_system.SetSolverType(ChSolver::Type::MINRES);
-    my_system.SetSolverWarmStarting(true);
-    my_system.SetMaxItersSolverSpeed(40);
-    my_system.SetTolForce(1e-10);
+    // Timestepper and solver
     my_system.SetTimestepperType(ChTimestepper::Type::EULER_IMPLICIT_LINEARIZED);
 
-#ifdef USE_CVXOPT
-    // Set CVXOPT ConeQP solver
+#ifdef USE_NSC
     auto ip_solver_stab = std::make_shared<ChSolverCvxoptConeQp>();
     auto ip_solver_speed = std::make_shared<ChSolverCvxoptConeQp>();
     my_system.SetStabSolver(ip_solver_stab);
     my_system.SetSolver(ip_solver_speed);
     ip_solver_speed->SetSparsityPatternLock(true);
     ip_solver_speed->ForceSparsityPatternUpdate(true);
+    ip_solver_speed->GetEngine().SetShowProgress(true);
     // ip_solver_speed->SetVerbose(true);
     application.GetSystem()->Update();
+#else
+    my_system.SetSolverType(ChSolver::Type::MINRES);
+    my_system.SetSolverWarmStarting(true);
+    my_system.SetMaxItersSolverSpeed(200);
+    my_system.SetTolForce(1e-10);
+    my_system.GetSolver()->SetVerbose(true);
 #endif
 
-    application.SetTimestep(0.001);
 
+    // Run simulation
+    //application.SetPaused(true);
+    application.SetTimestep(timestep);
+
+    ChTimer<> timer;
+    timer.start();
     while (application.GetDevice()->run()) {
         application.BeginScene();
 
@@ -343,7 +340,21 @@ int main(int argc, char* argv[]) {
         application.DoStep();
 
         application.EndScene();
+
+        //if (my_system.GetChTime() > 0.1)
+        //	break;
+
     }
+    timer.stop();
+#ifdef USE_NSC
+    std::cout << "Time spent: " << ip_solver_speed->GetTimeSolve_Assembly() + ip_solver_speed->GetTimeSolve_SolverCall() << std::endl;
+    std::cout << "Time spent (external timer): " << timer.GetTimeSeconds() << std::endl;
+#else
+    std::cout << "Time spent (external timer): " << timer.GetTimeSeconds() << std::endl;
+
+#endif
+
+    getchar();
 
     return 0;
 }

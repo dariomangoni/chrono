@@ -27,6 +27,7 @@ IF (ENABLE_MODULE_IRRLICHT)
 
     set(CVXOPT_DEMOS_IRRLICHT
         demo_CVXOPT_SolverConeQp
+        demo_CVXOPT_contacts
         demo_CVXOPT_friction
         demo_CVXOPT_beamsIGA
         demo_CVXOPT_torqueIGA
