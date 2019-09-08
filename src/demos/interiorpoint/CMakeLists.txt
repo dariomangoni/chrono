@@ -9,6 +9,7 @@ SET(IP_DEMOS
 	demo_IP_FEA_threepointbending
     demo_IP_FEA_beamsIGA
 	demo_IP_FEA_torqueIGA
+	demo_IP_FEA_netIGA
     demo_IP_criticalball
 	demo_IP_ballpile
 )

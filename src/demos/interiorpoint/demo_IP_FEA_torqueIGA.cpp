@@ -39,6 +39,7 @@
 #include "chrono_interiorpoint/ChInteriorPoint.h"
 #include <iomanip>
 #include "utils/ChUtilsInputOutput.h"
+#include <chrono_thirdparty/filesystem/path.h>
 
 using namespace chrono;
 using namespace chrono::fea;
@@ -48,26 +49,82 @@ using namespace irr;
 
 bool include_plasticity = false;
 
-//#define USE_NSC
+
+class _label_reporter_class : public ChContactContainer::ReportContactCallback {
+public:
+    virtual bool OnReportContact(const ChVector<>& pA,
+        const ChVector<>& pB,
+        const ChMatrix33<>& plane_coord,
+        const double& distance,
+        const double& eff_radius,
+        const ChVector<>& react_forces,
+        const ChVector<>& react_torques,
+        ChContactable* modA,
+        ChContactable* modB) override {
+
+
+        contact_force.push_back(react_forces.x());
+        distance_vect.push_back(distance);
+        //std::cout << "Contact force " << react_forces.x();
+
+        return true;  // to continue scanning contacts
+    }
+
+    std::vector<double> distance_vect;
+    std::vector<double> contact_force;
+};
+
+
+
 
 int main(int argc, char* argv[]) {
     GetLog() << "Copyright (c) 2017 projectchrono.org\nChrono version: " << CHRONO_VERSION << "\n\n";
 
-#ifdef USE_NSC
-    bool contact_model_NSC = true;
-#else
-    bool contact_model_NSC = false;
-#endif
+    bool use_NSC;
+    double timestep;
 
-#ifdef USE_NSC
-    ChSystemNSC my_system;
-    typedef ChMaterialSurfaceNSC material_surface_class;
-#else
-    ChSystemSMC my_system;
-    typedef ChMaterialSurfaceSMC material_surface_class;
-#endif
 
-    auto mat_surface_type = contact_model_NSC ? ChMaterialSurface::NSC : ChMaterialSurface::SMC;
+    if (argc == 1)
+    {
+        use_NSC = true;
+        timestep = 0.025;
+        GetLog() << "Run with two arguments: \n - [NSC|SMC] choose which contact method; \n - [dt] choose timestep";
+    }
+    else
+    {
+        if (argc != 3)
+            throw std::exception("demo_IP_FEA_torqueIGA called with wrong number of arguments (either zero or two).");
+
+        std::string contact_method(argv[1]);
+        if (!contact_method.compare("NSC"))
+            use_NSC = true;
+        else if (!contact_method.compare("SMC"))
+            use_NSC = false;
+        else
+            throw std::exception("demo_IP_FEA_torqueIGA called with unknown contact method.");
+
+        std::string timestep_string(argv[2]);
+        timestep = std::stod(timestep_string);
+    }
+
+
+    std::shared_ptr<ChSystem> my_system;
+    std::shared_ptr<ChMaterialSurface> mysurfmaterial;
+    ChMaterialSurface::ContactMethod mat_surface_type;
+    if (use_NSC)
+    {
+        my_system = std::make_shared<ChSystemNSC>();
+        mysurfmaterial = std::make_shared<ChMaterialSurfaceNSC>();
+
+        mat_surface_type = ChMaterialSurface::NSC;
+    }
+    else
+    {
+        my_system = std::make_shared<ChSystemSMC>();
+        mysurfmaterial = std::make_shared<ChMaterialSurfaceSMC>();
+        mat_surface_type = ChMaterialSurface::SMC;
+
+    }
 
     // Here set the inward-outward margins for collision shapes: should make sense in the scale of the model
     collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.001);
@@ -95,20 +152,24 @@ int main(int argc, char* argv[]) {
     msection->SetDensity(1000);
     msection->SetAsCircularSection(wire_diameter);
 
-    auto mysurfmaterial = std::make_shared<material_surface_class>();
-
-#ifdef USE_NSC
-    mysurfmaterial->SetRestitution(0.1f);
-    mysurfmaterial->SetFriction(0.2f);
-    mysurfmaterial->SetCompliance(0.0000005f);
-    mysurfmaterial->SetComplianceT(0.0000005f);
-    mysurfmaterial->SetDampingF(0.2f);
-#else
-    mysurfmaterial->SetYoungModulus(6e4);
-    mysurfmaterial->SetFriction(0.3f);
-    mysurfmaterial->SetRestitution(0.2f);
-    mysurfmaterial->SetAdhesion(0);
-#endif
+    if (use_NSC)
+    {
+        auto mysurfmaterial_NSC = std::dynamic_pointer_cast<ChMaterialSurfaceNSC>(mysurfmaterial);
+        mysurfmaterial_NSC->SetRestitution(0.1f);
+        mysurfmaterial_NSC->SetFriction(0.2f);
+        mysurfmaterial_NSC->SetCompliance(0.0000005f);
+        mysurfmaterial_NSC->SetComplianceT(0.0000005f);
+        mysurfmaterial_NSC->SetDampingF(0.2f);
+    }
+    else
+    {
+        auto mysurfmaterial_SMC = std::dynamic_pointer_cast<ChMaterialSurfaceSMC>(mysurfmaterial);
+        mysurfmaterial_SMC->SetYoungModulus(1.2e8);
+        mysurfmaterial_SMC->SetFriction(0.3f);
+        mysurfmaterial_SMC->SetRestitution(0.2f);
+        mysurfmaterial_SMC->SetAdhesion(0);
+    }
+    
 
     
     ///////////////
@@ -128,19 +189,19 @@ int main(int argc, char* argv[]) {
     mFlangeStart->SetRot(Q_from_AngAxis(CH_C_PI_2, VECT_X));
     mFlangeStart->SetBodyFixed(true);
     mFlangeStart->AddAsset(fixedAsset);
-    my_system.Add(mFlangeStart);
+    my_system->Add(mFlangeStart);
 
     auto mFlangeEnd = std::make_shared<ChBodyEasyCylinder>((bundle_radius+ wire_diameter)*1.1, flange_thickness, 1000, false, true, mat_surface_type);
     mFlangeEnd->SetPos(VECT_Z*(bundle_length0+0.5*flange_thickness));
     mFlangeEnd->SetRot(Q_from_AngAxis(CH_C_PI_2, VECT_X));
     mFlangeEnd->AddAsset(movingAsset);
-    my_system.Add(mFlangeEnd);
+    my_system->Add(mFlangeEnd);
 
     auto mFlangeEndFixed = std::make_shared<ChBodyEasyBox>(2.5*(bundle_radius + wire_diameter), 2.5*(bundle_radius + wire_diameter), flange_thickness, 1000, false, true, mat_surface_type);
     mFlangeEndFixed->SetPos(mFlangeEnd->GetPos() + VECT_Z* flange_thickness);
     mFlangeEndFixed->SetBodyFixed(true);
     mFlangeEndFixed->AddAsset(fixedAsset);
-    my_system.Add(mFlangeEndFixed);
+    my_system->Add(mFlangeEndFixed);
 
 
     auto central_cyl = std::make_shared<ChBodyEasyCylinder>(bundle_radius*0.5, bundle_length0, 1000, true, true, mat_surface_type);
@@ -149,14 +210,14 @@ int main(int argc, char* argv[]) {
     central_cyl->SetRot(Q_from_AngX(CH_C_PI_2));
     central_cyl->SetMaterialSurface(mysurfmaterial);
     central_cyl->AddAsset(fixedAsset);
-    my_system.Add(central_cyl);
+    my_system->Add(central_cyl);
 
     auto rotMot = std::make_shared<ChLinkMotorRotationSpeed>();
     auto speedFun = std::make_shared<ChFunction_Const>(1);
     rotMot->SetSpeedFunction(speedFun);
     //rotMot->SetAngleOffset(30.0*CH_C_DEG_TO_RAD); // not working as expected
     rotMot->Initialize(mFlangeEndFixed, mFlangeEnd, ChFrame<>(mFlangeEnd->GetPos(), QUNIT));
-    my_system.Add(rotMot);
+    my_system->Add(rotMot);
 
     double contact_radius = wire_diameter/2.0;
 
@@ -168,6 +229,7 @@ int main(int argc, char* argv[]) {
     //std::array<std::shared_ptr<ChContactSurfaceNodeCloud>, beam_num> mcontactcloud;
 
     std::array<std::shared_ptr<ChLinkMateGeneric>, beam_num> test_force_constraint;
+    //std::array<std::shared_ptr<ChMesh>, beam_num> my_mesh_beams;
 
     // IGA beams between flanges
     for (auto beam_sel = 0; beam_sel<beam_num; ++beam_sel)
@@ -185,7 +247,7 @@ int main(int argc, char* argv[]) {
         auto startConstr = std::make_shared<ChLinkMateGeneric>();
         startConstr->Initialize(firstNode, mFlangeStart, false, firstNode->Frame(), firstNode->Frame());
         startConstr->SetConstrainedCoords(true, true, true, true, true, true);
-        my_system.Add(startConstr);
+        my_system->Add(startConstr);
 
         test_force_constraint[beam_sel] = startConstr;
 
@@ -193,13 +255,13 @@ int main(int argc, char* argv[]) {
         auto endConstr = std::make_shared<ChLinkMateGeneric>();
         endConstr->Initialize(endNode, mFlangeEnd, false, endNode->Frame(), endNode->Frame());
         endConstr->SetConstrainedCoords(true, true, true, true, true, true);
-        my_system.Add(endConstr);
+        my_system->Add(endConstr);
 
         auto mcontactcloud = std::make_shared<ChContactSurfaceNodeCloud>();
         my_mesh_beams->AddContactSurface(mcontactcloud);
         mcontactcloud->AddAllNodes(contact_radius);  // use larger point size to match beam section radius
         mcontactcloud->SetMaterialSurface(mysurfmaterial);
-        my_system.Add(my_mesh_beams);
+        my_system->Add(my_mesh_beams);
 
         my_mesh_beams->SetAutomaticGravity(false);
 
@@ -225,7 +287,7 @@ int main(int argc, char* argv[]) {
 
 
     // Irrlicht application
-    ChIrrApp application(&my_system, L"Torquing IGA beams", core::dimension2d<u32>(1200, 900), false, true);
+    ChIrrApp application(my_system.get(), L"Torquing IGA beams", core::dimension2d<u32>(1200, 900), false, true);
 
     // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
     //application.AddTypicalLogo();
@@ -241,38 +303,54 @@ int main(int argc, char* argv[]) {
     // Initial setup
     application.AssetBindAll();
     application.AssetUpdateAll();
-    my_system.SetupInitial();
+    my_system->SetupInitial();
 
 
     // Solver and timestepper
-    my_system.SetSolverType(ChSolver::Type::MINRES);
-    my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
-    my_system.SetMaxItersSolverSpeed(1000);
-    my_system.SetMaxItersSolverStab(1000);
-    my_system.SetTolForce(1e-13);
-    auto msolver = std::static_pointer_cast<ChSolverMINRES>(my_system.GetSolver());
+    my_system->SetSolverType(ChSolver::Type::MINRES);
+    my_system->SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
+    my_system->SetMaxItersSolverSpeed(1000);
+    my_system->SetMaxItersSolverStab(1000);
+    my_system->SetTolForce(1e-8);
+    auto msolver = std::static_pointer_cast<ChSolverMINRES>(my_system->GetSolver());
     msolver->SetVerbose(false);
     msolver->SetDiagonalPreconditioning(true);
-#ifdef USE_NSC
+
+if (use_NSC)
+{
     auto ip_solver_stab = std::make_shared<ChInteriorPoint>();
     auto ip_solver_speed = std::make_shared<ChInteriorPoint>();
-    my_system.SetStabSolver(ip_solver_stab);
-    my_system.SetSolver(ip_solver_speed);
+    my_system->SetStabSolver(ip_solver_stab);
+    my_system->SetSolver(ip_solver_speed);
     // ip_solver_speed->SetVerbose(true);
     application.GetSystem()->Update();
-#endif
+}
+else
+{
+    //my_system->SetTimestepperType(ChTimestepper::Type::HHT);
+    //auto mystepper = std::dynamic_pointer_cast<ChTimestepperHHT>(my_system->GetTimestepper());
+    //mystepper->SetAlpha(-0.2);
+    //mystepper->SetMaxiters(10);
+    //mystepper->SetStepControl(false);
+    //mystepper->SetAbsTolerances(1e-5);
+    //mystepper->SetScaling(true);
+    //mystepper->SetVerbose(true);
+}
 
     
     utils::CSV_writer csv_problem;
     //application.SetPlotLinkFrames(true);
-    //application.SetContactsDrawMode(ChIrrTools::eCh_ContactsDrawMode::CONTACT_NORMALS);
-    auto timestep = contact_model_NSC ? 0.025 : 0.001;
+    application.SetContactsDrawMode(ChIrrTools::eCh_ContactsDrawMode::CONTACT_NORMALS);
 
     ChTimer<> tim;
 
+    GetLog() << "demo_IP_FEA_torqueIGA; Contact method: " << (use_NSC ? "NSC" : "SMC") << "; dt=" << timestep << "s \n\n";
+
+    _label_reporter_class reporter;
+
     application.SetTimestep(timestep);
     application.SetVideoframeSaveInterval(1);
-    application.SetVideoframeSave(true);
+    application.SetVideoframeSave(false);
     //application.SetPaused(true);
     while (application.GetDevice()->run()) {
         application.BeginScene();
@@ -283,19 +361,33 @@ int main(int argc, char* argv[]) {
         application.DoStep();
         tim.stop();
 
+
         if (!application.GetPaused()) {
-            std::cout << std::setprecision(6)
-                << "RotAngle: " << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << "; "
-                << "Beam Force: " << test_force_constraint[0]->Get_react_force().Length() << "; "
-                << std::endl;
-            
+
             double reactForceTot = 0;
             for (auto link_sel = 0; link_sel < test_force_constraint.size(); ++link_sel)
             {
                 reactForceTot += test_force_constraint[link_sel]->Get_react_force().Length();
             }
 
-            csv_problem << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << reactForceTot << tim();
+            std::cout << std::setprecision(6)
+                << "RotAngle: " << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << "; "
+                << "Link Force: " << reactForceTot << "; ";
+                //<< std::endl;
+
+            my_system->GetContactContainer()->ReportAllContacts(&reporter);
+            auto contact_force_max_ptr = std::max_element(reporter.contact_force.begin(), reporter.contact_force.end());
+            auto contact_force_max = contact_force_max_ptr != reporter.contact_force.end() ? *contact_force_max_ptr : 0;
+            std::cout << "Contact Force Max: " << contact_force_max << "; ";
+            auto distance_min_ptr = std::min_element(reporter.distance_vect.begin(), reporter.distance_vect.end());
+            auto distance_min = distance_min_ptr != reporter.distance_vect.end() ? *distance_min_ptr : 1;
+            std::cout << "Contact Distance Min: " << distance_min << "; ";
+
+            std::cout << std::endl;
+
+
+
+            csv_problem << rotMot->GetMotorRot()*CH_C_RAD_TO_DEG << reactForceTot << contact_force_max << distance_min << tim();
             csv_problem << std::endl;
         }
 
@@ -307,15 +399,28 @@ int main(int argc, char* argv[]) {
         //          << application.GetSceneManager()->getActiveCamera()->getTarget().Z << std::endl;
 
 
-        if (rotMot->GetMotorRot()*CH_C_RAD_TO_DEG > 360.0)
+        if (rotMot->GetMotorRot()*CH_C_RAD_TO_DEG > 360.0 || rotMot->GetMotorRot() != rotMot->GetMotorRot())
+        {
+            filesystem::create_directory(filesystem::path("video_capture"));
+            irr::video::IImage* image = application.GetVideoDriver()->createScreenShot();
+            std::ostringstream outframe;
+            outframe << "frame_" << (use_NSC ? "NSC" : "SMC") << std::setw(6) << std::setfill('0') << std::floor(timestep*1e6) << ".bmp";
+            if (image)
+                application.GetDevice()->getVideoDriver()->writeImageToFile(image, outframe.str().c_str());
+            image->drop();
+
             break;
+        }
+
 
         application.EndScene();
     }
 
     std::ostringstream outfile;
-    outfile << "iplog_" << (contact_model_NSC ? "NSC" : "SMC") << "dt" << std::defaultfloat << timestep << ".txt";
+    outfile << "iplog_" << (use_NSC ? "NSC" : "SMC") << std::setw(6) << std::setfill('0') << std::floor(timestep*1e6) << ".txt";
     csv_problem.write_to_file(outfile.str(), "rotangle, linkforce, time\n");
+
+
 
     std::cout << "Elapsed time: " << tim() << "s" << std::endl;
 

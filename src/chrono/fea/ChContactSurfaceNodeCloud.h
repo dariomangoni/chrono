@@ -318,15 +318,32 @@ class ChApi ChContactSurfaceNodeCloud : public ChContactSurface {
     //
 
     /// Add a specific node to this collision cloud
-    void AddNode(std::shared_ptr<ChNodeFEAxyz> mnode, const double point_radius = 0.001);
+    void AddNode(std::shared_ptr<ChNodeFEAxyz> mnode, const double point_radius = 0.001, int collision_family = 0);
     /// Add a specific node to this collision cloud
-    void AddNode(std::shared_ptr<ChNodeFEAxyzrot> mnode, const double point_radius = 0.001);
+    void AddNode(std::shared_ptr<ChNodeFEAxyzrot> mnode, const double point_radius = 0.001, int collision_family = 0);
 
     /// Add all nodes of the mesh to this collision cloud
-    void AddAllNodes(const double point_radius = 0.001);
+    void AddAllNodes(const double point_radius = 0.001, int collision_family = 0);
+
+    /// Add a specific node to this collision cloud
+    void AddNode_Sphere(std::shared_ptr<ChNodeFEAxyz> mnode, const double sphere_radius = 0.001, int collision_family = 0);
+    /// Add a specific node to this collision cloud
+    void AddNode_Sphere(std::shared_ptr<ChNodeFEAxyzrot> mnode, const double sphere_radius = 0.001, int collision_family = 0);
+
+    /// Add all nodes of the mesh to this collision cloud, with Sphere collision shapes
+    void AddAllNodes_Spheres(const double sphere_radius = 0.001, int collision_family = 0);
+
+        /// Add a specific node to this collision cloud
+    void AddNode_Cylinder(std::shared_ptr<ChNodeFEAxyz> mnode, const double cyl_radius = 0.001, const double cyl_length = 0.01, int collision_family = 0);
+    /// Add a specific node to this collision cloud
+    void AddNode_Cylinder(std::shared_ptr<ChNodeFEAxyzrot> mnode, const double cyl_radius = 0.001, const double cyl_length = 0.01, int collision_family = 0);
+
+    /// Add all nodes of the mesh to this collision cloud, with Sphere collision shapes
+    void AddAllNodes_Cylinders(const double cyl_radius = 0.001, const double cyl_length = 0.01, int collision_family = 0);
+
 
     /// Add nodes of the mesh, belonging to the node_set, to this collision cloud
-    void AddFacesFromNodeSet(std::vector<std::shared_ptr<ChNodeFEAbase> >& node_set, const double point_radius = 0.001);
+    void AddFacesFromNodeSet(std::vector<std::shared_ptr<ChNodeFEAbase> >& node_set, const double point_radius = 0.001, int collision_family = 0);
 
     /// Get the number of nodes.
     unsigned int GetNnodes() const { return (unsigned int)vnodes.size(); }
