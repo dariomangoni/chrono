@@ -50,6 +50,8 @@ using namespace irr;
 
 bool include_plasticity = false;
 
+double scaleLengthUnit = 1.0;
+
 void drawReferenceFrame(std::shared_ptr<ChSystem> my_system)
 {
     double refFrameScale = 0.1;
@@ -100,8 +102,19 @@ public:
         return true;  // to continue scanning contacts
     }
 
+    void Reset()
+    {
+        distance_vect.clear();
+        contact_force.clear();
+    }
+
     std::vector<double> distance_vect;
     std::vector<double> contact_force;
+
+    bool isContact() const
+    {
+        return distance_vect.size() > 0;
+    }
 };
 
 
@@ -156,31 +169,28 @@ int main(int argc, char* argv[]) {
 
     }
 
-    // Here set the inward-outward margins for collision shapes: should make sense in the scale of the model
-    collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.0001);
-    collision::ChCollisionModel::SetDefaultSuggestedMargin(0.00025);
-    collision::ChCollisionSystemBullet::SetContactBreakingThreshold(0.0001);
+
 
     // Create a section, i.e. thickness and material properties
     // for beams. This will be shared among some beams.
 
-    double wire_diameter = 0.002;
-    double youngModulus = 1e6;
+    double wire_diameter = 0.002*scaleLengthUnit;
+    double youngModulus = 1e6/scaleLengthUnit;
     auto melasticity = std::make_shared<ChElasticityCosseratSimple>();
     melasticity->SetYoungModulus(youngModulus);
     melasticity->SetGshearModulus(melasticity->GetYoungModulus() * 0.5);
 
     auto mdamping = std::make_shared<ChDampingCosseratLinear>();
-    mdamping->SetDampingCoefficientsRe((1e-3)*ChVector<>(1, 1, 1));
-    mdamping->SetDampingCoefficientsRk((1e-4)*ChVector<>(1, 1, 1));
+    mdamping->SetDampingCoefficientsRe((1e-3)/scaleLengthUnit*ChVector<>(1, 1, 1));
+    mdamping->SetDampingCoefficientsRk((1e-4)/scaleLengthUnit*ChVector<>(1, 1, 1));
 
     auto mplasticity = std::make_shared<ChPlasticityCosseratLumped>();
-    mplasticity->n_yeld_Mx = std::make_shared<ChFunction_Ramp>(1, 0.01);
-    mplasticity->n_yeld_My = std::make_shared<ChFunction_Ramp>(0.2, 0.001);
-    mplasticity->n_yeld_Mz = std::make_shared<ChFunction_Ramp>(0.2, 0.001);
+    mplasticity->n_yeld_Mx = std::make_shared<ChFunction_Ramp>(1*scaleLengthUnit, 0.01*scaleLengthUnit);
+    mplasticity->n_yeld_My = std::make_shared<ChFunction_Ramp>(0.2*scaleLengthUnit, 0.001*scaleLengthUnit);
+    mplasticity->n_yeld_Mz = std::make_shared<ChFunction_Ramp>(0.2*scaleLengthUnit, 0.001*scaleLengthUnit);
 
     auto msection = std::make_shared<ChBeamSectionCosserat>(melasticity, include_plasticity ? mplasticity : nullptr, mdamping);
-    msection->SetDensity(1000);
+    msection->SetDensity(1000.0/scaleLengthUnit/scaleLengthUnit/scaleLengthUnit);
     msection->SetAsCircularSection(wire_diameter);
 
     if (use_NSC)
@@ -188,8 +198,8 @@ int main(int argc, char* argv[]) {
         auto mysurfmaterial_NSC = std::dynamic_pointer_cast<ChMaterialSurfaceNSC>(mysurfmaterial);
         mysurfmaterial_NSC->SetRestitution(0.1f);
         mysurfmaterial_NSC->SetFriction(0.2f);
-        mysurfmaterial_NSC->SetCompliance(0.0000005f);
-        mysurfmaterial_NSC->SetComplianceT(0.0000005f);
+        mysurfmaterial_NSC->SetCompliance(0.0000005f*scaleLengthUnit);
+        mysurfmaterial_NSC->SetComplianceT(0.0000005f*scaleLengthUnit);
         mysurfmaterial_NSC->SetDampingF(0.2f);
     }
     else
@@ -206,18 +216,18 @@ int main(int argc, char* argv[]) {
     ///////////////
     // BEAM BUNDLE
     ///////////////
-    double wavelength = 0.03;
+    double wavelength = 0.03*scaleLengthUnit;
     double contact_radius = wire_diameter/2.0;
 
-    int spline_order = 6;
+    int spline_order = 3;
     const bool wave_beams = true;
     const int beam_num = 7;
     const int net_layers = 2;
-    const int elements_foreachbeam = 32;
-    const double grid_spacing = wavelength/2.0;
+    const int elements_foreachbeam = 64;
+    //const double grid_spacing = wavelength/2.0;
     const double beam_length0 = (beam_num+1)/2.0*wavelength;
     double start_position = -0.5*beam_length0;
-    double amplitude = 1.25*0.5*wire_diameter;
+    double amplitude = 1.5*0.5*wire_diameter;
     //const double layer_spacing = 0;
     double omega = CH_C_2PI/wavelength;
 
@@ -232,23 +242,23 @@ int main(int argc, char* argv[]) {
     my_system->Add(fixedBody);
 
 
-    double supportThickness = 0.01;
+    //double supportThickness = 0.01;
 
-    auto supportAlongZ = std::make_shared<ChBodyEasyBox>(supportThickness, supportThickness, beam_length0, false, true, mat_surface_type);
-    auto supportAlongX = std::make_shared<ChBodyEasyBox>(*supportAlongZ);
-    supportAlongZ->SetPos(ChVector<>(-0.5*supportThickness-0.5*beam_length0, -0.5*supportThickness, 0.0));
-    supportAlongZ->SetBodyFixed(true);
-    supportAlongZ->AddAsset(fixedAsset);
-    my_system->Add(supportAlongZ);
+    //auto supportAlongZ = std::make_shared<ChBodyEasyBox>(supportThickness, supportThickness, beam_length0, false, true, mat_surface_type);
+    //auto supportAlongX = std::make_shared<ChBodyEasyBox>(*supportAlongZ);
+    //supportAlongZ->SetPos(ChVector<>(-0.5*supportThickness-0.5*beam_length0, -0.5*supportThickness, 0.0));
+    //supportAlongZ->SetBodyFixed(true);
+    //supportAlongZ->AddAsset(fixedAsset);
+    //my_system->Add(supportAlongZ);
 
-    if (net_layers>1)
-    {
-        supportAlongX->SetPos(ChVector<>(0.0, -0.5*supportThickness, -0.5*supportThickness-0.5*beam_length0));
-        supportAlongX->SetRot(Q_from_AngAxis(CH_C_PI_2, VECT_Y));
-        supportAlongX->SetBodyFixed(true);
-        supportAlongX->AddAsset(fixedAsset);
-        my_system->Add(supportAlongX);
-    }
+    //if (net_layers>1)
+    //{
+    //    supportAlongX->SetPos(ChVector<>(0.0, -0.5*supportThickness, -0.5*supportThickness-0.5*beam_length0));
+    //    supportAlongX->SetRot(Q_from_AngAxis(CH_C_PI_2, VECT_Y));
+    //    supportAlongX->SetBodyFixed(true);
+    //    supportAlongX->AddAsset(fixedAsset);
+    //    my_system->Add(supportAlongX);
+    //}
 
     
     ChBuilderBeamIGA beam_build;
@@ -261,9 +271,16 @@ int main(int argc, char* argv[]) {
     //std::array<std::shared_ptr<ChMesh>, beam_num> my_mesh_beams;
 
 
-    my_system->Set_G_acc(-VECT_Y*9.81);
+    my_system->Set_G_acc(-VECT_Y*9.81*scaleLengthUnit);
 
-    double steplength;
+        // Here set the inward-outward margins for collision shapes: should make sense in the scale of the model
+    //collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.0005);
+    //collision::ChCollisionModel::SetDefaultSuggestedMargin(0.001);
+    //collision::ChCollisionSystemBullet::SetContactBreakingThreshold(0.0001);
+
+
+    my_system->SetMaxPenetrationRecoverySpeed(100000);
+
 
     // IGA beams between flanges
     for (auto layer_sel = 0; layer_sel<net_layers; ++layer_sel)
@@ -302,6 +319,11 @@ int main(int argc, char* argv[]) {
             auto firstNode = beam_build.GetLastBeamNodes().front();
             auto endNode = beam_build.GetLastBeamNodes().back();
 
+            double steplength;
+
+            double cyl_radius;
+            double cyl_length;
+
 
             //firstNode->SetFixed(true);
             //endNode->SetFixed(true);
@@ -313,7 +335,14 @@ int main(int argc, char* argv[]) {
                 invRotMat.MatrTranspose();
 
                 auto& nodes = beam_build.GetLastBeamNodes();
-                steplength = beam_length0/(nodes.size()-2);
+                steplength = beam_length0/(nodes.size()-1);
+                steplength *= 1.01;
+
+                cyl_radius = contact_radius;
+                cyl_length = steplength*0.5;
+                collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.2*std::min(cyl_radius, cyl_length));
+                collision::ChCollisionModel::SetDefaultSuggestedMargin(0.2*std::min(cyl_radius, cyl_length));
+                collision::ChCollisionSystemBullet::SetContactBreakingThreshold(1e-5);
 
                 //std::cout << "Beam " << beam_sel << "\n";
                 for (auto node_sel = 1; node_sel<nodes.size(); ++node_sel)
@@ -369,6 +398,7 @@ int main(int argc, char* argv[]) {
 
                     nodes[node_sel]->Frame() = ChFrame<>(newPos, newQuat);
 
+                    //nodes[node_sel]->SetX0(ChFrame<>(newPos, newQuat));
 
                     //GetLog() << "\n Angle: "<< nodes[node_sel]->Frame().GetRotAngle() << "\n Axis: "<< nodes[node_sel]->Frame().GetRotAxis();
                     //std::cout << "\n";
@@ -431,7 +461,8 @@ int main(int argc, char* argv[]) {
             auto mcontactcloud = std::make_shared<ChContactSurfaceNodeCloud>();
             my_mesh_beams->AddContactSurface(mcontactcloud);
             //mcontactcloud->AddAllNodes_Spheres(contact_radius, layer_sel);  // use larger point size to match beam section radius
-            mcontactcloud->AddAllNodes_Cylinders(contact_radius, steplength*0.5, layer_sel+1);  // use larger point size to match beam section radius
+            mcontactcloud->AddAllNodes_Spheres(contact_radius, layer_sel+1);  // use larger point size to match beam section radius
+            //mcontactcloud->AddAllNodes_Cylinders(cyl_radius, cyl_length, layer_sel+1);  // use larger point size to match beam section radius
             mcontactcloud->SetMaterialSurface(mysurfmaterial);
 
             my_mesh_beams->SetAutomaticGravity(true);
@@ -474,10 +505,10 @@ int main(int argc, char* argv[]) {
     //application.AddTypicalLogo();
     application.AddTypicalSky();
     //application.AddTypicalLights();
-    application.AddLightWithShadow(100 * irr::core::vector3df(0.50867, 0.306668, 0.264132), 100 * irr::core::vector3df(0.178601, 0.081, 0.275477), 150, 50, 150, 90);
+    application.AddLightWithShadow(100 * irr::core::vector3df(0.50867, 0.306668, 0.264132)*scaleLengthUnit, 100 * irr::core::vector3df(0.178601, 0.081, 0.275477)*scaleLengthUnit, 150, 50, 150, 90);
     //auto targ = core::vector3df(0.172294, 0.180592, 0.038451 | -0.0228889, 4.4704e-10, 0.177341);
     //application.AddTypicalCamera(irr::core::vector3df(0.172294, 0.180592, 0.038451), irr::core::vector3df(-0.0228889, 4.4704e-10, 0.177341));
-    application.AddTypicalCamera(irr::core::vector3df(0.0, 0.0, 0.25), irr::core::vector3df(0.0,0.0,0.0));
+    application.AddTypicalCamera(irr::core::vector3df(0.0, 0.0, 0.25)*scaleLengthUnit, irr::core::vector3df(0.0,0.0,0.0)*scaleLengthUnit);
     //application.AddTypicalLights(targ + core::vector3df(+0.1f, +0.2f, -0.2f), targ);
 
     application.AddShadowAll();
@@ -560,14 +591,21 @@ else
             //    //<< std::endl;
 
             my_system->GetContactContainer()->ReportAllContacts(&reporter);
-            auto contact_force_max_ptr = std::max_element(reporter.contact_force.begin(), reporter.contact_force.end());
-            auto contact_force_max = contact_force_max_ptr != reporter.contact_force.end() ? *contact_force_max_ptr : 0;
-            std::cout << "Contact Force Max: " << contact_force_max << "; ";
-            auto distance_min_ptr = std::min_element(reporter.distance_vect.begin(), reporter.distance_vect.end());
-            auto distance_min = distance_min_ptr != reporter.distance_vect.end() ? *distance_min_ptr : 1;
-            std::cout << "Contact Distance Min: " << distance_min << "; ";
+            if (reporter.isContact())
+            {
+                auto contact_force_max_ptr = std::max_element(reporter.contact_force.begin(), reporter.contact_force.end());
+                auto contact_force_max = contact_force_max_ptr != reporter.contact_force.end() ? *contact_force_max_ptr : 0;
+                std::cout << "Contact Force Max: " << contact_force_max << "; ";
+                auto distance_min_ptr = std::min_element(reporter.distance_vect.begin(), reporter.distance_vect.end());
+                auto distance_min = distance_min_ptr != reporter.distance_vect.end() ? *distance_min_ptr : 1;
+                std::cout << "Contact Distance Min: " << distance_min << "; ";
 
-            std::cout << std::endl;
+                std::cout << std::endl;
+            }
+
+
+
+            reporter.Reset();
 
 
 
