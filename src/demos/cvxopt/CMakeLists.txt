@@ -31,6 +31,7 @@ IF (ENABLE_MODULE_IRRLICHT)
         demo_CVXOPT_friction
         demo_CVXOPT_beamsIGA
         demo_CVXOPT_torqueIGA
+        demo_CVXOPT_netIGA
         demo_CVXOPT_ThreePointBending
     )
     
