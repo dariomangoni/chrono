@@ -51,23 +51,28 @@ class ChApiOsqp ChSolverOSQP : public ChIterativeSolverVI {
 
 
     int runTest(){
-	    // Load problem data
+        // Load problem data
         c_float P_x[3] = {4.0, 1.0, 2.0, };
+        c_float P_x_new[3] = {5.0, 1.5, 1.0, };
         c_int P_nnz = 3;
         c_int P_i[3] = {0, 0, 1, };
         c_int P_p[3] = {0, 1, 3, };
         c_float q[2] = {1.0, 1.0, };
+        c_float q_new[2] = {2.0, 3.0, };
         c_float A_x[4] = {1.0, 1.0, 1.0, 1.0, };
+        c_float A_x_new[4] = {1.2, 1.5, 1.1, 0.8, };
         c_int A_nnz = 4;
         c_int A_i[4] = {0, 1, 0, 2, };
         c_int A_p[3] = {0, 2, 4, };
         c_float l[3] = {1.0, 0.0, 0.0, };
+        c_float l_new[3] = {2.0, -1.0, -1.0, };
         c_float u[3] = {1.0, 0.7, 0.7, };
+        c_float u_new[3] = {2.0, 2.5, 2.5, };
         c_int n = 2;
         c_int m = 3;
 
         // Exitflag
-        int exitflag = 0;
+        c_int exitflag = 0;
 
         // Workspace structures
         OSQPWorkspace *work;
@@ -76,6 +81,7 @@ class ChApiOsqp ChSolverOSQP : public ChIterativeSolverVI {
 
         // Populate data
         if (data) {
+            //data = (OSQPData *)c_malloc(sizeof(OSQPData));
             data->n = n;
             data->m = m;
             data->P = csc_matrix(data->n, data->n, P_nnz, P_x, P_i, P_p);
@@ -85,16 +91,24 @@ class ChApiOsqp ChSolverOSQP : public ChIterativeSolverVI {
             data->u = u;
         }
 
-        // Define solver settings as default
-        if (settings) {
-            osqp_set_default_settings(settings);
-            settings->alpha = 1.0; // Change alpha parameter
-        }
+        // Define Solver settings as default
+        if (settings) osqp_set_default_settings(settings);
 
         // Setup workspace
         exitflag = osqp_setup(&work, data, settings);
 
-        // Solve Problem
+        // Solve problem
+        osqp_solve(work);
+
+        // Update problem
+        osqp_update_lin_cost(work, q_new);
+        osqp_update_bounds(work, l_new, u_new);
+
+        // NB: Update only upper triangular part of P
+        osqp_update_P(work, P_x_new, OSQP_NULL, 3);
+        osqp_update_A(work, A_x_new, OSQP_NULL, 4);
+
+        // Solve updated problem
         osqp_solve(work);
 
         // Cleanup

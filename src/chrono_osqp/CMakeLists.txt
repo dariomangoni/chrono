@@ -33,10 +33,12 @@ endif()
 set(ChronoEngine_OSQP_HEADERS
   ChApiOsqp.h
   ChSolverOSQP.h
+  ChOsqpEngine.h
 )
 
 set(ChronoEngine_OSQP_SOURCES
   ChSolverOSQP.cpp
+  ChOsqpEngine.cpp
 )
 
 source_group("" FILES ${ChronoEngine_OSQP_HEADERS} ${ChronoEngine_OSQP_SOURCES})
