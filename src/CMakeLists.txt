@@ -506,6 +506,7 @@ add_subdirectory(chrono_opengl)
 add_subdirectory(chrono_distributed)
 add_subdirectory(chrono_vehicle)
 add_subdirectory(chrono_fsi)
+add_subdirectory(chrono_osqp)
 
 # Add directories for model libraries
 add_subdirectory(chrono_models)
@@ -620,6 +621,12 @@ if(ENABLE_MODULE_FSI)
   set(CHRONO_FSI "#define CHRONO_FSI")
 else()
   set(CHRONO_FSI "#undef CHRONO_FSI")
+endif()
+
+if(ENABLE_MODULE_OSQP)
+  set(CHRONO_OSQP "#define CHRONO_OSQP")
+else()
+  set(CHRONO_OSQP "#undef CHRONO_OSQP")
 endif()
 
 if(ENABLE_OPENMP)
