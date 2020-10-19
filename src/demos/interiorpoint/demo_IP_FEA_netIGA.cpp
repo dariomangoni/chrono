@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
     // for beams. This will be shared among some beams.
 
     double wire_diameter = 0.002*scaleLengthUnit;
-    double youngModulus = 1e6/scaleLengthUnit;
+    double youngModulus = 1e8/scaleLengthUnit;
     auto melasticity = std::make_shared<ChElasticityCosseratSimple>();
     melasticity->SetYoungModulus(youngModulus);
     melasticity->SetGshearModulus(melasticity->GetYoungModulus() * 0.5);
@@ -232,7 +232,7 @@ int main(int argc, char* argv[]) {
     double omega = CH_C_2PI/wavelength;
 
     auto fixedAsset = std::make_shared<ChColorAsset>(1.0, 0.0, 0.0, 0.5); // color for fixed objects
-    //auto movingAsset = std::make_shared<ChColorAsset>(0.0, 0.0, 1.0); // color for moving objects
+    auto movingAsset = std::make_shared<ChColorAsset>(1.0, 1.0, 1.0); // color for moving objects
 
     //drawReferenceFrame(my_system);
 
@@ -271,16 +271,23 @@ int main(int argc, char* argv[]) {
     //std::array<std::shared_ptr<ChMesh>, beam_num> my_mesh_beams;
 
 
-    my_system->Set_G_acc(-VECT_Y*9.81*scaleLengthUnit);
+    //my_system->Set_G_acc(-VECT_Y*9.81*scaleLengthUnit);
+    my_system->Set_G_acc(0.0);
 
         // Here set the inward-outward margins for collision shapes: should make sense in the scale of the model
     //collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.0005);
     //collision::ChCollisionModel::SetDefaultSuggestedMargin(0.001);
     //collision::ChCollisionSystemBullet::SetContactBreakingThreshold(0.0001);
 
+    collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.2*contact_radius);
+    collision::ChCollisionModel::SetDefaultSuggestedMargin(0.2*contact_radius);
+    collision::ChCollisionSystemBullet::SetContactBreakingThreshold(1e-4);
+    my_system->SetMaxPenetrationRecoverySpeed(0.5*contact_radius);
 
-    my_system->SetMaxPenetrationRecoverySpeed(100000);
+    double loadFactor = 1.0;
+    double forceField = 0.1;
 
+    std::shared_ptr<ChNodeFEAxyzrot> refNode;
 
     // IGA beams between flanges
     for (auto layer_sel = 0; layer_sel<net_layers; ++layer_sel)
@@ -321,12 +328,13 @@ int main(int argc, char* argv[]) {
 
             double steplength;
 
-            double cyl_radius;
-            double cyl_length;
+
 
 
             //firstNode->SetFixed(true);
             //endNode->SetFixed(true);
+
+
 
             if (wave_beams)
             {
@@ -338,11 +346,6 @@ int main(int argc, char* argv[]) {
                 steplength = beam_length0/(nodes.size()-1);
                 steplength *= 1.01;
 
-                cyl_radius = contact_radius;
-                cyl_length = steplength*0.5;
-                collision::ChCollisionModel::SetDefaultSuggestedEnvelope(0.2*std::min(cyl_radius, cyl_length));
-                collision::ChCollisionModel::SetDefaultSuggestedMargin(0.2*std::min(cyl_radius, cyl_length));
-                collision::ChCollisionSystemBullet::SetContactBreakingThreshold(1e-5);
 
                 //std::cout << "Beam " << beam_sel << "\n";
                 for (auto node_sel = 1; node_sel<nodes.size(); ++node_sel)
@@ -398,12 +401,15 @@ int main(int argc, char* argv[]) {
 
                     nodes[node_sel]->Frame() = ChFrame<>(newPos, newQuat);
 
-                    //nodes[node_sel]->SetX0(ChFrame<>(newPos, newQuat));
+                    nodes[node_sel]->SetX0(ChFrame<>(newPos, newQuat));
+
+                    nodes[node_sel]->SetForce(-VECT_Y*steplength*forceField*loadFactor);
+
 
                     //GetLog() << "\n Angle: "<< nodes[node_sel]->Frame().GetRotAngle() << "\n Axis: "<< nodes[node_sel]->Frame().GetRotAxis();
                     //std::cout << "\n";
 
-
+                    refNode = nodes[node_sel];
                 }
                 //std::cout << "\n";
                 //std::cout << "START: " << nodes[0]->Frame().GetPos().x() << ", " << nodes[0]->Frame().GetPos().y() << ", " << nodes[0]->Frame().GetPos().z() << "\n";
@@ -465,7 +471,7 @@ int main(int argc, char* argv[]) {
             //mcontactcloud->AddAllNodes_Cylinders(cyl_radius, cyl_length, layer_sel+1);  // use larger point size to match beam section radius
             mcontactcloud->SetMaterialSurface(mysurfmaterial);
 
-            my_mesh_beams->SetAutomaticGravity(true);
+            my_mesh_beams->SetAutomaticGravity(false);
 
             // fix beam to start flange
             auto startConstr = std::make_shared<ChLinkMateGeneric>();
@@ -479,10 +485,11 @@ int main(int argc, char* argv[]) {
             // VISUALIZATION
             // beams
             auto mvisualizebeamA = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
-            mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_BEAM_MZ);
-            mvisualizebeamA->SetColorscaleMinMax(-0.4, 0.4);
+            mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+            mvisualizebeamA->SetColorscaleMinMax(-100, +100);
             mvisualizebeamA->SetSmoothFaces(true);
             mvisualizebeamA->SetWireframe(false);
+            mvisualizebeamA->SetDefaultMeshColor(ChColor(1.0,1.0,1.0));
             my_mesh_beams->AddAsset(mvisualizebeamA);
 
             auto mvisualizebeamC = std::make_shared<ChVisualizationFEAmesh>(*(my_mesh_beams.get()));
@@ -508,7 +515,7 @@ int main(int argc, char* argv[]) {
     application.AddLightWithShadow(100 * irr::core::vector3df(0.50867, 0.306668, 0.264132)*scaleLengthUnit, 100 * irr::core::vector3df(0.178601, 0.081, 0.275477)*scaleLengthUnit, 150, 50, 150, 90);
     //auto targ = core::vector3df(0.172294, 0.180592, 0.038451 | -0.0228889, 4.4704e-10, 0.177341);
     //application.AddTypicalCamera(irr::core::vector3df(0.172294, 0.180592, 0.038451), irr::core::vector3df(-0.0228889, 4.4704e-10, 0.177341));
-    application.AddTypicalCamera(irr::core::vector3df(0.0, 0.0, 0.25)*scaleLengthUnit, irr::core::vector3df(0.0,0.0,0.0)*scaleLengthUnit);
+    application.AddTypicalCamera(irr::core::vector3df(0.141734, 0.0488902, -0.00461925)*scaleLengthUnit, irr::core::vector3df(0.0,0.0,0.0)*scaleLengthUnit);
     //application.AddTypicalLights(targ + core::vector3df(+0.1f, +0.2f, -0.2f), targ);
 
     application.AddShadowAll();
@@ -554,8 +561,8 @@ else
     
     utils::CSV_writer csv_problem;
     //application.SetPlotLinkFrames(true);
-    application.SetContactsDrawMode(ChIrrTools::eCh_ContactsDrawMode::CONTACT_NORMALS);
-    application.SetPlotCollisionShapes(true);
+    //application.SetContactsDrawMode(ChIrrTools::eCh_ContactsDrawMode::CONTACT_NORMALS);
+    application.SetPlotCollisionShapes(false);
 
     ChTimer<> tim;
 
@@ -567,6 +574,11 @@ else
     application.SetVideoframeSaveInterval(1);
     application.SetVideoframeSave(false);
     application.SetPaused(true);
+
+    int step_count = 0;
+
+    double old_refNodePosY = 1000;
+
     while (application.GetDevice()->run()) {
         application.BeginScene();
 
@@ -579,6 +591,8 @@ else
 
         if (!application.GetPaused()) {
 
+            step_count++;
+
             //double reactForceTot = 0;
             //for (auto link_sel = 0; link_sel < test_force_constraint.size(); ++link_sel)
             //{
@@ -590,22 +604,23 @@ else
             //    << "Link Force: " << reactForceTot << "; ";
             //    //<< std::endl;
 
-            my_system->GetContactContainer()->ReportAllContacts(&reporter);
-            if (reporter.isContact())
-            {
-                auto contact_force_max_ptr = std::max_element(reporter.contact_force.begin(), reporter.contact_force.end());
-                auto contact_force_max = contact_force_max_ptr != reporter.contact_force.end() ? *contact_force_max_ptr : 0;
-                std::cout << "Contact Force Max: " << contact_force_max << "; ";
-                auto distance_min_ptr = std::min_element(reporter.distance_vect.begin(), reporter.distance_vect.end());
-                auto distance_min = distance_min_ptr != reporter.distance_vect.end() ? *distance_min_ptr : 1;
-                std::cout << "Contact Distance Min: " << distance_min << "; ";
+            std::cout << "Step: " << step_count << std::endl;
+            //my_system->GetContactContainer()->ReportAllContacts(&reporter);
+            //if (reporter.isContact())
+            //{
+            //    auto contact_force_max_ptr = std::max_element(reporter.contact_force.begin(), reporter.contact_force.end());
+            //    auto contact_force_max = contact_force_max_ptr != reporter.contact_force.end() ? *contact_force_max_ptr : 0;
+            //    std::cout << "Contact | Force Max: " << contact_force_max << " | ";
+            //    auto distance_min_ptr = std::min_element(reporter.distance_vect.begin(), reporter.distance_vect.end());
+            //    auto distance_min = distance_min_ptr != reporter.distance_vect.end() ? *distance_min_ptr : 1;
+            //    std::cout << "Distance Min: " << distance_min << "; ";
 
-                std::cout << std::endl;
-            }
+            //    std::cout << std::endl;
+            //}
 
+       
 
-
-            reporter.Reset();
+            //reporter.Reset();
 
 
 
@@ -620,6 +635,12 @@ else
         //          << application.GetSceneManager()->getActiveCamera()->getTarget().Y << ", "
         //          << application.GetSceneManager()->getActiveCamera()->getTarget().Z << std::endl;
 
+        std::cout << "Pos refNode y: " << refNode->GetPos().y() << "; delta: " << std::fabs(old_refNodePosY-(refNode->GetPos().y())) << std::endl;
+
+        //if (std::fabs(old_refNodePosY-refNode->GetPos().y())<1e-7)
+        //    application.SetPaused(true);
+
+        old_refNodePosY = refNode->GetPos().y();
 
         application.EndScene();
     }
