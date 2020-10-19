@@ -26,7 +26,7 @@ UNSET(SPECTRA_INCLUDE_DIR CACHE)
 find_path(SPECTRA_INCLUDE_DIR
           GenEigsSolver.h
           HINTS ${SPECTRA_ROOT}
-          PATH_SUFFIXES "include"
+          PATH_SUFFIXES "include/Spectra"
          )
 
 message(STATUS "   Spectra include dir:  ${SPECTRA_INCLUDE_DIR}")
@@ -39,36 +39,12 @@ else()
 	MARK_AS_ADVANCED(FORCE SPECTRA_INCLUDE_DIR)
 endif()
 
-# ------------------ Eigen
-
-message(STATUS "Find Eigen library")
-
-UNSET(EIGENHEADER_DIR CACHE)
-
-find_path(EIGENHEADER_DIR # path that contains Eigen library
-          Eigen
-          HINTS ${EIGEN_ROOT_CUSTOM}
-          PATH_SUFFIXES Eigen
-         )
-
-if(NOT EIGENHEADER_DIR)
-	SET(EIGEN_ROOT_CUSTOM "C:/workspace/libraries/eigen" CACHE PATH "Location of Eigen main folder (in which Eigen subfolder can be found)")
-	MARK_AS_ADVANCED(CLEAR EIGEN_ROOT_CUSTOM)
-	RETURN()
-else()
-    SET(EIGEN_INCLUDE_DIR "${EIGENHEADER_DIR}/../")
-	MARK_AS_ADVANCED(FORCE EIGEN_ROOT_CUSTOM)
-    MARK_AS_ADVANCED(FORCE EIGENHEADER_DIR)
-endif()
-
-message(STATUS "   Eigen include dir:  ${EIGEN_INCLUDE_DIR}")
-
 	
 # ------------------------------------------------------------------------------
 # Collect all additional include directories necessary for the ModelReduction module
 # ------------------------------------------------------------------------------
 
-SET(CH_MODELREDUCTION_INCLUDES ${SPECTRA_INCLUDE_DIR} ${EIGEN_INCLUDE_DIR})
+SET(CH_MODELREDUCTION_INCLUDES ${SPECTRA_INCLUDE_DIR})
 
 INCLUDE_DIRECTORIES(${CH_MODELREDUCTION_INCLUDES})
 SET(CH_MODELREDUCTION_INCLUDES "${CH_MODELREDUCTION_INCLUDES}" PARENT_SCOPE)

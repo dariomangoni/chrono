@@ -3,13 +3,11 @@
 
 // Chrono header files
 #include "ChApiModelReduction.h"
-#include "core/ChSparseMatrix.h"
-#include "core/ChMatrixDynamic.h"
+#include "chrono/core/ChMatrix.h"
 // Eigen header files
 #include "Eigen/SparseCore"
 // Spectra header files
 #include <MatOp/SparseSymMatProd.h>
-#include "core/ChCSR3Matrix.h"
 
 namespace chrono {
 using namespace Spectra;
@@ -17,8 +15,8 @@ using namespace Spectra;
 class ChApiModelReduction ChSymGEigsSolver
 {
 public:
-    ChSymGEigsSolver(const ChCSR3Matrix& matA_in,
-                     const ChCSR3Matrix& matB_in,
+    ChSymGEigsSolver(const ChSparseMatrix& matA_in,
+                     const ChSparseMatrix& matB_in,
                      ChMatrixDynamic<double>& eig_val_out,
                      ChMatrixDynamic<double>& eig_vect_out)
         : matA(matA_in),
@@ -32,19 +30,19 @@ public:
 
 protected:
 
-    static Eigen::Map<Eigen::SparseMatrix<double>> getEigenMapSparseMatrix(const ChCSR3Matrix& mat)
-    {
-        return Eigen::Map<Eigen::SparseMatrix<double>>(mat.GetNumRows(),
-                                                       mat.GetNumColumns(),
-                                                       mat.GetNNZ(),
-                                                       mat.GetCSR_LeadingIndexArray(),
-                                                       mat.GetCSR_TrailingIndexArray(),
-                                                       mat.GetCSR_ValueArray());
-    }
+    //static Eigen::Map<Eigen::SparseMatrix<double>> getEigenMapSparseMatrix(const ChSparseMatrix& mat)
+    //{
+    //    return Eigen::Map<Eigen::SparseMatrix<double>>(mat.rows(),
+    //                                                   mat.cols(),
+    //                                                   mat.GetNNZ(),
+    //                                                   mat.GetCSR_LeadingIndexArray(),
+    //                                                   mat.GetCSR_TrailingIndexArray(),
+    //                                                   mat.GetCSR_ValueArray());
+    //}
 
 
 private:
-    const ChCSR3Matrix &matA, &matB;
+    const ChSparseMatrix &matA, &matB;
     ChMatrixDynamic<double> &eig_val, &eig_vect;
 
 };

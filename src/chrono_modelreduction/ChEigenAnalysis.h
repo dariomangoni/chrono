@@ -12,14 +12,15 @@
 #ifndef CHEIGENANALYSIS_H
 #define CHEIGENANALYSIS_H
 
+#include <iostream>
 
-#include "core/ChVectorDynamic.h"
 #include "timestepper/ChState.h"
 #include "timestepper/ChIntegrable.h"
 #include "physics/ChSystem.h"
 #include "ChModelReduction.h"
 
 #ifdef CHRONO_IRRLICHT
+#include "chrono_irrlicht/ChIrrApp.h"
 #include <irrlicht.h>
 #endif
 
@@ -94,26 +95,26 @@ class ChEigenAnalysis {
 
     ChMatrixDynamic<double> eig_val;
     ChMatrixDynamic<double> eig_vect;
-    ChMatrixDynamic<double> eig_vect_col;
+    ChMatrixDynamic<double> eig_vect_col; //TODO: check if ChVectorDynamic can be used here
 
   public:
     /// Constructor
     ChEigenAnalysis(ChSystem& msystem) : m_system(&msystem){
         integrable = static_cast<ChIntegrableIIorder*>(m_system);
-        L.Reset(0);
-        X0.Reset(1, integrable);
-        X.Reset(1, integrable);
-        V.Reset(1, integrable);
-        A.Reset(1, integrable);
+        L.resize(0);
+        X0 = ChState(1, integrable);
+        X = ChState(1, integrable);
+        V = ChStateDelta(1, integrable);
+        A = ChStateDelta(1, integrable);
     }
 #ifdef CHRONO_IRRLICHT
     ChEigenAnalysis(irrlicht::ChIrrApp& application) : m_system(application.GetSystem()), irrlicht_app(&application) {
         integrable = static_cast<ChIntegrableIIorder*>(m_system);
-        L.Reset(0);
-        X0.Reset(1, integrable);
-        X.Reset(1, integrable);
-        V.Reset(1, integrable);
-        A.Reset(1, integrable);
+        L.resize(0);
+        X0 = ChState(1, integrable);
+        X = ChState(1, integrable);
+        V = ChStateDelta(1, integrable);
+        A = ChStateDelta(1, integrable);
         AttachToChIrrApp(application);
     }
 #endif
@@ -126,16 +127,17 @@ class ChEigenAnalysis {
     {
         m_system->Setup();
         m_system->Update();
-        ChCSR3Matrix matK, matM;
+        ChSparseMatrix matK, matM;
         m_system->GetStiffnessMatrix(&matK);
         m_system->GetMassMatrix(&matM);
 
-        assert(total_modes < matK.GetNumRows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
-        if (total_modes == -1)
-            total_modes = matK.GetNumRows() - 1;
+        assert(total_modes < matK.rows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
 
-        matK.Compress();
-        matM.Compress();
+        if (total_modes == -1)
+            total_modes = matK.rows() - 1;
+
+        matK.makeCompressed();
+        matM.makeCompressed();
 
         //matK.VerifyMatrix();
         //matM.VerifyMatrix();
@@ -145,14 +147,14 @@ class ChEigenAnalysis {
 
         ChSymGEigsSolver eig_solver(matK, matM, eig_val, eig_vect);
         eig_solver.compute(total_modes);
-        eig_vect_col.Reset(matK.GetNumRows(), 1);
+        eig_vect_col.resize(matK.rows(), 1);
 
         // setup main vectors
         integrable->StateSetup(X0, V, A);
         integrable->StateSetup(X, V, A);
-        L.Reset(integrable->GetNconstr());
+        L.resize(integrable->GetNconstr());
 
-        L.FillElem(0);// set Lagrangians to zero
+        L.fill(0);// set Lagrangians to zero
         integrable->StateScatterReactions(L);  // -> system auxiliary data 
 
         // store the initial configuration of the system
@@ -173,24 +175,24 @@ class ChEigenAnalysis {
         double dt = step_percentage*systemdT;
         current_time += dt;
 
-        assert(current_selected_mode <= eig_val.GetRows());
+        assert(current_selected_mode <= eig_val.rows());
             
-        // evaluate the state for the selected_mode a thte current timestep
-        eig_vect_col.PasteClippedMatrix(&eig_vect, 0, current_selected_mode -1, eig_vect.GetRows(), 1, 0, 0);
+        // evaluate the state for the selected_mode at the current timestep
+        eig_vect_col = eig_vect.col(current_selected_mode-1); // TODO: chech if Eigen::Map can be used
         double pulse = sqrt(eig_val(current_selected_mode -1));
         double amplitude_corrector = magnitude_amplification*sin(time_amplification*pulse*current_time);
 
-        eig_vect_col.MatrScale(amplitude_corrector);
+        eig_vect_col *= amplitude_corrector;
 
         // update the state
         ChStateDelta Dx;
-        Dx.Reset(integrable->GetNcoords_v(), integrable);
-        Dx.CopyFromMatrix(eig_vect_col);
+        Dx = ChStateDelta(integrable->GetNcoords_v(), integrable);
+        Dx = eig_vect_col;
         auto prova = X0.GetIntegrable();
         X = X0 + Dx;
 
-        V.FillElem(0); // set V speed to zero
-        integrable->StateScatter(X, V, dt);  // state -> system
+        V.fill(0); // set V speed to zero
+        integrable->StateScatter(X, V, dt, true);  // state -> system
 
     }
 
@@ -205,7 +207,7 @@ class ChEigenAnalysis {
     void SetMagnitudeAmplification(double magnitude_ampl) { magnitude_amplification = magnitude_ampl; }
     double GetMagnitudeAmplification() const { return magnitude_amplification; }
 
-    int GetComputedModes() const { return eig_val.GetRows(); }
+    int GetComputedModes() const { return eig_val.rows(); }
 
 
 
