@@ -12,14 +12,15 @@
 #ifndef CHEIGENANALYSIS_H
 #define CHEIGENANALYSIS_H
 
+#include <iostream>
 
-#include "core/ChVectorDynamic.h"
 #include "timestepper/ChState.h"
 #include "timestepper/ChIntegrable.h"
 #include "physics/ChSystem.h"
 #include "ChModelReduction.h"
 
 #ifdef CHRONO_IRRLICHT
+#include "chrono_irrlicht/ChIrrApp.h"
 #include <irrlicht.h>
 #endif
 
@@ -126,16 +127,16 @@ class ChEigenAnalysis {
     {
         m_system->Setup();
         m_system->Update();
-        ChCSR3Matrix matK, matM;
+        ChSparseMatrix matK, matM;
         m_system->GetStiffnessMatrix(&matK);
         m_system->GetMassMatrix(&matM);
 
         assert(total_modes < matK.GetNumRows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
         if (total_modes == -1)
-            total_modes = matK.GetNumRows() - 1;
+            total_modes = matK.rows() - 1;
 
-        matK.Compress();
-        matM.Compress();
+        matK.makeCompressed();
+        matM.makeCompressed();
 
         //matK.VerifyMatrix();
         //matM.VerifyMatrix();
@@ -175,8 +176,8 @@ class ChEigenAnalysis {
 
         assert(current_selected_mode <= eig_val.GetRows());
             
-        // evaluate the state for the selected_mode a thte current timestep
-        eig_vect_col.PasteClippedMatrix(&eig_vect, 0, current_selected_mode -1, eig_vect.GetRows(), 1, 0, 0);
+        // evaluate the state for the selected_mode a the current timestep
+        eig_vect_col.PasteClippedMatrix(&eig_vect, 0, current_selected_mode-1, eig_vect.GetRows(), 1, 0, 0);
         double pulse = sqrt(eig_val(current_selected_mode -1));
         double amplitude_corrector = magnitude_amplification*sin(time_amplification*pulse*current_time);
 

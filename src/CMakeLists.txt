@@ -522,6 +522,7 @@ add_subdirectory(chrono_distributed)
 add_subdirectory(chrono_vehicle)
 add_subdirectory(chrono_fsi)
 add_subdirectory(chrono_sensor)
+add_subdirectory(chrono_modelreduction)
 
 # Add directories for model libraries
 add_subdirectory(chrono_models)
@@ -642,6 +643,12 @@ if(ENABLE_MODULE_SENSOR)
   set(CHRONO_SENSOR "#define CHRONO_SENSOR")
 else()
   set(CHRONO_SENSOR "#undef CHRONO_SENSOR")
+endif()
+
+if(ENABLE_MODULE_MODELREDUCTION)
+  set(CHRONO_MODELREDUCTION "#define CHRONO_MODELREDUCTION")
+else()
+  set(CHRONO_MODELREDUCTION "#undef CHRONO_MODELREDUCTION")
 endif()
 
 if(ENABLE_OPENMP)
