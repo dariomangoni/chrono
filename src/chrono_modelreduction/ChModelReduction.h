@@ -7,7 +7,7 @@
 // Eigen header files
 #include "Eigen/SparseCore"
 // Spectra header files
-#include <MatOp/SparseSymMatProd.h>
+#include <Spectra/MatOp/SparseSymMatProd.h>
 
 namespace chrono {
 using namespace Spectra;

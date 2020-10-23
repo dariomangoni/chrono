@@ -24,12 +24,12 @@ message(STATUS "Find Spectra library")
 UNSET(SPECTRA_INCLUDE_DIR CACHE)
 
 find_path(SPECTRA_INCLUDE_DIR
-          GenEigsSolver.h
+          "Spectra/GenEigsSolver.h"
           HINTS ${SPECTRA_ROOT}
-          PATH_SUFFIXES "include/Spectra"
+          PATH_SUFFIXES "include"
          )
 
-message(STATUS "   Spectra include dir:  ${SPECTRA_INCLUDE_DIR}")
+message(STATUS "   SPECTRA_INCLUDE_DIR dir:  ${SPECTRA_INCLUDE_DIR}")
 
 if(NOT SPECTRA_INCLUDE_DIR)
 	set(SPECTRA_ROOT "C:/workspace/libraries/spectra" CACHE PATH "Location of Spectra library")
