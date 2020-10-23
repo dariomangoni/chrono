@@ -1,7 +1,7 @@
 
 #include "ChModelReduction.h"
-#include <SymGEigsSolver.h>
-#include <MatOp/SparseCholesky.h>
+#include <Spectra/SymGEigsSolver.h>
+#include <Spectra/MatOp/SparseCholesky.h>
 
 namespace chrono
 {
