@@ -7,18 +7,19 @@ namespace chrono
 {
     int chrono::ChSymGEigsSolver::compute(int requested_eigval) const
     {
-        int dim = matA.GetNumRows();
+        int dim = matA.rows();
         assert(dim > 0 && "Matrix dimensions are not valid");
         int convergence_speed = static_cast<int>(std::max(std::min((dim + 4*requested_eigval) / 2, dim), requested_eigval) );
 
         // Construct matrix operation object using the wrapper classes
-        assert(matA.IsCompressed() && "ChSymGEigsSolver: matA is not in a standard CSR format");
-        assert(matB.IsCompressed() && "ChSymGEigsSolver: matB is not in a standard CSR format");
-        SparseSymMatProd<double> op(getEigenMapSparseMatrix(matA));
-        SparseCholesky<double> Bop(getEigenMapSparseMatrix(matB));
+        assert(matA.isCompressed() && "ChSymGEigsSolver: matA is not in a standard CSR format");
+        assert(matB.isCompressed() && "ChSymGEigsSolver: matB is not in a standard CSR format");
+        //SparseSymMatProd<double> op(getEigenMapSparseMatrix(matA));
+        //SparseCholesky<double> Bop(getEigenMapSparseMatrix(matB));
 
-        matA.VerifyMatrix();
-        matB.VerifyMatrix();
+        SparseSymMatProd<double> op(matA);
+        SparseCholesky<double> Bop(matB);
+
 
         // Construct generalized eigen solver object, requesting the largest three generalized eigenvalues
         const SELECT_EIGENVALUE SelectionRule = SMALLEST_MAGN;
@@ -29,10 +30,10 @@ namespace chrono
         int nconv = geigs.compute();
 
         // Retrieve results
-        eig_val.Reset(requested_eigval, 1);
-        eig_vect.Reset(dim, requested_eigval);
-        Eigen::Map<Eigen::VectorXd> eig_val_map(eig_val.GetAddress(), requested_eigval, 1);
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> eig_vect_map(eig_vect.GetAddress(), dim, requested_eigval);
+        eig_val.resize(requested_eigval, 1);
+        eig_vect.resize(dim, requested_eigval);
+        Eigen::Map<Eigen::VectorXd> eig_val_map(eig_val.data(), requested_eigval, 1); //TODO: use default Chrono Vectors
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> eig_vect_map(eig_vect.data(), dim, requested_eigval);
 
         if (geigs.info() == SUCCESSFUL)
         {

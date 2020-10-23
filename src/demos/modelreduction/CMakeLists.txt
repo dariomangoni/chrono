@@ -16,11 +16,12 @@ endif()
 # Set include paths, compiler & linker flags, and libraries
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+INCLUDE_DIRECTORIES(${CH_MODELREDUCTION_INCLUDES})
 
 include_directories(${CH_INCLUDES})
 set(COMPILER_FLAGS "${CH_CXX_FLAGS}")
 set(LINKER_FLAGS "${CH_LINKERFLAG_EXE}")
-list(APPEND LIBS "ChronoEngine")
+list(APPEND LIBS "ChronoEngine" "ChronoEngine_modelreduction")
 
 if(ENABLE_MODULE_IRRLICHT)
   include_directories(${CH_IRRLICHTINC})

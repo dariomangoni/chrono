@@ -44,7 +44,7 @@ endif()
 # Collect all additional include directories necessary for the ModelReduction module
 # ------------------------------------------------------------------------------
 
-SET(CH_MODELREDUCTION_INCLUDES ${SPECTRA_INCLUDE_DIR} ${EIGEN_INCLUDE_DIR})
+SET(CH_MODELREDUCTION_INCLUDES ${SPECTRA_INCLUDE_DIR})
 
 INCLUDE_DIRECTORIES(${CH_MODELREDUCTION_INCLUDES})
 SET(CH_MODELREDUCTION_INCLUDES "${CH_MODELREDUCTION_INCLUDES}" PARENT_SCOPE)

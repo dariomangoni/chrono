@@ -18,22 +18,21 @@
 
 // Include some headers used by this tutorial...
 
-#include "chrono/physics/ChSystem.h"
+#include "chrono/physics/ChSystemSMC.h"
 #include "chrono/physics/ChLinkMate.h"
 #include "chrono/physics/ChBodyEasy.h"
 #include "chrono/timestepper/ChTimestepper.h"
 #include "chrono/solver/ChSolverPMINRES.h"
-#include "chrono/solver/ChSolverMINRES.h"
+#include "chrono/solver/ChIterativeSolverLS.h"
 
-#include "chrono_fea/ChElementBeamEuler.h"
-#include "chrono_fea/ChBuilderBeam.h"
-#include "chrono_fea/ChMesh.h"
-#include "chrono_fea/ChVisualizationFEAmesh.h"
-#include "chrono_fea/ChLinkPointFrame.h"
-#include "chrono_fea/ChLinkDirFrame.h"
+#include "chrono/fea/ChElementBeamEuler.h"
+#include "chrono/fea/ChBuilderBeam.h"
+#include "chrono/fea/ChMesh.h"
+#include "chrono/fea/ChVisualizationFEAmesh.h"
+#include "chrono/fea/ChLinkPointFrame.h"
+#include "chrono/fea/ChLinkDirFrame.h"
 
 #include "chrono_irrlicht/ChIrrApp.h"
-#include "core/ChCSR3Matrix.h"
 #include "chrono_modelreduction/ChEigenAnalysis.h"
 #include <typeinfo>
 
@@ -54,7 +53,7 @@ using namespace irr;
 int main(int argc, char* argv[])
 {
     // Create a Chrono::Engine physical system
-    ChSystem my_system;
+    ChSystemSMC my_system;
 
 
     // Create the Irrlicht visualization (open the Irrlicht device, 
@@ -96,7 +95,7 @@ int main(int argc, char* argv[])
 
     double beam_L = 0.2;
 
-    ChBuilderBeam builder;
+    ChBuilderBeamEuler builder;
 
     builder.BuildBeam(my_mesh,		// the mesh where to put the created nodes and elements 
                       msection,		// the ChBeamSectionAdvanced to use for the ChElementBeamEuler elements
@@ -168,21 +167,17 @@ int main(int argc, char* argv[])
 
     application.AssetUpdateAll();
 
-    // Mark completion of system construction
-    my_system.SetupInitial();
+    //// Mark completion of system construction
+    //my_system.SetupInitial();
 
 
-    // 
-    // THE SOFT-REAL-TIME CYCLE
-    //
-    my_system.SetSolverType(ChSystem::SOLVER_MINRES);
-    my_system.SetSolverWarmStarting(true);  // this helps a lot to speedup convergence in this class of problems
-    my_system.SetMaxItersSolverSpeed(460);
-    my_system.SetMaxItersSolverStab(460);
-    my_system.SetTolForce(1e-13);
-    auto msolver = static_cast<ChSolverMINRES*>(my_system.GetSolverSpeed());
-    msolver->SetVerbose(false);
-    msolver->SetDiagonalPreconditioning(true);
+
+    auto solver = chrono_types::make_shared<ChSolverMINRES>();
+    my_system.SetSolver(solver);
+    solver->SetMaxIterations(600);
+    solver->SetTolerance(1e-13);
+    solver->EnableDiagonalPreconditioner(true);
+    solver->SetVerbose(true);
 
     application.SetTimestep(0.01);
 
