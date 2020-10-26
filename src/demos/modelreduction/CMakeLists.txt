@@ -1,6 +1,7 @@
 #--------------------------------------------------------------
 # List all MODELREDUCTION demos that do have no other dependencies
 set(MODELREDUCTION_DEMOS
+    demo_MR_SymGEigsSolver
 )
 
 # Add demos that require Irrlicht
