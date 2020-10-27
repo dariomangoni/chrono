@@ -24,7 +24,7 @@ message(STATUS "Find Spectra library")
 UNSET(SPECTRA_INCLUDE_DIR CACHE)
 
 find_path(SPECTRA_INCLUDE_DIR
-          GenEigsSolver.h
+          "Spectra/GenEigsSolver.h"
           HINTS ${SPECTRA_ROOT}
           PATH_SUFFIXES "include"
          )

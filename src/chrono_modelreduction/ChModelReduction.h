@@ -6,9 +6,9 @@
 #include "core/ChSparseMatrix.h"
 #include "core/ChMatrixDynamic.h"
 // Eigen header files
-#include "Eigen/SparseCore"
+#include <Eigen/SparseCore>
 // Spectra header files
-#include <MatOp/SparseSymMatProd.h>
+#include <Spectra/MatOp/SparseSymMatProd.h>
 #include "core/ChCSR3Matrix.h"
 
 namespace chrono {
