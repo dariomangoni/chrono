@@ -30,15 +30,16 @@ public:
 
 protected:
 
-    //static Eigen::Map<Eigen::SparseMatrix<double>> getEigenMapSparseMatrix(const ChSparseMatrix& mat)
-    //{
-    //    return Eigen::Map<Eigen::SparseMatrix<double>>(mat.rows(),
-    //                                                   mat.cols(),
-    //                                                   mat.GetNNZ(),
-    //                                                   mat.GetCSR_LeadingIndexArray(),
-    //                                                   mat.GetCSR_TrailingIndexArray(),
-    //                                                   mat.GetCSR_ValueArray());
-    //}
+    static Eigen::Map<Eigen::SparseMatrix<double>> getEigenMapSparseMatrix(const ChSparseMatrix& mat)
+    {
+
+        return Eigen::Map<Eigen::SparseMatrix<double>>(const_cast<ChSparseMatrix&>(mat).rows(),
+                                                       const_cast<ChSparseMatrix&>(mat).cols(),
+                                                       const_cast<ChSparseMatrix&>(mat).nonZeros(),
+                                                       const_cast<ChSparseMatrix&>(mat).outerIndexPtr(),
+                                                       const_cast<ChSparseMatrix&>(mat).innerIndexPtr(),
+                                                       const_cast<ChSparseMatrix&>(mat).valuePtr());
+    }
 
 
 private:

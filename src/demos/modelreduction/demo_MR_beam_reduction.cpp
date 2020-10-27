@@ -76,15 +76,17 @@ int main(int argc, char* argv[])
     // Create a section, i.e. thickness and material properties
     // for beams. This will be shared among some beams.
 
-    auto msection = std::make_shared<ChBeamSectionAdvanced>();
+    //auto msection = std::make_shared<ChBeamSectionAdvanced>();
+    auto msection = std::make_shared<ChBeamSectionEulerAdvancedGeneric>();
 
     double beam_wy = 0.012;
     double beam_wz = 0.025;
-    msection->SetAsRectangularSection(beam_wy, beam_wz);
-    msection->SetYoungModulus(0.01e9);
-    msection->SetGshearModulus(0.01e9 * 0.3);
+    //msection->SetAsRectangularSection(beam_wy, beam_wz);
+    //msection->SetYoungModulus(0.01e9);
+    //msection->SetGshearModulus(0.01e9 * 0.3);
     msection->SetBeamRaleyghDamping(0.000);
-    msection->SetDensity(7500);
+    //msection->SetDensity(7500);
+    msection->SetArtificialJyyJzzFactor(1.0/500.0);
     //msection->SetCentroid(0,0.02); 
     //msection->SetShearCenter(0,0.1); 
     //msection->SetSectionRotation(45*CH_C_RAD_TO_DEG);
@@ -108,6 +110,7 @@ int main(int argc, char* argv[])
                                                     // For example say you want to fix the A end and apply a force to the B end:
     builder.GetLastBeamNodes().back()->SetFixed(true);
     builder.GetLastBeamNodes().front()->SetForce(ChVector<>(0, -1, 0));
+    
 
     //
     // Final touches..
@@ -179,38 +182,51 @@ int main(int argc, char* argv[])
     solver->EnableDiagonalPreconditioner(true);
     solver->SetVerbose(true);
 
-    application.SetTimestep(0.01);
-
-
-
-    GetLog() << "\n\n===========EIGENPROBLEM======== \n";
+    application.SetTimestep(0.0001);
 
     application.DoStep();
 
-    ChEigenAnalysis eig_analysis(application);
-    eig_analysis.EigenAnalysis();
+    ChSparseMatrix matM;
+    application.GetSystem()->GetMassMatrix(&matM);
+    matM.makeCompressed();
+    std::cout << matM << std::endl;
 
-    std::function<void()> simadvance_fun = std::bind(&ChEigenAnalysis::UpdateEigenMode, &eig_analysis, 1);
-    //std::function<void()> render_fun = std::bind(&ChIrrApp::DrawAll, application);
-    std::function<void(double)> render_fun = [&application](double dummy) { application.DrawAll(); };
-    std::function<void()> pre_sim_fun = std::bind(&ChIrrApp::BeginScene, &application, true, true, irr::video::SColor(255, 0, 0, 0));
+    bool enable_eigenanalysis = true;
 
-    //std::function<void(double)> render_fun = [&application, &eig_analysis](double ratio) { eig_analysis.UpdateEigenMode(ratio); application.DrawAll(); };
-    ChRealtimeDualStepTimer drealtime = { application, simadvance_fun, render_fun };
-    drealtime.SetPreAdvanceSimulationFunction(pre_sim_fun);
+    if (enable_eigenanalysis) {
+        GetLog() << "\n\n===========EIGENPROBLEM======== \n";
 
 
-    while (application.GetDevice()->run())
-    {
+        ChEigenAnalysis eig_analysis(application);
+        eig_analysis.EigenAnalysis();
 
-        //application.DrawAll();
+        std::function<void()> simadvance_fun = std::bind(&ChEigenAnalysis::UpdateEigenMode, &eig_analysis, 1);
+        // std::function<void()> render_fun = std::bind(&ChIrrApp::DrawAll, application);
+        std::function<void(double)> render_fun = [&application](double dummy) { application.DrawAll(); };
+        std::function<void()> pre_sim_fun = std::bind(&ChIrrApp::BeginScene, &application, true, true, irr::video::SColor(255, 0, 0, 0));
 
-        //eig_analysis.UpdateEigenMode();
-        drealtime.DoRealtimeStep();
+        // std::function<void(double)> render_fun = [&application, &eig_analysis](double ratio) {
+        // eig_analysis.UpdateEigenMode(ratio); application.DrawAll(); };
+        ChRealtimeDualStepTimer drealtime = {application, simadvance_fun, render_fun};
+        drealtime.SetPreAdvanceSimulationFunction(pre_sim_fun);
 
-        application.EndScene();
+        while (application.GetDevice()->run()) {
+            // application.DrawAll();
+
+            // eig_analysis.UpdateEigenMode();
+            drealtime.DoRealtimeStep();
+
+            application.EndScene();
+        }
     }
-
+    else {
+        while (application.GetDevice()->run()) {
+            application.BeginScene();
+            application.DrawAll();
+            application.DoStep();
+            application.EndScene();
+        }
+    }
 
 }
 

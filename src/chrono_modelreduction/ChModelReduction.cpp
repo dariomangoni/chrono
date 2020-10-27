@@ -14,11 +14,11 @@ namespace chrono
         // Construct matrix operation object using the wrapper classes
         assert(matA.isCompressed() && "ChSymGEigsSolver: matA is not in a standard CSR format");
         assert(matB.isCompressed() && "ChSymGEigsSolver: matB is not in a standard CSR format");
-        //SparseSymMatProd<double> op(getEigenMapSparseMatrix(matA));
-        //SparseCholesky<double> Bop(getEigenMapSparseMatrix(matB));
+        SparseSymMatProd<double> op(getEigenMapSparseMatrix(matA));
+        SparseCholesky<double> Bop(getEigenMapSparseMatrix(matB));
 
-        SparseSymMatProd<double> op(matA);
-        SparseCholesky<double> Bop(matB);
+        //SparseSymMatProd<double> op(matA);
+        //SparseCholesky<double> Bop(matB);
 
 
         // Construct generalized eigen solver object, requesting the largest three generalized eigenvalues
