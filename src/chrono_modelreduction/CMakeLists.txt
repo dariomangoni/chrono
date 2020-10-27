@@ -71,16 +71,12 @@ SOURCE_GROUP("" FILES ${ChronoEngine_ModelReduction_HEADERS} ${ChronoEngine_Mode
 # Add the ChronoEngine_modelreduction library
 # ------------------------------------------------------------------------------
 
-ADD_LIBRARY(ChronoEngine_modelreduction SHARED
-            ${ChronoEngine_ModelReduction_SOURCES}
-            ${ChronoEngine_ModelReduction_HEADERS})
-
-SET_TARGET_PROPERTIES(ChronoEngine_modelreduction PROPERTIES
-                      COMPILE_DEFINITIONS "CH_API_COMPILE_MODELREDUCTION")
-
-IF (ENABLE_MODULE_IRRLICHT)
-	SET(ADDITIONAL_LIBS ChronoEngine_irrlicht)
-ENDIF()
+if(ENABLE_MODULE_PARDISO_MKL)
+  include_directories(${CH_MKL_INCLUDES})
+  set(COMPILER_FLAGS "${COMPILER_FLAGS} ${CH_MKL_CXX_FLAGS}")
+  set(LINKER_FLAGS "${LINKER_FLAGS} ${CH_MKL_LINK_FLAGS}")
+  list(APPEND ADDITIONAL_LIBS "ChronoEngine_pardisomkl")
+endif()
 
 if(ENABLE_MODULE_IRRLICHT)
     include_directories(${CH_IRRLICHTINC})
@@ -88,6 +84,21 @@ if(ENABLE_MODULE_IRRLICHT)
     list(APPEND ADDITIONAL_LIBS "ChronoEngine_irrlicht")
     list(APPEND ADDITIONAL_LIBS "${CH_IRRLICHTLIB}")
 endif()
+
+if(ENABLE_MODULE_MUMPS)
+  include_directories(${CH_MUMPS_INCLUDES})
+  list(APPEND ADDITIONAL_LIBS "ChronoEngine_mumps")
+endif()
+
+ADD_LIBRARY(ChronoEngine_modelreduction SHARED
+            ${ChronoEngine_ModelReduction_SOURCES}
+            ${ChronoEngine_ModelReduction_HEADERS})
+
+SET_TARGET_PROPERTIES(ChronoEngine_modelreduction PROPERTIES
+                      COMPILE_DEFINITIONS "CH_API_COMPILE_MODELREDUCTION"
+					  COMPILE_FLAGS "${COMPILER_FLAGS}"
+					  LINK_FLAGS "${LINKER_FLAGS}")
+
 
 TARGET_LINK_LIBRARIES(ChronoEngine_modelreduction
                       ChronoEngine

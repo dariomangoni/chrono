@@ -13,11 +13,14 @@
 #define CHEIGENANALYSIS_H
 
 #include <iostream>
+#include <algorithm>
 
 #include "timestepper/ChState.h"
 #include "timestepper/ChIntegrable.h"
 #include "physics/ChSystem.h"
 #include "ChModelReduction.h"
+
+#include <unsupported/Eigen/SparseExtra>
 
 #ifdef CHRONO_IRRLICHT
 #include "chrono_irrlicht/ChIrrApp.h"
@@ -46,7 +49,7 @@ protected:
     template<typename... T>
     wchar_t* fwd_swprintf(wchar_t* ws, size_t len, const wchar_t* format, T... vararg)
     {
-        assert(swprintf(ws, len, format, vararg...) > 0 );
+        swprintf(ws, len, format, vararg...);
         return ws;
     }
 
@@ -76,6 +79,12 @@ class ChEigenAnalysis {
     ChIntegrableIIorder* integrable;
     ChSystem* m_system;
 
+    ChTimer<> m_timer_assembly;  ///< timer for matrix assembly
+    ChTimer<> m_timer_eigensolve;  ///< timer for eigen-solve
+
+    bool verbose = false;
+
+
 #ifdef CHRONO_IRRLICHT
     ModalAnalysisGUIReceiver gui_receiver;
     irrlicht::ChIrrApp* irrlicht_app = nullptr;
@@ -93,6 +102,9 @@ class ChEigenAnalysis {
     double magnitude_amplification = 1;
     double time_amplification = 1;
 
+    // Eigen analysis matrices
+    ChSparseMatrix matKaug;
+    ChSparseMatrix matMaug;
     ChMatrixDynamic<double> eig_val;
     ChMatrixDynamic<double> eig_vect;
     ChMatrixDynamic<double> eig_vect_col; //TODO: check if ChVectorDynamic can be used here
@@ -123,31 +135,62 @@ class ChEigenAnalysis {
     virtual ~ChEigenAnalysis() {}
 
     /// Performs the static analysis
-    virtual void EigenAnalysis(int total_modes = -1)
-    {
+    virtual void EigenAnalysis(int requested_eigval = -1, double sigma = 10e-2, bool restart_sigma = false, bool Cq_preconditioning = false) {
         m_system->Setup();
         m_system->Update();
-        ChSparseMatrix matK, matM;
-        m_system->GetStiffnessMatrix(&matK);
-        m_system->GetMassMatrix(&matM);
 
-        assert(total_modes < matK.rows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
+        m_timer_assembly.start();
 
-        if (total_modes == -1)
-            total_modes = matK.rows() - 1;
+        // loading Kaug matrix
+        m_system->KRMmatricesLoad(1.0, 0, 0);
+        m_system->GetSystemDescriptor()->SetMassFactor(0.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, true);
 
-        matK.makeCompressed();
-        matM.makeCompressed();
+        // scaling Cq
+        if (Cq_preconditioning) {
+             int constr = m_system->GetSystemDescriptor()->CountActiveConstraints();
+             double diagKmean = matKaug.diagonal().mean();  // TODO: pick only the top left corner
+             std::cout << "Cq scaling: " << diagKmean << std::endl;
+             matKaug.bottomRows(constr) *= diagKmean;
+             matKaug.rightCols(constr) *= diagKmean;
+        }
 
-        //matK.VerifyMatrix();
-        //matM.VerifyMatrix();
 
-        //matK.ExportToDatFile("C:/K", 6);
-        //matM.ExportToDatFile("C:/M", 6);
+        // loading Maug matrix
+        m_system->KRMmatricesLoad(0, 0, 1.0);
+        m_system->GetSystemDescriptor()->SetMassFactor(1.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, false);
 
-        ChSymGEigsSolver eig_solver(matK, matM, eig_val, eig_vect);
-        eig_solver.compute(total_modes);
-        eig_vect_col.resize(matK.rows(), 1);
+        assert(requested_eigval < matKaug.rows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
+
+        // requested_eigval = min(m-1,n); m = augmented matrix dimension, n = number of active variables -> if n=m it computes n-1 eigenvalues, if n<m it computes all n eigenvalues
+        if (requested_eigval == -1) 
+            requested_eigval = std::min(static_cast<int>(matKaug.rows()) - 1, m_system->GetSystemDescriptor()->CountActiveVariables());
+
+        matKaug.makeCompressed();
+        matMaug.makeCompressed();
+
+        m_timer_assembly.stop();
+
+        m_timer_eigensolve.start();
+
+        ChSymGEigsSolver eig_solver(matKaug, matMaug, eig_val, eig_vect);
+
+        if (restart_sigma) {
+            eig_solver.computeShift(1, sigma);
+            sigma = 0.9*eig_val(0);
+            std::cout << "new sigma: " << sigma << std::endl;
+        }
+
+        eig_solver.SetVerbose(verbose);
+        
+        eig_solver.computeShift(requested_eigval, sigma);
+        //eig_solver.computeRegularInverse(requested_eigval);
+        //eig_solver.computeCholesky(requested_eigval);
+
+        m_timer_eigensolve.stop();
+
+        eig_vect_col.resize(matKaug.rows(), 1);
 
         // setup main vectors
         integrable->StateSetup(X0, V, A);
@@ -166,6 +209,44 @@ class ChEigenAnalysis {
 #endif
 
     }
+
+    void SetVerbose(bool val) { verbose = val; }
+
+    void InjectEigenData(ChMatrixDynamic<>& eig_val_in, ChMatrixDynamic<>& eig_vect_in) {  
+
+        eig_val = eig_val_in;
+        eig_vect = eig_vect_in;
+
+         // setup main vectors
+        integrable->StateSetup(X0, V, A);
+        integrable->StateSetup(X, V, A);
+        L.resize(integrable->GetNconstr());
+
+        L.fill(0);                             // set Lagrangians to zero
+        integrable->StateScatterReactions(L);  // -> system auxiliary data
+
+        // store the initial configuration of the system
+        double T;
+        integrable->StateGather(X0, V, T);
+
+    #ifdef CHRONO_IRRLICHT
+        if (irrlicht_app)
+            gui_receiver.Initialize(*irrlicht_app, *this);
+    #endif
+
+    }
+
+    /// Get cumulative time for assembly operations in Setup phase.
+    double GetTime_Assembly() const { return m_timer_assembly(); }
+    /// Get cumulative time for assembly operations in Setup phase.
+    double GetTime_Eigensolve() const { return m_timer_eigensolve(); }
+
+    /// Get eigenvalues.
+    const ChMatrixDynamic<double>& GetEigenValues() const { return eig_val; }
+    /// Get eigenvectors.
+    const ChMatrixDynamic<double>& GetEigenVectors() const { return eig_vect; }
+
+
 
     void UpdateEigenMode(double step_percentage = 1)
     {
@@ -209,6 +290,19 @@ class ChEigenAnalysis {
 
     int GetComputedModes() const { return eig_val.rows(); }
 
+    void GetResidualsNorm(ChVectorDynamic<double>& residualNorms) const {
+        residualNorms.resize(eig_val.rows(), 1);
+        for (int i = 0; i < eig_val.rows(); i++) {
+            residualNorms(i) = ((matKaug - eig_val(i) * matMaug) * eig_vect.col(i)).norm();
+        }
+    }
+
+    void GetFrequencies(ChVectorDynamic<double>& frequencies) const {
+    frequencies.resize(eig_val.rows(), 1);
+    for (int i = 0; i < eig_val.rows(); i++) {
+        frequencies(i) = sqrt(eig_val(i)) / 2 / CH_C_PI;
+        }
+    }
 
 
 #ifdef CHRONO_IRRLICHT

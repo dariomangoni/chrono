@@ -66,6 +66,7 @@ class ChApiMumps ChMumpsEngine {
     /// Set the right-hand side vector.
     /// Note that it is the caller's responsibility to ensure that the size is appropriate.
     void SetRhsVector(ChVectorRef b);
+    void SetRhsVector(Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, 1>> b);
     void SetRhsVector(double* b);
 
     /// Enable null-pivot detection in MUMPS.

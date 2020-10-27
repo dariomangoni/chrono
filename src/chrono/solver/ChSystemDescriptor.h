@@ -325,7 +325,8 @@ class ChApi ChSystemDescriptor {
 
     /// Create and return the assembled system matrix and RHS vector.
     virtual void ConvertToMatrixForm(ChSparseMatrix* Z,      ///< [out] assembled system matrix
-                                     ChVectorDynamic<>* rhs  ///< [out] assembled RHS vector
+                                     ChVectorDynamic<>* rhs,  ///< [out] assembled RHS vector
+                                     bool loadCq = true         ///< write constraints Jacobian (Cq) on Z
     );
 
     /// Saves to disk the LAST used matrices of the problem.

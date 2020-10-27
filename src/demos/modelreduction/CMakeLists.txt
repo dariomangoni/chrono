@@ -1,6 +1,7 @@
 #--------------------------------------------------------------
 # List all MODELREDUCTION demos that do have no other dependencies
 set(MODELREDUCTION_DEMOS
+    demo_MR_SymGEigsSolver
 )
 
 # Add demos that require Irrlicht
@@ -8,8 +9,12 @@ if(ENABLE_MODULE_IRRLICHT)
 set(MODELREDUCTION_DEMOS ${MODELREDUCTION_DEMOS}
     demo_MR_system_reduction
     demo_MR_beam_reduction
+	demo_MR_visualize
+	demo_MR_rod_reduction
+	demo_MR_engine
 )
 endif()
+
 
 #--------------------------------------------------------------
 
@@ -27,6 +32,18 @@ if(ENABLE_MODULE_IRRLICHT)
   include_directories(${CH_IRRLICHTINC})
   set(COMPILER_FLAGS "${COMPILER_FLAGS} ${CH_IRRLICHT_CXX_FLAGS}")
   list(APPEND LIBS "ChronoEngine_irrlicht")
+endif()
+
+if(ENABLE_MODULE_PARDISO_MKL)
+  include_directories(${CH_MKL_INCLUDES})
+  set(COMPILER_FLAGS "${COMPILER_FLAGS} ${CH_MKL_CXX_FLAGS}")
+  set(LINKER_FLAGS "${LINKER_FLAGS} ${CH_MKL_LINK_FLAGS}")
+  list(APPEND LIBS "ChronoEngine_pardisomkl")
+endif()
+
+if(ENABLE_MODULE_MUMPS)
+  include_directories(${CH_MUMPS_INCLUDES})
+  list(APPEND LIBS "ChronoEngine_mumps")
 endif()
 
 #--------------------------------------------------------------

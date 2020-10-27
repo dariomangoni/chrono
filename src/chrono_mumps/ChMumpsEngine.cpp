@@ -88,6 +88,10 @@ void ChMumpsEngine::SetRhsVector(ChVectorRef b) {
     mumps_id.rhs = b.data();
 }
 
+void ChMumpsEngine::SetRhsVector(Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, 1>> b) {
+    mumps_id.rhs = b.data();
+}
+
 void ChMumpsEngine::SetRhsVector(double* b) {
     mumps_id.rhs = b;
 }
