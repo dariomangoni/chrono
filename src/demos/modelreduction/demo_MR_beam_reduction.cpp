@@ -48,7 +48,11 @@ using namespace chrono::irrlicht;
 
 using namespace irr;
 
+bool enable_eigenanalysis = true;
 
+bool use_explicit_constraints = false;
+
+bool use_realtime = true;
 
 int main(int argc, char* argv[])
 {
@@ -99,6 +103,7 @@ int main(int argc, char* argv[])
 
     ChBuilderBeamEuler builder;
 
+
     builder.BuildBeam(my_mesh,		// the mesh where to put the created nodes and elements 
                       msection,		// the ChBeamSectionAdvanced to use for the ChElementBeamEuler elements
                       5,				// the number of ChElementBeamEuler to create
@@ -108,8 +113,24 @@ int main(int argc, char* argv[])
 
                                                     // After having used BuildBeam(), you can retrieve the nodes used for the beam,
                                                     // For example say you want to fix the A end and apply a force to the B end:
-    builder.GetLastBeamNodes().back()->SetFixed(true);
-    builder.GetLastBeamNodes().front()->SetForce(ChVector<>(0, -1, 0));
+
+    if(!use_explicit_constraints)
+        builder.GetLastBeamNodes().back()->SetFixed(true);
+    else{
+        // DeadBody object
+        auto my_deadbody = chrono_types::make_shared<ChBody>();
+        my_system.AddBody(my_deadbody);
+        my_deadbody->SetBodyFixed(true);
+        my_deadbody->SetName("DeadBody");
+
+        // Fix link between beam and deadboy
+        auto my_FixLink = chrono_types::make_shared<ChLinkMateFix>();
+        my_FixLink->SetName("FixLink");
+        my_FixLink->Initialize(my_deadbody, builder.GetLastBeamNodes().back());
+        my_system.AddLink(my_FixLink);
+    }
+
+    builder.GetLastBeamNodes().front()->SetForce(ChVector<>(0, -1.0, 0));
     
 
     //
@@ -180,9 +201,9 @@ int main(int argc, char* argv[])
     solver->SetMaxIterations(600);
     solver->SetTolerance(1e-13);
     solver->EnableDiagonalPreconditioner(true);
-    solver->SetVerbose(true);
+    //solver->SetVerbose(true);
 
-    application.SetTimestep(0.0001);
+    application.SetTimestep(0.01);
 
     application.DoStep();
 
@@ -191,7 +212,6 @@ int main(int argc, char* argv[])
     matM.makeCompressed();
     std::cout << matM << std::endl;
 
-    bool enable_eigenanalysis = true;
 
     if (enable_eigenanalysis) {
         GetLog() << "\n\n===========EIGENPROBLEM======== \n";
@@ -200,6 +220,8 @@ int main(int argc, char* argv[])
         ChEigenAnalysis eig_analysis(application);
         eig_analysis.EigenAnalysis();
 
+
+        // Strict realtime timer
         std::function<void()> simadvance_fun = std::bind(&ChEigenAnalysis::UpdateEigenMode, &eig_analysis, 1);
         // std::function<void()> render_fun = std::bind(&ChIrrApp::DrawAll, application);
         std::function<void(double)> render_fun = [&application](double dummy) { application.DrawAll(); };
@@ -210,14 +232,22 @@ int main(int argc, char* argv[])
         ChRealtimeDualStepTimer drealtime = {application, simadvance_fun, render_fun};
         drealtime.SetPreAdvanceSimulationFunction(pre_sim_fun);
 
-        while (application.GetDevice()->run()) {
-            // application.DrawAll();
-
-            // eig_analysis.UpdateEigenMode();
-            drealtime.DoRealtimeStep();
-
-            application.EndScene();
+        if (use_realtime){
+             while (application.GetDevice()->run()) {
+                //application.BeginScene(); // already embedded in realtime timer
+                //application.DrawAll(); // already embedded in realtime timer
+                drealtime.DoRealtimeStep();
+                application.EndScene();
+            }
+        } else {
+            while (application.GetDevice()->run()) {
+                application.BeginScene();
+                application.DrawAll();
+                eig_analysis.UpdateEigenMode();
+                application.EndScene();
+            }
         }
+
     }
     else {
         while (application.GetDevice()->run()) {
