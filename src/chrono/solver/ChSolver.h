@@ -45,6 +45,7 @@ class ChApi ChSolver {
         SPARSE_LU,  ///< Sparse supernodal LU factorization
         SPARSE_QR,  ///< Sparse left-looking rank-revealing QR factorization
         PARDISO,    ///< Pardiso (super-nodal sparse direct solver)
+        PARDISOPROJECT,    ///< Pardiso (super-nodal sparse direct solver)
         MUMPS,      ///< Mumps (MUltifrontal Massively Parallel sparse direct Solver)
         // Iterative linear solvers
         GMRES,     ///< Generalized Minimal RESidual Algorithm
