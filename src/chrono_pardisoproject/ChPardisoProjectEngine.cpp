@@ -29,34 +29,7 @@ extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *,
 namespace chrono {
 
 ChPardisoProjectEngine::ChPardisoProjectEngine(pardisoproject_SYM symmetry) :symmetry(symmetry) {
-    //this->iparm[2]  = ChOMP::GetNumProcs();
-    this->iparm[2] = 1;
-    this->iparm[7] = 1;       /* Max numbers of iterative refinement steps. */
-
-    this->maxfct = 1;         /* Maximum number of numerical factorizations.  */
-    this->mnum   = 1;         /* Which factorization to use. */
-    
-    this->msglvl = 0;         /* Print statistical information  */
-    this->error  = 0;         /* Initialize error flag */
-    this->solver = 0; /* use sparse direct solver */
-
-    int mtype_int = symmetry;
-    pardisoinit(pt,  &mtype_int, &solver, iparm, dparm, &error);
-
-    printf("WARNING: PardisoProject suggests you to: \"Set environment OMP_NUM_THREADS to 1\"\n");
-
-    if (error != 0)
-    {
-        if (error == -10 )
-           printf("No license file found \n");
-        if (error == -11 )
-           printf("License is expired \n");
-        if (error == -12 )
-           printf("Wrong username or hostname \n");
-         //return 1;
-    }
-    else
-        printf("[PARDISO]: License check was successful ... \n");
+    Reinit();
 }
 
 ChPardisoProjectEngine::~ChPardisoProjectEngine() {
@@ -69,24 +42,28 @@ void ChPardisoProjectEngine::SetProblem(const ChSparseMatrix& Z, ChVectorRef rhs
     SetSolutionVector(sol);
 }
 
-void ChPardisoProjectEngine::SetMatrix(const ChSparseMatrix& Z) {
+void ChPardisoProjectEngine::SetMatrix(const ChSparseMatrix& Z, bool isZeroIndexed) {
     this->SetMatrix(
         Z.rows(),
         const_cast<int*>(Z.outerIndexPtr()),
         const_cast<int*>(Z.innerIndexPtr()),
         const_cast<double*>(Z.valuePtr())
     );
+    matOneIndexedFormat = !isZeroIndexed;
 }
 
-void ChPardisoProjectEngine::SetMatrix(int n, int *ia, int *ja, double *a) {
+void ChPardisoProjectEngine::SetMatrix(int n, int *ia, int *ja, double *a, bool isZeroIndexed) {
     this->n = n;
     this->a = a;
     this->ia = ia;
     this->ja = ja;
+    matOneIndexedFormat = !isZeroIndexed;
 }
 
 void ChPardisoProjectEngine::SetMatrixSymmetry(pardisoproject_SYM symmetry) {
+    PardisoProjectCall(pardisoproject_PHASE::END);
     this->symmetry = symmetry;
+    Reinit();
 }
 
 void ChPardisoProjectEngine::SetRhsVector(ChVectorRef b) {
@@ -110,11 +87,9 @@ int ChPardisoProjectEngine::PardisoProjectCall(pardisoproject_PHASE phase) {
     int phase_int = phase;
     int mtype_int = symmetry;
 
-    SetOneIndexedFormat();
+    SetOneIndexedFormat(); // make sure that is one-based format
 
     pardiso (pt, &maxfct, &mnum, &mtype_int, &phase_int, &n, a, ia, ja, &idum, &nrhs, iparm, &msglvl, b, x, &error,  dparm);
-
-    SetZeroIndexedFormat(); // TODO: avoid resetting indexes
 
     return error;
 }
@@ -195,6 +170,38 @@ inline void ChPardisoProjectEngine::SetOneIndexedFormat() {
     if (!matOneIndexedFormat)
         ShiftMatrixIndeces(+1);
     matOneIndexedFormat = true;
+}
+
+void ChPardisoProjectEngine::Reinit() {
+    this->iparm[2]  = ChOMP::GetNumProcs();
+
+    //this->iparm[2] = 1;
+    this->iparm[7] = 1;       /* Max numbers of iterative refinement steps. */
+
+    this->maxfct = 1;         /* Maximum number of numerical factorizations.  */
+    this->mnum   = 1;         /* Which factorization to use. */
+    
+    this->msglvl = 0;         /* Print statistical information  */
+    this->error  = 0;         /* Initialize error flag */
+    this->solver = 0;         /* use sparse direct solver */
+
+    int mtype_int = symmetry;
+    pardisoinit(pt,  &mtype_int, &solver, iparm, dparm, &error);
+
+    printf("WARNING: PardisoProject suggests you to: \"Set environment OMP_NUM_THREADS to 1\"\n");
+
+    if (error != 0)
+    {
+        if (error == -10 )
+           printf("No license file found \n");
+        if (error == -11 )
+           printf("License is expired \n");
+        if (error == -12 )
+           printf("Wrong username or hostname \n");
+         //return 1;
+    }
+    else
+        printf("[PARDISO]: License check was successful ... \n");
 }
 
 }  // namespace chrono

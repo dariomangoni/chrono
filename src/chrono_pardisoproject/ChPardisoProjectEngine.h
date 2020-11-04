@@ -53,8 +53,8 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     void SetProblem(const ChSparseMatrix& Z, ChVectorRef rhs, ChVectorRef sol);
 
     /// Set the problem matrix.
-    void SetMatrix(const ChSparseMatrix& Z);
-    void SetMatrix(int n, int *ia, int *ja, double *a);
+    void SetMatrix(const ChSparseMatrix& Z, bool isZeroIndexed = true);
+    void SetMatrix(int n, int *ia, int *ja, double *a, bool isZeroIndexed = true);
 
     /// Informs PardisoProject of the matrix symmetry type.
     void SetMatrixSymmetry(pardisoproject_SYM symmetry);
@@ -81,7 +81,7 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     int GetIPARM(int id) const { return iparm[id]; };
     void SetIPARM(int id, int val){ iparm[id] = val; };
 
-    int GetDPARM(int id) const { return dparm[id]; };
+    double GetDPARM(int id) const { return dparm[id]; };
     void SetDPARM(int id, int val){ dparm[id] = val; };
 
     int GetLastError() {return error;};
@@ -90,6 +90,9 @@ class ChApiPardisoProject ChPardisoProjectEngine {
 
     void SetZeroIndexedFormat();
     void SetOneIndexedFormat();
+
+    void Reinit();
+
 
 
   private:
