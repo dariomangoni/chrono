@@ -13,29 +13,54 @@
 // =============================================================================
 
 #include "chrono_pardisoproject/ChSolverPardisoProject.h"
+#include "chrono/parallel/ChOpenMP.h"
 
-/* PARDISO prototype. */
-extern "C" void pardisoinit (void   *, int    *,   int *, int *, double *, int *);
-extern "C" void pardiso     (void   *, int    *,   int *, int *,    int *, int *, 
-                  double *, int    *,    int *, int *,   int *, int *,
-                     int *, double *, double *, int *, double *);
-extern "C" void pardiso_chkmatrix  (int *, int *, double *, int *, int *, int *);
-extern "C" void pardiso_chkvec     (int *, int *, double *, int *);
-extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *, double *, int *);
 
-namespace chrono{
+namespace chrono {
+ChSolverPardisoProject::ChSolverPardisoProject(int num_threads, ChPardisoProjectEngine::pardisoproject_SYM symmetry)
+    : m_engine(symmetry) {
+    //int nthreads = (num_threads <= 0) ? ChOMP::GetNumProcs() : num_threads;
+    //ChOMP::SetNumThreads(nthreads);
+    m_engine.SetIPARM(5,0);
+}
+
 
 bool ChSolverPardisoProject::FactorizeMatrix() {
+    m_engine.SetMatrix(m_mat);
+
+    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::ANALYZE);
+    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::FACTORIZE);
+
+    
+    if (verbose){
+        if (m_engine.GetLastError() != 0) {
+        printf("\nERROR during symbolic factorization: %d", m_engine.GetLastError());
+            exit(1);
+        }
+        printf("\nReordering completed ... ");
+        printf("\nNumber of nonzeros in factors  = %d", m_engine.GetIPARM(17));
+        printf("\nNumber of factorization MFLOPS = %d", m_engine.GetIPARM(18));
+    }
+
 
     return true;
 }
 
 bool ChSolverPardisoProject::SolveSystem() {
+    m_engine.SetRhsVector(m_rhs);
+    m_engine.SetSolutionVector(m_sol);
+    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::SOLVE);
+
+   
+    if (m_engine.GetLastError() != 0) {
+        printf("\nERROR during solution: %d", m_engine.GetLastError());
+        exit(3);
+    }
     return true;
 }
 
 void ChSolverPardisoProject::PrintErrorMessage() {
-
+    printf("\nERROR: %d", m_engine.GetLastError());
 }
 
 

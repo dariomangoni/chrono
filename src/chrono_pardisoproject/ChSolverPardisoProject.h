@@ -54,12 +54,13 @@ See ChSystemDescriptor for more information about the problem formulation and th
 */
 class ChApiPardisoProject ChSolverPardisoProject : public ChDirectSolverLS {
   public:
-    ChSolverPardisoProject() {}
+    ChSolverPardisoProject(int num_threads = 0, 
+        ChPardisoProjectEngine::pardisoproject_SYM symmetry = ChPardisoProjectEngine::pardisoproject_SYM::UNSYMMETRIC);
     ~ChSolverPardisoProject() {}
     virtual Type GetType() const override { return Type::PARDISOPROJECT; }
 
     /// Get a handle to the underlying PardisoProject engine.
-    ChPardisoProjectEngine* GetPardisoProjectEngine() { return m_engine; }
+    ChPardisoProjectEngine* GetPardisoProjectEngine() { return &m_engine; }
 
   private:
     /// Factorize the current sparse matrix and return true if successful.
@@ -73,7 +74,7 @@ class ChApiPardisoProject ChSolverPardisoProject : public ChDirectSolverLS {
     /// This function is only called if Factorize or Solve returned false.
     virtual void PrintErrorMessage() override;
 
-    ChPardisoProjectEngine* m_engine;
+    ChPardisoProjectEngine m_engine;
     
 };
 
