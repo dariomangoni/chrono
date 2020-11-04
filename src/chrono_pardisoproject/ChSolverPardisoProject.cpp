@@ -19,17 +19,36 @@
 namespace chrono {
 ChSolverPardisoProject::ChSolverPardisoProject(int num_threads, ChPardisoProjectEngine::pardisoproject_SYM symmetry)
     : m_engine(symmetry) {
-    //int nthreads = (num_threads <= 0) ? ChOMP::GetNumProcs() : num_threads;
-    //ChOMP::SetNumThreads(nthreads);
-    m_engine.SetIPARM(5,0);
 }
 
+
+inline void ChSolverPardisoProject::SetMatrixSymmetryType(MatrixSymmetryType symmetry) {
+    ChPardisoProjectEngine::pardisoproject_SYM engine_symmetry;
+    switch(symmetry){
+    case MatrixSymmetryType::GENERAL:
+        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::UNSYMMETRIC;
+        break;
+    case MatrixSymmetryType::STRUCTURAL_SYMMETRIC:
+        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::STRUCTURAL_SYMMETRIC;
+        break;
+    case MatrixSymmetryType::SYMMETRIC_INDEF:
+        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::SYMMETRIC_GENERAL;
+        break;
+    case MatrixSymmetryType::SYMMETRIC_POSDEF:
+        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::SYMMETRIC_POSDEF;
+        break;
+    default:
+        GetLog() << "ChSolverPardisoProject does not support the matrix symmetry set.\n Rolling back to GENERAL\n";
+        symmetry = MatrixSymmetryType::GENERAL;
+        break;
+    }
+    m_symmetry = symmetry;
+}
 
 bool ChSolverPardisoProject::FactorizeMatrix() {
     m_engine.SetMatrix(m_mat);
 
-    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::ANALYZE);
-    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::FACTORIZE);
+    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::ANALYZE_FACTORIZE);
 
     
     if (verbose){

@@ -19,7 +19,6 @@
 #include "chrono_pardisoproject/ChPardisoProjectEngine.h"
 #include "chrono/solver/ChDirectSolverLS.h"
 
-//#include <Eigen/PardisoSupport>
 
 namespace chrono{
 
@@ -61,6 +60,8 @@ class ChApiPardisoProject ChSolverPardisoProject : public ChDirectSolverLS {
 
     /// Get a handle to the underlying PardisoProject engine.
     ChPardisoProjectEngine* GetPardisoProjectEngine() { return &m_engine; }
+
+    virtual void SetMatrixSymmetryType(MatrixSymmetryType symmetry) override;
 
   private:
     /// Factorize the current sparse matrix and return true if successful.
