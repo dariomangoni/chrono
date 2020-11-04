@@ -14,6 +14,8 @@
 
 
 #include "chrono_pardisoproject/ChPardisoProjectEngine.h"
+#include "chrono/parallel/ChOpenMP.h"
+
 
 /* PARDISO prototype. */
 extern "C" void pardisoinit (void   *, int    *,   int *, int *, double *, int *);
@@ -27,16 +29,16 @@ extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *,
 namespace chrono {
 
 ChPardisoProjectEngine::ChPardisoProjectEngine(pardisoproject_SYM symmetry) :symmetry(symmetry) {
-    iparm[2]  = num_procs;
-   
-    iparm[7] = 1;       /* Max numbers of iterative refinement steps. */
+    //this->iparm[2]  = ChOMP::GetNumProcs();
+    this->iparm[2] = 1;
+    this->iparm[7] = 1;       /* Max numbers of iterative refinement steps. */
 
-    maxfct = 1;         /* Maximum number of numerical factorizations.  */
-    mnum   = 1;         /* Which factorization to use. */
+    this->maxfct = 1;         /* Maximum number of numerical factorizations.  */
+    this->mnum   = 1;         /* Which factorization to use. */
     
-    msglvl = 1;         /* Print statistical information  */
-    error  = 0;         /* Initialize error flag */
-    solver = 0; /* use sparse direct solver */
+    this->msglvl = 0;         /* Print statistical information  */
+    this->error  = 0;         /* Initialize error flag */
+    this->solver = 0; /* use sparse direct solver */
 
     int mtype_int = symmetry;
     pardisoinit(pt,  &mtype_int, &solver, iparm, dparm, &error);
@@ -108,73 +110,91 @@ int ChPardisoProjectEngine::PardisoProjectCall(pardisoproject_PHASE phase) {
     int phase_int = phase;
     int mtype_int = symmetry;
 
-    // TODO: WARNING: shifting indeces to 1-based whenever this phases are requested
-    if (phase == pardisoproject_PHASE::ANALYZE || phase == pardisoproject_PHASE::ANALYZE_FACTORIZE || phase == pardisoproject_PHASE::COMPLETE)
-        ShiftMatrixIndeces(+1);
+    SetOneIndexedFormat();
 
-    // TODO: assure to have non nullptr in appropriate arrays
     pardiso (pt, &maxfct, &mnum, &mtype_int, &phase_int, &n, a, ia, ja, &idum, &nrhs, iparm, &msglvl, b, x, &error,  dparm);
 
+    SetZeroIndexedFormat(); // TODO: avoid resetting indexes
 
     return error;
 }
 
-int ChPardisoProjectEngine::CheckMatrix(){
+
+int ChPardisoProjectEngine::CheckMatrix(bool print){
     /* -------------------------------------------------------------------- */
     /*  .. pardiso_chk_matrix(...)                                          */
     /*     Checks the consistency of the given matrix.                      */
     /*     Use this functionality only for debugging purposes               */
     /* -------------------------------------------------------------------- */
+    SetOneIndexedFormat();
     int mtype_int = symmetry;
     pardiso_chkmatrix(&mtype_int, &n, a, ia, ja, &error);
     if (error != 0) {
-        printf("\nERROR in consistency of matrix: %d", error);
-        return 1;
-    }
+        if (print)
+            printf("\nERROR in consistency of matrix: %d", error);
+        return error;
+    } else
+        printf("\nMatrix consistency check passed\n");
     return error;
 }
 
-int ChPardisoProjectEngine::PrintStats() {
+int ChPardisoProjectEngine::PrintStats(bool print) {
     /* -------------------------------------------------------------------- */
     /* .. pardiso_printstats(...)                                           */
     /*    prints information on the matrix to STDOUT.                       */
     /*    Use this functionality only for debugging purposes                */
     /* -------------------------------------------------------------------- */
+    SetOneIndexedFormat();
     int mtype_int = symmetry;
     pardiso_printstats(&mtype_int, &n, a, ia, ja, &nrhs, b, &error);
     if (error != 0) {
-        printf("\nERROR right hand side: %d", error);
-        return 1;
-    }
+        if (print)
+            printf("\nERROR in matrix stats: %d", error);
+        return error;
+    } else
+        printf("\nMatrix stats passed\n");
     return error;
 }
 
-void ChPardisoProjectEngine::shiftIndices(int n, int nonzeros, int* ia, int* ja, int value) {
-    for (int i = 0; i < n + 1; i++) {
-        ia[i] += value;
-    }
-    for (int i = 0; i < nonzeros; i++) {
-        ja[i] += value;
-    }
-}
 
-int ChPardisoProjectEngine::CheckVectors(){
+int ChPardisoProjectEngine::CheckRhsVectors(bool print){
     /* -------------------------------------------------------------------- */
     /* ..  pardiso_chkvec(...)                                              */
     /*     Checks the given vectors for infinite and NaN values             */
     /*     Input parameters (see PARDISO user manual for a description):    */
     /*     Use this functionality only for debugging purposes               */
     /* -------------------------------------------------------------------- */
+    SetOneIndexedFormat();
     pardiso_chkvec (&n, &nrhs, b, &error);
     if (error != 0) {
-        printf("\nERROR  in right hand side: %d", error);
-        return 1;
-    }
-    return 0;
+        if (print)
+            printf("\nERROR in right hand side: %d", error);
+        return error;
+    } else
+        printf("\nRhs check passed\n");
+    return error;
 }
 
 void ChPardisoProjectEngine::ShiftMatrixIndeces(int val){
-    shiftIndices(n, ia[n], ia, ja, val); 
+    int nnz = matOneIndexedFormat ? ia[n-1] : ia[n];
+    for (int i = 0; i < n + 1; i++) {
+        ia[i] += val;
+    }
+    for (int i = 0; i < nnz; i++) {
+        ja[i] += val;
+    }
+}
+
+inline void ChPardisoProjectEngine::SetZeroIndexedFormat() {
+    if (matOneIndexedFormat)
+        ShiftMatrixIndeces(-1);
+    matOneIndexedFormat = false;
+}
+
+inline void ChPardisoProjectEngine::SetOneIndexedFormat() {
+    if (!matOneIndexedFormat)
+        ShiftMatrixIndeces(+1);
+    matOneIndexedFormat = true;
 }
 
 }  // namespace chrono

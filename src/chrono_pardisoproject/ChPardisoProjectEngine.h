@@ -72,22 +72,29 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     /// Submit job to PardisoProject.
     int PardisoProjectCall(pardisoproject_PHASE job_call);
 
-    int CheckMatrix();
+    int CheckMatrix(bool print=true);
 
-    int CheckVectors();
+    int CheckRhsVectors(bool print=true);
 
-    int PrintStats();
+    int PrintStats(bool print=true);
 
     int GetIPARM(int id) const { return iparm[id]; };
     void SetIPARM(int id, int val){ iparm[id] = val; };
+
+    int GetDPARM(int id) const { return dparm[id]; };
+    void SetDPARM(int id, int val){ dparm[id] = val; };
 
     int GetLastError() {return error;};
 
     void ShiftMatrixIndeces(int val);
 
+    void SetZeroIndexedFormat();
+    void SetOneIndexedFormat();
+
 
   private:
-    void* m_engine;  ///< underlying PardisoProject interface
+
+    bool matOneIndexedFormat = false;
 
     /* RHS and solution vectors. */
     double   *b, *x;
@@ -96,13 +103,13 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     /* Internal solver memory pointer pt,                  */
     /* 32-bit: int pt[64]; 64-bit: long int pt[64]         */
     /* or void *pt[64] should be OK on both architectures  */ 
-    void    *pt[64];
+    void     *pt[64];
 
     /* Pardiso control parameters. */
     int      iparm[64];
     double   dparm[64];
     int      solver;
-    int      maxfct, mnum, phase, error, msglvl;
+    int      maxfct, mnum, error, msglvl;
 
     /* Number of processors. */
     int      num_procs = 1;
@@ -121,9 +128,6 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     double  *a;
 
     pardisoproject_SYM symmetry;
-
-    void shiftIndices(int n, int nonzeros, int* ia, int* ja, int value);
-
 
 };
 
