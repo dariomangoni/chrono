@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
 
     // Create the Irrlicht visualization (open the Irrlicht device,
     // bind a simple user interface, etc. etc.)
-    ChIrrApp application(&my_system, L"Cables FEM (MKL)", core::dimension2d<u32>(800, 600), false, true);
+    ChIrrApp application(&my_system, L"Cables FEM (MUMPS)", core::dimension2d<u32>(800, 600), false, true);
 
     // Easy shortcuts to add camera, lights, logo and sky in Irrlicht scene:
     application.AddTypicalLogo();
@@ -83,13 +83,13 @@ int main(int argc, char* argv[]) {
     // that you added to the bodies into 3D shapes, they can be visualized by Irrlicht!
     application.AssetUpdateAll();
 
-    // Configure MKL solver.
+    // Configure MUMPS solver.
     // For this simple and relatively small problem, use of the sparsity pattern learner may introduce additional
     // overhead (if the sparsity pattern is not locked).
-    auto mkl_solver = chrono_types::make_shared<ChSolverMumps>();
-    mkl_solver->UseSparsityPatternLearner(false);
-    mkl_solver->LockSparsityPattern(false);
-    my_system.SetSolver(mkl_solver);
+    auto mumps_solver = chrono_types::make_shared<ChSolverMumps>();
+    mumps_solver->UseSparsityPatternLearner(false);
+    mumps_solver->LockSparsityPattern(false);
+    my_system.SetSolver(mumps_solver);
 
     my_system.Update();
 
