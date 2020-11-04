@@ -28,6 +28,9 @@ extern "C" void pardiso_chkmatrix  (int *, int *, double *, int *, int *, int *)
 extern "C" void pardiso_chkvec     (int *, int *, double *, int *);
 extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *, double *, int *);
 
+void print_matrix_vectors(int n, int *ia, int *ja, double *a){
+
+}
 
 int main( void ) 
 {
@@ -111,7 +114,7 @@ int main( void )
     //    printf("Set environment OMP_NUM_THREADS to 1");
     //    exit(1);
     //}
-    iparm[2]  = num_procs;
+    iparm[2]  = 1;
    
     
     maxfct = 1;         /* Maximum number of numerical factorizations.  */
@@ -120,6 +123,11 @@ int main( void )
     msglvl = 1;         /* Print statistical information  */
     error  = 0;         /* Initialize error flag */
 
+
+    /* Set right hand side to one. */
+    for (i = 0; i < n; i++) {
+        b[i] = 1;
+    }
 
 /* -------------------------------------------------------------------- */    
 /* ..  Convert matrix from 0-based C-notation to Fortran 1-based        */
@@ -130,11 +138,6 @@ int main( void )
     }
     for (i = 0; i < nnz; i++) {
         ja[i] += 1;
-    }
-
-    /* Set right hand side to one. */
-    for (i = 0; i < n; i++) {
-        b[i] = i;
     }
 
 /* -------------------------------------------------------------------- */
@@ -182,7 +185,8 @@ int main( void )
 
     pardiso (pt, &maxfct, &mnum, &mtype, &phase,
              &n, a, ia, ja, &idum, &nrhs,
-             iparm, &msglvl, &ddum, &ddum, &error,  dparm);
+             iparm, &msglvl, &ddum, &ddum, &error, dparm);
+
     
     if (error != 0) {
         printf("\nERROR during symbolic factorization: %d", error);
@@ -200,6 +204,7 @@ int main( void )
     pardiso (pt, &maxfct, &mnum, &mtype, &phase,
              &n, a, ia, ja, &idum, &nrhs,
              iparm, &msglvl, &ddum, &ddum, &error, dparm);
+
    
     if (error != 0) {
         printf("\nERROR during numerical factorization: %d", error);
@@ -218,7 +223,8 @@ int main( void )
     pardiso (pt, &maxfct, &mnum, &mtype, &phase,
              &n, a, ia, ja, &idum, &nrhs,
              iparm, &msglvl, b, x, &error,  dparm);
-   
+
+
     if (error != 0) {
         printf("\nERROR during solution: %d", error);
         exit(3);
@@ -231,34 +237,34 @@ int main( void )
     }
     printf ("\n");
 
-/* -------------------------------------------------------------------- */
-/* ..  Back substitution with tranposed matrix A^t x=b                   */
-/* -------------------------------------------------------------------- */
-    phase = 33;
-
-    iparm[7]  = 1;       /* Max numbers of iterative refinement steps. */
-    iparm[11] = 1;       /* Solving with transpose matrix. */
-
-    /* Set right hand side to one. */
-    for (i = 0; i < n; i++) {
-        b[i] = 1;
-    }
-  
-    pardiso (pt, &maxfct, &mnum, &mtype, &phase,
-             &n, a, ia, ja, &idum, &nrhs,
-             iparm, &msglvl, b, x, &error,  dparm);
-  
-    if (error != 0) {
-        printf("\nERROR during solution: %d", error);
-        exit(3);
-    }
-
-    printf("\nSolve completed ... ");
-    printf("\nThe solution of the system is: ");
-    for (i = 0; i < n; i++) {
-        printf("\n x [%d] = % f", i, x[i] );
-    }
-    printf ("\n");
+///* -------------------------------------------------------------------- */
+///* ..  Back substitution with tranposed matrix A^t x=b                   */
+///* -------------------------------------------------------------------- */
+//    phase = 33;
+//
+//    iparm[7]  = 1;       /* Max numbers of iterative refinement steps. */
+//    iparm[11] = 1;       /* Solving with transpose matrix. */
+//
+//    /* Set right hand side to one. */
+//    for (i = 0; i < n; i++) {
+//        b[i] = 1;
+//    }
+//  
+//    pardiso (pt, &maxfct, &mnum, &mtype, &phase,
+//             &n, a, ia, ja, &idum, &nrhs,
+//             iparm, &msglvl, b, x, &error,  dparm);
+//  
+//    if (error != 0) {
+//        printf("\nERROR during solution: %d", error);
+//        exit(3);
+//    }
+//
+//    printf("\nSolve completed ... ");
+//    printf("\nThe solution of the system is: ");
+//    for (i = 0; i < n; i++) {
+//        printf("\n x [%d] = % f", i, x[i] );
+//    }
+//    printf ("\n");
 
 /* -------------------------------------------------------------------- */    
 /* ..  Convert matrix back to 0-based C-notation.                       */
