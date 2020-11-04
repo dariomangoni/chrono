@@ -113,8 +113,8 @@ int ChPardisoProjectEngine::PardisoProjectCall(pardisoproject_PHASE phase) {
         ShiftMatrixIndeces(+1);
 
     // TODO: assure to have non nullptr in appropriate arrays
+    pardiso (pt, &maxfct, &mnum, &mtype_int, &phase_int, &n, a, ia, ja, &idum, &nrhs, iparm, &msglvl, b, x, &error,  dparm);
 
-    pardiso(pt, &maxfct, &mnum, &mtype_int, &phase_int, &n, a, ia, ja, &idum, &nrhs, iparm, &msglvl, &ddum, &ddum, &error,  dparm);
 
     return error;
 }
