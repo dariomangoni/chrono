@@ -151,7 +151,7 @@ int ChPardisoProjectEngine::CheckRhsVectors(bool print){
 }
 
 void ChPardisoProjectEngine::ShiftMatrixIndeces(int val){
-    int nnz = matOneIndexedFormat ? ia[n-1] : ia[n];
+    int nnz = matOneIndexedFormat ? ia[n]-1 : ia[n];
     for (int i = 0; i < n + 1; i++) {
         ia[i] += val;
     }
