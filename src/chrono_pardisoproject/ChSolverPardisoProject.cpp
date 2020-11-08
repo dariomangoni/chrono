@@ -17,25 +17,25 @@
 
 
 namespace chrono {
-ChSolverPardisoProject::ChSolverPardisoProject(int num_threads, ChPardisoProjectEngine::pardisoproject_SYM symmetry)
+ChSolverPardisoProject::ChSolverPardisoProject(int num_threads, ChPardisoProjectEngine::parproj_SYM symmetry)
     : m_engine(symmetry) {
 }
 
 
 inline void ChSolverPardisoProject::SetMatrixSymmetryType(MatrixSymmetryType symmetry) {
-    ChPardisoProjectEngine::pardisoproject_SYM engine_symmetry;
+    ChPardisoProjectEngine::parproj_SYM engine_symmetry;
     switch(symmetry){
     case MatrixSymmetryType::GENERAL:
-        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::UNSYMMETRIC;
+        engine_symmetry = ChPardisoProjectEngine::parproj_SYM::UNSYMMETRIC;
         break;
     case MatrixSymmetryType::STRUCTURAL_SYMMETRIC:
-        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::STRUCTURAL_SYMMETRIC;
+        engine_symmetry = ChPardisoProjectEngine::parproj_SYM::STRUCTURAL_SYMMETRIC;
         break;
     case MatrixSymmetryType::SYMMETRIC_INDEF:
-        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::SYMMETRIC_GENERAL;
+        engine_symmetry = ChPardisoProjectEngine::parproj_SYM::SYMMETRIC_GENERAL;
         break;
     case MatrixSymmetryType::SYMMETRIC_POSDEF:
-        engine_symmetry = ChPardisoProjectEngine::pardisoproject_SYM::SYMMETRIC_POSDEF;
+        engine_symmetry = ChPardisoProjectEngine::parproj_SYM::SYMMETRIC_POSDEF;
         break;
     default:
         GetLog() << "ChSolverPardisoProject does not support the matrix symmetry set.\n Rolling back to GENERAL\n";
@@ -54,7 +54,7 @@ bool ChSolverPardisoProject::Setup(ChSystemDescriptor& sysd) {
 bool ChSolverPardisoProject::FactorizeMatrix() {
     m_engine.SetMatrix(m_mat);
 
-    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::ANALYZE_FACTORIZE);
+    m_engine.PardisoProjectCall(ChPardisoProjectEngine::parproj_PHASE::ANALYZE_FACTORIZE);
 
     
     if (verbose){
@@ -74,7 +74,7 @@ bool ChSolverPardisoProject::FactorizeMatrix() {
 bool ChSolverPardisoProject::SolveSystem() {
     m_engine.SetRhsVector(m_rhs);
     m_engine.SetSolutionVector(m_sol);
-    m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::SOLVE);
+    m_engine.PardisoProjectCall(ChPardisoProjectEngine::parproj_PHASE::SOLVE);
    
     if (m_engine.GetLastError() != 0) {
         printf("\nERROR during solution: %d", m_engine.GetLastError());

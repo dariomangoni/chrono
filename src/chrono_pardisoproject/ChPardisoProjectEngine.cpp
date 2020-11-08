@@ -25,15 +25,16 @@ extern "C" void pardiso     (void   *, int    *,   int *, int *,    int *, int *
 extern "C" void pardiso_chkmatrix  (int *, int *, double *, int *, int *, int *);
 extern "C" void pardiso_chkvec     (int *, int *, double *, int *);
 extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *, double *, int *);
+extern "C" void pardiso_get_schur(void*, int*, int*, int*, double*, int*, int*);
 
 namespace chrono {
 
-ChPardisoProjectEngine::ChPardisoProjectEngine(pardisoproject_SYM symmetry) :symmetry(symmetry) {
+ChPardisoProjectEngine::ChPardisoProjectEngine(parproj_SYM symmetry) :symmetry(symmetry) {
     Reinit();
 }
 
 ChPardisoProjectEngine::~ChPardisoProjectEngine() {
-    PardisoProjectCall(pardisoproject_PHASE::END);
+    PardisoProjectCall(parproj_PHASE::END);
 }
 
 void ChPardisoProjectEngine::SetProblem(const ChSparseMatrix& Z, ChVectorRef rhs, ChVectorRef sol) {
@@ -47,7 +48,8 @@ void ChPardisoProjectEngine::SetMatrix(const ChSparseMatrix& Z, bool isZeroIndex
         Z.rows(),
         const_cast<int*>(Z.outerIndexPtr()),
         const_cast<int*>(Z.innerIndexPtr()),
-        const_cast<double*>(Z.valuePtr())
+        const_cast<double*>(Z.valuePtr()),
+        false
     );
     matOneIndexedFormat = !isZeroIndexed;
 }
@@ -60,8 +62,8 @@ void ChPardisoProjectEngine::SetMatrix(int n, int *ia, int *ja, double *a, bool 
     matOneIndexedFormat = !isZeroIndexed;
 }
 
-void ChPardisoProjectEngine::SetMatrixSymmetry(pardisoproject_SYM symmetry) {
-    PardisoProjectCall(pardisoproject_PHASE::END);
+void ChPardisoProjectEngine::SetMatrixSymmetry(parproj_SYM symmetry) {
+    PardisoProjectCall(parproj_PHASE::END);
     this->symmetry = symmetry;
     Reinit();
 }
@@ -83,7 +85,7 @@ void ChPardisoProjectEngine::SetSolutionVector(double* x) {
 }
 
 
-int ChPardisoProjectEngine::PardisoProjectCall(pardisoproject_PHASE phase) {
+int ChPardisoProjectEngine::PardisoProjectCall(parproj_PHASE phase) {
     int phase_int = phase;
     int mtype_int = symmetry;
 
@@ -101,9 +103,12 @@ int ChPardisoProjectEngine::CheckMatrix(bool print){
     /*     Checks the consistency of the given matrix.                      */
     /*     Use this functionality only for debugging purposes               */
     /* -------------------------------------------------------------------- */
+    bool matOneIndexedFormat_bkp = this->matOneIndexedFormat;
     SetOneIndexedFormat();
     int mtype_int = symmetry;
     pardiso_chkmatrix(&mtype_int, &n, a, ia, ja, &error);
+    if (!matOneIndexedFormat_bkp) SetZeroIndexedFormat();
+
     if (error != 0) {
         if (print)
             printf("\nERROR in consistency of matrix: %d", error);
@@ -113,15 +118,18 @@ int ChPardisoProjectEngine::CheckMatrix(bool print){
     return error;
 }
 
-int ChPardisoProjectEngine::PrintStats(bool print) {
+int ChPardisoProjectEngine::CheckMatrixStats(bool print) {
     /* -------------------------------------------------------------------- */
     /* .. pardiso_printstats(...)                                           */
     /*    prints information on the matrix to STDOUT.                       */
     /*    Use this functionality only for debugging purposes                */
     /* -------------------------------------------------------------------- */
+    bool matOneIndexedFormat_bkp = this->matOneIndexedFormat;
     SetOneIndexedFormat();
     int mtype_int = symmetry;
     pardiso_printstats(&mtype_int, &n, a, ia, ja, &nrhs, b, &error);
+    if (!matOneIndexedFormat_bkp) SetZeroIndexedFormat();
+
     if (error != 0) {
         if (print)
             printf("\nERROR in matrix stats: %d", error);
@@ -139,8 +147,11 @@ int ChPardisoProjectEngine::CheckRhsVectors(bool print){
     /*     Input parameters (see PARDISO user manual for a description):    */
     /*     Use this functionality only for debugging purposes               */
     /* -------------------------------------------------------------------- */
+    bool matOneIndexedFormat_bkp = this->matOneIndexedFormat;
     SetOneIndexedFormat();
     pardiso_chkvec (&n, &nrhs, b, &error);
+    if (!matOneIndexedFormat_bkp) SetZeroIndexedFormat();
+
     if (error != 0) {
         if (print)
             printf("\nERROR in right hand side: %d", error);
@@ -150,25 +161,49 @@ int ChPardisoProjectEngine::CheckRhsVectors(bool print){
     return error;
 }
 
-void ChPardisoProjectEngine::ShiftMatrixIndeces(int val){
-    int nnz = matOneIndexedFormat ? ia[n]-1 : ia[n];
-    for (int i = 0; i < n + 1; i++) {
-        ia[i] += val;
+void ChPardisoProjectEngine::GetSchurComplement(ChSparseMatrix& Z, int nrows) {
+    SetIPARM(38-1, nrows);
+    PardisoProjectCall(ChPardisoProjectEngine::parproj_PHASE::ANALYZE_FACTORIZE);
+    int schurNNZ = GetIPARM(39-1);
+    Z.resize(nrows, nrows);
+    Z.reserve(schurNNZ);
+    int *iS, *jS;
+    double* S;
+    getMatrixInternalArrays(Z, &iS, &jS, &S);
+    int mtype_int = symmetry;
+    pardiso_get_schur(pt, &maxfct, &mnum, &mtype_int, S, iS, jS);
+}
+
+void ChPardisoProjectEngine::shiftInternalMatrixIndices(int val) {
+    shiftMatrixIndices(ia, ja, a, n, val, matOneIndexedFormat);
+}
+
+void ChPardisoProjectEngine::shiftMatrixIndices(int* ext_ia, int* ext_ja, double* ext_a, int ext_n, int val, bool isOneIndexed) {
+    int nnz = isOneIndexed ? ext_ia[ext_n]-1 : ext_ia[ext_n];
+    for (int i = 0; i < ext_n + 1; i++) {
+        ext_ia[i] += val;
     }
     for (int i = 0; i < nnz; i++) {
-        ja[i] += val;
+        ext_ja[i] += val;
     }
+}
+
+bool ChPardisoProjectEngine::getMatrixInternalArrays(ChSparseMatrix& sparseMat, int** ext_ia, int** ext_ja, double** ext_a) {
+    *ext_ia = sparseMat.outerIndexPtr();
+    *ext_ja = sparseMat.innerIndexPtr();
+    *ext_a =  sparseMat.valuePtr();
+    return false;
 }
 
 inline void ChPardisoProjectEngine::SetZeroIndexedFormat() {
     if (matOneIndexedFormat)
-        ShiftMatrixIndeces(-1);
+        shiftInternalMatrixIndices(-1);
     matOneIndexedFormat = false;
 }
 
 inline void ChPardisoProjectEngine::SetOneIndexedFormat() {
     if (!matOneIndexedFormat)
-        ShiftMatrixIndeces(+1);
+        shiftInternalMatrixIndices(+1);
     matOneIndexedFormat = true;
 }
 
@@ -176,12 +211,12 @@ void ChPardisoProjectEngine::Reinit() {
     this->iparm[2]  = ChOMP::GetNumProcs();
 
     //this->iparm[2] = 1;
-    this->iparm[7] = 1;       /* Max numbers of iterative refinement steps. */
+    this->iparm[7] = 1;       /* Max numbers of iterative refinement steps.*/
 
-    this->maxfct = 1;         /* Maximum number of numerical factorizations.  */
+    this->maxfct = 1;         /* Maximum number of numerical factorizations.*/
     this->mnum   = 1;         /* Which factorization to use. */
     
-    this->msglvl = 0;         /* Print statistical information  */
+    this->msglvl = 1;         /* Print statistical information  */
     this->error  = 0;         /* Initialize error flag */
     this->solver = 0;         /* use sparse direct solver */
 
@@ -203,5 +238,11 @@ void ChPardisoProjectEngine::Reinit() {
     else
         printf("[PARDISO]: License check was successful ... \n");
 }
+
+void ChPardisoProjectEngine::SetMessageLevel(int msglvl) {
+    if (msglvl == 0 || msglvl == 1)
+        this->msglvl = msglvl;
+}
+
 
 }  // namespace chrono

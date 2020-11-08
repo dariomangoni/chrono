@@ -54,7 +54,7 @@ See ChSystemDescriptor for more information about the problem formulation and th
 class ChApiPardisoProject ChSolverPardisoProject : public ChDirectSolverLS {
   public:
     ChSolverPardisoProject(int num_threads = 0, 
-        ChPardisoProjectEngine::pardisoproject_SYM symmetry = ChPardisoProjectEngine::pardisoproject_SYM::UNSYMMETRIC);
+        ChPardisoProjectEngine::parproj_SYM symmetry = ChPardisoProjectEngine::parproj_SYM::UNSYMMETRIC);
     ~ChSolverPardisoProject() {}
     virtual Type GetType() const override { return Type::PARDISOPROJECT; }
 
