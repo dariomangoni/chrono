@@ -59,7 +59,7 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     void SetMatrix(const ChSparseMatrix& Z, bool isZeroIndexed = true);
     void SetMatrix(int n, int *ia, int *ja, double *a, bool isZeroIndexed = true);
 
-    /// Set a new value for symmetry. \warning{This operation triggers a Reinit()}
+    /// Set a new value for symmetry. \warning{This function triggers a Reinit()}
     void SetMatrixSymmetry(parproj_SYM symmetry);
 
     /// Set the right-hand side vector.
@@ -102,6 +102,9 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     /// Set the index of the underlying arrays to one-indexed.
     void SetOneIndexedFormat();
 
+    /// Set the solver type. \p directsparse = true for direct sparse solver, false for multi-recursive iterative solver.  \warning{This function triggers a Reinit()}
+    void SetSolverType(bool directsparse = true);
+
     /// Reinitialize the solver (e.g. when a new symmetry option is set)
     void Reinit();
 
@@ -140,8 +143,11 @@ class ChApiPardisoProject ChPardisoProjectEngine {
     /* Pardiso control parameters. */
     int      iparm[64];
     double   dparm[64];
-    int      solver;
-    int      maxfct, mnum, error, msglvl;
+    int      solver = 0;            /* Solver type: 0: sparse direct solver; 1: multi-recursive iterative solver*/
+    int      maxfct = 1;            /* Maximum number of numerical factorizations in memory.*/
+    int      mnum = 1;              /* Which factorization to use. */
+    int      error = 0;             /* Initialize error flag */
+    int      msglvl = 0;            /* Print statistical information  */
 
     /* Number of processors. */
     int      num_procs;

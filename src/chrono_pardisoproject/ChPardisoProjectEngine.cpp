@@ -207,17 +207,23 @@ inline void ChPardisoProjectEngine::SetOneIndexedFormat() {
     matOneIndexedFormat = true;
 }
 
+/// Set the solver type. \p directsparse = true for direct sparse solver, false for multi-recursive iterative solver.
+/// \warning{This function triggers a Reinit()}
+
+inline void ChPardisoProjectEngine::SetSolverType(bool directsparse) {
+    solver = directsparse ? 0 : 1;
+    //SetIPARM(32-1, directsparse ? 0 : 1);
+    Reinit();
+}
+
 void ChPardisoProjectEngine::Reinit() {
     this->iparm[2]  = ChOMP::GetNumProcs();
 
     //this->iparm[2] = 1;
     this->iparm[7] = 1;       /* Max numbers of iterative refinement steps.*/
 
-    this->maxfct = 1;         /* Maximum number of numerical factorizations.*/
-    this->mnum   = 1;         /* Which factorization to use. */
+    this->mnum   = 1;         
     
-    this->msglvl = 1;         /* Print statistical information  */
-    this->error  = 0;         /* Initialize error flag */
     this->solver = 0;         /* use sparse direct solver */
 
     int mtype_int = symmetry;
