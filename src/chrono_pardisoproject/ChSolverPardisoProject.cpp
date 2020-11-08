@@ -45,6 +45,12 @@ inline void ChSolverPardisoProject::SetMatrixSymmetryType(MatrixSymmetryType sym
     m_symmetry = symmetry;
 }
 
+bool ChSolverPardisoProject::Setup(ChSystemDescriptor& sysd) {
+    m_engine.SetZeroIndexedFormat();
+    // TODO: yes, as ugly as it seems... the call to Setup is grabbed before the proper ChDirectSolverLS::Setup is called so to have the chance to reset back the matrix to zero-based indexes
+    return ChDirectSolverLS::Setup(sysd);
+}
+
 bool ChSolverPardisoProject::FactorizeMatrix() {
     m_engine.SetMatrix(m_mat);
 
@@ -69,7 +75,6 @@ bool ChSolverPardisoProject::SolveSystem() {
     m_engine.SetRhsVector(m_rhs);
     m_engine.SetSolutionVector(m_sol);
     m_engine.PardisoProjectCall(ChPardisoProjectEngine::pardisoproject_PHASE::SOLVE);
-
    
     if (m_engine.GetLastError() != 0) {
         printf("\nERROR during solution: %d", m_engine.GetLastError());

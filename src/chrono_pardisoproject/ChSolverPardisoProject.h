@@ -63,6 +63,8 @@ class ChApiPardisoProject ChSolverPardisoProject : public ChDirectSolverLS {
 
     virtual void SetMatrixSymmetryType(MatrixSymmetryType symmetry) override;
 
+    virtual bool Setup(ChSystemDescriptor& sysd) override;
+
   private:
     /// Factorize the current sparse matrix and return true if successful.
     virtual bool FactorizeMatrix() override;
