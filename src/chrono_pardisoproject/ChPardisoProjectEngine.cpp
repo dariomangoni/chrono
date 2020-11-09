@@ -219,17 +219,8 @@ inline void ChPardisoProjectEngine::SetSolverType(bool directsparse) {
 void ChPardisoProjectEngine::Reinit() {
     this->iparm[2]  = ChOMP::GetNumProcs();
 
-    //this->iparm[2] = 1;
-    this->iparm[7] = 1;       /* Max numbers of iterative refinement steps.*/
-
-    this->mnum   = 1;         
-    
-    this->solver = 0;         /* use sparse direct solver */
-
     int mtype_int = symmetry;
     pardisoinit(pt,  &mtype_int, &solver, iparm, dparm, &error);
-
-    printf("WARNING: PardisoProject suggests you to: \"Set environment OMP_NUM_THREADS to 1\"\n");
 
     if (error != 0)
     {

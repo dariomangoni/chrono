@@ -48,6 +48,7 @@ inline void ChSolverPardisoProject::SetMatrixSymmetryType(MatrixSymmetryType sym
 bool ChSolverPardisoProject::Setup(ChSystemDescriptor& sysd) {
     m_engine.SetZeroIndexedFormat();
     // TODO: yes, as ugly as it seems... the call to Setup is grabbed before the proper ChDirectSolverLS::Setup is called so to have the chance to reset back the matrix to zero-based indexes
+    // we could avoid to set them back to zero if we are sure that the sparsity pattern learner is disabled;
     return ChDirectSolverLS::Setup(sysd);
 }
 
