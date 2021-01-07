@@ -4,9 +4,9 @@
 # Cannot be used stand-alone (it's loaded by CMake config. file in parent dir.)
 #=============================================================================
 
-option(ENABLE_MODULE_PARDISOPROJECT "Enable the Chrono PardisoProject module" OFF)
+option(ENABLE_MODULE_PARDISO_PROJECT "Enable the Chrono PardisoProject module" OFF)
 
-if(NOT ENABLE_MODULE_PARDISOPROJECT)
+if(NOT ENABLE_MODULE_PARDISO_PROJECT)
     mark_as_advanced(FORCE PARDISOPROJECT_ROOT)
     return()
 endif()

@@ -96,7 +96,7 @@ set(Chrono_HAS_vehicle @ENABLE_MODULE_VEHICLE@)
 set(Chrono_HAS_fsi @ENABLE_MODULE_FSI@)
 set(Chrono_HAS_granular @ENABLE_MODULE_GRANULAR@)
 set(Chrono_HAS_sensor @ENABLE_MODULE_SENSOR@)
-set(Chrono_HAS_pardisoproject @ENABLE_MODULE_PARDISOPROJECT@)
+set(Chrono_HAS_pardisoproject @ENABLE_MODULE_PARDISO_PROJECT@)
 
 #-------------------------------------------------------------------------------
 # Loop over the list of requested components
