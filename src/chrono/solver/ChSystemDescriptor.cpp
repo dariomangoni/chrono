@@ -190,7 +190,7 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Cq,
     }
 }
 
-void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z, ChVectorDynamic<>* rhs) {
+void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z, ChVectorDynamic<>* rhs, bool loadCq) {
     std::vector<ChConstraint*>& mconstraints = GetConstraintsList();
     std::vector<ChVariables*>& mvariables = GetVariablesList();
 
@@ -225,16 +225,18 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z, ChVectorDynamic<
         }
 
         // Fill Z by looping over constraints.
-        int s_c = 0;
-        for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
-            if (mconstraints[ic]->IsActive()) {
-                // Constraint Jacobian in lower-left block of Z
-                mconstraints[ic]->Build_Cq(*Z, n_q + s_c);
-                // Transposed constraint Jacobian in upper-right block of Z
-                mconstraints[ic]->Build_CqT(*Z, n_q + s_c);
-                // E ( = cfm ) in lower-right block of Z
-                Z->SetElement(n_q + s_c, n_q + s_c, mconstraints[ic]->Get_cfm_i());
-                s_c++;
+        if (loadCq) {
+            int s_c = 0;
+            for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
+                if (mconstraints[ic]->IsActive()) {
+                    // Constraint Jacobian in lower-left block of Z
+                    mconstraints[ic]->Build_Cq(*Z, n_q + s_c);
+                    // Transposed constraint Jacobian in upper-right block of Z
+                    mconstraints[ic]->Build_CqT(*Z, n_q + s_c);
+                    // E ( = cfm ) in lower-right block of Z
+                    Z->SetElement(n_q + s_c, n_q + s_c, mconstraints[ic]->Get_cfm_i());
+                    s_c++;
+                }
             }
         }
     }
