@@ -13,11 +13,14 @@
 #define CHEIGENANALYSIS_H
 
 #include <iostream>
+#include <algorithm>
 
 #include "timestepper/ChState.h"
 #include "timestepper/ChIntegrable.h"
 #include "physics/ChSystem.h"
 #include "ChModelReduction.h"
+
+#include <unsupported/Eigen/SparseExtra>
 
 #ifdef CHRONO_IRRLICHT
 #include "chrono_irrlicht/ChIrrApp.h"
@@ -123,31 +126,43 @@ class ChEigenAnalysis {
     virtual ~ChEigenAnalysis() {}
 
     /// Performs the static analysis
-    virtual void EigenAnalysis(int total_modes = -1)
-    {
+    virtual void EigenAnalysis(int total_modes = -1) {
         m_system->Setup();
         m_system->Update();
-        ChSparseMatrix matK, matM;
-        m_system->GetStiffnessMatrix(&matK);
-        m_system->GetMassMatrix(&matM);
 
-        assert(total_modes < matK.rows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
+        ChSparseMatrix matKaug;
+        m_system->KRMmatricesLoad(1.0, 0, 0);
+        m_system->GetSystemDescriptor()->SetMassFactor(0.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, false);
+        //std::cout << matKaug << std::endl;
+        Eigen::saveMarket(matKaug, "C:/workspace/Matlab_temp/matKaug.mat");
+        //m_system->GetStiffnessMatrix(&matKaug);
 
-        if (total_modes == -1)
-            total_modes = matK.rows() - 1;
+        ChSparseMatrix matMaug;
+        m_system->KRMmatricesLoad(0, 0, 1.0);
+        m_system->GetSystemDescriptor()->SetMassFactor(1.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, true);
+        //std::cout << matMaug << std::endl;
+        Eigen::saveMarket(matMaug, "C:/workspace/Matlab_temp/matMaug.mat");
+        //m_system->GetMassMatrix(&matMaug);
 
-        matK.makeCompressed();
-        matM.makeCompressed();
 
-        //matK.VerifyMatrix();
-        //matM.VerifyMatrix();
+        assert(total_modes < matKaug.rows() && "ChEigenAnalyis: the requested modes exceed matrix dimension");
 
-        //matK.ExportToDatFile("C:/K", 6);
-        //matM.ExportToDatFile("C:/M", 6);
+        // total_modes = min(m-1,n); m = augmented matrix dimension, n = number of active variables -> if n=m it computes n-1 eigenvalues, if n<m it computes all n eigenvalues
+        if (total_modes == -1) 
+            total_modes = std::min(static_cast<int>(matKaug.rows()) - 1, m_system->GetSystemDescriptor()->CountActiveVariables());
 
-        ChSymGEigsSolver eig_solver(matK, matM, eig_val, eig_vect);
+        matKaug.makeCompressed();
+        matMaug.makeCompressed();
+
+
+        ChSymGEigsSolver eig_solver(matKaug, matMaug, eig_val, eig_vect);
         eig_solver.compute(total_modes);
-        eig_vect_col.resize(matK.rows(), 1);
+        eig_vect_col.resize(matKaug.rows(), 1);
+
+        Eigen::saveMarket(eig_val, "C:/workspace/Matlab_temp/eig_val.mat");
+        Eigen::saveMarket(eig_vect, "C:/workspace/Matlab_temp/eig_vect.mat");
 
         // setup main vectors
         integrable->StateSetup(X0, V, A);

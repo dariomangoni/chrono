@@ -36,11 +36,17 @@
 #include "chrono_modelreduction/ChEigenAnalysis.h"
 #include <typeinfo>
 
+#include <unsupported/Eigen/SparseExtra>
+
+#include <set>
+
 //#include "chrono_matlab/ChMatlabEngine.h"
 //#include "chrono_matlab/ChSolverMatlab.h"
 
 // Remember to use the namespace 'chrono' because all classes 
 // of Chrono::Engine belong to this namespace and its children...
+
+
 
 using namespace chrono;
 using namespace chrono::fea;
@@ -50,9 +56,9 @@ using namespace irr;
 
 bool enable_eigenanalysis = true;
 
-bool use_explicit_constraints = false;
+bool use_explicit_constraints = true;
 
-bool use_realtime = true;
+bool use_realtime = false;
 
 int main(int argc, char* argv[])
 {
@@ -80,58 +86,91 @@ int main(int argc, char* argv[])
     // Create a section, i.e. thickness and material properties
     // for beams. This will be shared among some beams.
 
-    //auto msection = std::make_shared<ChBeamSectionAdvanced>();
+    double beam_wy = 0.02;                  //[m]
+    double beam_wz = 0.02;                  //[m]
+    double beam_L = 3;                      //[m]
+    double E = 21e+10;                    //[Pa]
+    double G = 6.3e+10;                     //[Pa]
+    double density = 7800;                  //[kg/m^3]
+
+    double Area = beam_wy * beam_wz;
+    double Izz = (1.0 / 12.0) * beam_wz * pow(beam_wy, 3);
+    double Iyy = (1.0 / 12.0) * beam_wy * pow(beam_wz, 3);
+    double Ixx = Iyy + Izz;
+
+    // use Roark's formulas for torsion of rectangular sect:
+    double t = ChMin(beam_wy, beam_wz);
+    double b = ChMax(beam_wy, beam_wz);
+    double J = b * pow(t, 3) * ((1.0 / 3.0) - 0.210 * (t / b) * (1.0 - (1.0 / 12.0) * pow((t / b), 4)));
+
+
     auto msection = std::make_shared<ChBeamSectionEulerAdvancedGeneric>();
 
-    double beam_wy = 0.012;
-    double beam_wz = 0.025;
-    //msection->SetAsRectangularSection(beam_wy, beam_wz);
-    //msection->SetYoungModulus(0.01e9);
-    //msection->SetGshearModulus(0.01e9 * 0.3);
     msection->SetBeamRaleyghDamping(0.000);
-    //msection->SetDensity(7500);
-    msection->SetArtificialJyyJzzFactor(1.0/500.0);
-    //msection->SetCentroid(0,0.02); 
-    //msection->SetShearCenter(0,0.1); 
-    //msection->SetSectionRotation(45*CH_C_RAD_TO_DEG);
+
+    msection->SetAxialRigidity(Area*E);
+    msection->SetXtorsionRigidity(J*G);
+    msection->SetYbendingRigidity(Iyy*E);
+    msection->SetZbendingRigidity(Izz*E);
+    msection->SetMassPerUnitLength(Area*density);
+    msection->SetInertiaJxxPerUnitLength(Ixx*density);
+
+    //msection->SetArtificialJyyJzzFactor(1.0/500.0);
+    ////msection->SetSectionRotation(45*CH_C_RAD_TO_DEG);
+
 
     //
     // Add some EULER-BERNOULLI BEAMS (the fast way!)
     //
 
-    double beam_L = 0.2;
+
+    int num_elements = 32;
 
     ChBuilderBeamEuler builder;
 
 
     builder.BuildBeam(my_mesh,		// the mesh where to put the created nodes and elements 
                       msection,		// the ChBeamSectionAdvanced to use for the ChElementBeamEuler elements
-                      5,				// the number of ChElementBeamEuler to create
-                      ChVector<>(0, 0, -0.1),		// the 'A' point in space (beginning of beam)
-                      ChVector<>(beam_L, 0, -0.1),	// the 'B' point in space (end of beam)
+                      num_elements,				// the number of ChElementBeamEuler to create
+                      ChVector<>(0, 0, 0),		// the 'A' point in space (beginning of beam)
+                      ChVector<>(beam_L, 0, 0),	// the 'B' point in space (end of beam)
                       ChVector<>(0, 1, 0));			// the 'Y' up direction of the section for the beam
 
                                                     // After having used BuildBeam(), you can retrieve the nodes used for the beam,
                                                     // For example say you want to fix the A end and apply a force to the B end:
 
-    if(!use_explicit_constraints)
-        builder.GetLastBeamNodes().back()->SetFixed(true);
-    else{
-        // DeadBody object
-        auto my_deadbody = chrono_types::make_shared<ChBody>();
-        my_system.AddBody(my_deadbody);
-        my_deadbody->SetBodyFixed(true);
-        my_deadbody->SetName("DeadBody");
+    // DeadBody object
+    auto my_deadbody = chrono_types::make_shared<ChBody>();
+    my_system.AddBody(my_deadbody);
+    my_deadbody->SetBodyFixed(true);
+    my_deadbody->SetName("DeadBody");
 
-        // Fix link between beam and deadboy
+    if(!use_explicit_constraints)
+        builder.GetLastBeamNodes()[0]->SetFixed(true);
+    else{
+        //auto bearing = chrono_types::make_shared<ChLinkMateGeneric>(true, true, true, true, true, true);
+        //bearing->Initialize(builder.GetLastBeamNodes()[0], my_deadbody,
+        //                    ChFrame<>(builder.GetLastBeamNodes()[0]->GetPos()));
+        //my_system.Add(bearing);
+
+         //Fix link between beam and deadboy
         auto my_FixLink = chrono_types::make_shared<ChLinkMateFix>();
         my_FixLink->SetName("FixLink");
-        my_FixLink->Initialize(my_deadbody, builder.GetLastBeamNodes().back());
+        //my_FixLink->Initialize(my_deadbody, builder.GetLastBeamNodes().front());
+        my_FixLink->Initialize(my_deadbody, builder.GetLastBeamNodes()[0]);
         my_system.AddLink(my_FixLink);
+
     }
 
-    builder.GetLastBeamNodes().front()->SetForce(ChVector<>(0, -1.0, 0));
+    //builder.GetLastBeamNodes().back()->SetForce(ChVector<>(0, -1.0, 0));
     
+    //for (int i = 1; i < builder.GetLastBeamNodes().size()-1; i++) {
+    //    auto abearing = chrono_types::make_shared<ChLinkMateGeneric>(true, true, false, true, false, true);
+    //    abearing->Initialize(builder.GetLastBeamNodes()[i], my_deadbody, ChFrame<>(builder.GetLastBeamNodes()[i]->GetPos()));
+    //    my_system.Add(abearing);
+    //}
+    
+   
 
     //
     // Final touches..
@@ -164,8 +203,10 @@ int main(int argc, char* argv[])
     */
 
     auto mvisualizebeamA = std::make_shared<ChVisualizationFEAmesh>(*my_mesh.get());
-    mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_BEAM_MZ);
-    mvisualizebeamA->SetColorscaleMinMax(-0.4, 0.4);
+    //mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_ELEM_BEAM_MZ);
+    //mvisualizebeamA->SetColorscaleMinMax(-0.4, 0.4);
+    mvisualizebeamA->SetFEMdataType(ChVisualizationFEAmesh::E_PLOT_SURFACE);
+    mvisualizebeamA->SetDefaultMeshColor(ChColor(0,1,0,0));
     mvisualizebeamA->SetSmoothFaces(true);
     mvisualizebeamA->SetWireframe(false);
     my_mesh->AddAsset(mvisualizebeamA);
@@ -207,10 +248,64 @@ int main(int argc, char* argv[])
 
     application.DoStep();
 
-    ChSparseMatrix matM;
-    application.GetSystem()->GetMassMatrix(&matM);
-    matM.makeCompressed();
-    std::cout << matM << std::endl;
+    // Save matrix
+
+    if (!use_explicit_constraints) {
+        ChSparseMatrix matM;
+        application.GetSystem()->GetMassMatrix(&matM);
+        matM.makeCompressed();
+        //std::cout << matM << std::endl;
+        Eigen::saveMarket(matM, "C:/workspace/Matlab_temp/matM.mat");
+
+        ChSparseMatrix matK;
+        application.GetSystem()->GetStiffnessMatrix(&matK);
+        matK.makeCompressed();
+        //std::cout << matK << std::endl;
+        Eigen::saveMarket(matK, "C:/workspace/Matlab_temp/matK.mat");
+
+        ChSparseMatrix matCq;
+        application.GetSystem()->GetConstraintJacobianMatrix(&matCq);
+        matCq.makeCompressed();
+        //std::cout << matCq << std::endl;
+        Eigen::saveMarket(matCq, "C:/workspace/Matlab_temp/matCq.mat");
+        
+    }
+
+    else {
+
+        ChSparseMatrix matKaug;
+        application.GetSystem()->KRMmatricesLoad(1.0, 0, 0);
+        application.GetSystem()->GetSystemDescriptor()->SetMassFactor(0.0);
+        application.GetSystem()->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, false);
+        //std::cout << matKaug << std::endl;
+        Eigen::saveMarket(matKaug, "C:/workspace/Matlab_temp/matKaug.mat");
+
+        ChSparseMatrix matMaug;
+        application.GetSystem()->KRMmatricesLoad(0, 0, 1.0);
+        application.GetSystem()->GetSystemDescriptor()->SetMassFactor(1.0);
+        application.GetSystem()->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, true);
+        //std::cout << matMaug << std::endl;
+        Eigen::saveMarket(matMaug, "C:/workspace/Matlab_temp/matMaug.mat");
+
+        ChSparseMatrix matM_expl;
+        application.GetSystem()->GetMassMatrix(&matM_expl);
+        matM_expl.makeCompressed();
+        //std::cout << matM_expl << std::endl;
+        Eigen::saveMarket(matM_expl, "C:/workspace/Matlab_temp/matM_expl.mat");
+
+        ChSparseMatrix matK_expl;
+        application.GetSystem()->GetStiffnessMatrix(&matK_expl);
+        matK_expl.makeCompressed();
+        //std::cout << matK_expl << std::endl;
+        Eigen::saveMarket(matK_expl, "C:/workspace/Matlab_temp/matK_expl.mat");
+
+        ChSparseMatrix matCq_expl;
+        application.GetSystem()->GetConstraintJacobianMatrix(&matCq_expl);
+        matCq_expl.makeCompressed();
+        //std::cout << matCq_expl << std::endl;
+        Eigen::saveMarket(matCq_expl, "C:/workspace/Matlab_temp/matCq_expl.mat");
+
+    }
 
 
     if (enable_eigenanalysis) {
