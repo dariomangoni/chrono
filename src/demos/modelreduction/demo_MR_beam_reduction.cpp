@@ -86,9 +86,9 @@ int main(int argc, char* argv[])
     // Create a section, i.e. thickness and material properties
     // for beams. This will be shared among some beams.
 
-    double beam_wy = 0.02;                  //[m]
-    double beam_wz = 0.02;                  //[m]
-    double beam_L = 3;                      //[m]
+    double beam_wy = 0.04;                  //[m]
+    double beam_wz = 0.05;                  //[m]
+    double beam_L = 4;                      //[m]
     double E = 21e+10;                    //[Pa]
     double G = 6.3e+10;                     //[Pa]
     double density = 7800;                  //[kg/m^3]
@@ -276,14 +276,14 @@ int main(int argc, char* argv[])
         ChSparseMatrix matKaug;
         application.GetSystem()->KRMmatricesLoad(1.0, 0, 0);
         application.GetSystem()->GetSystemDescriptor()->SetMassFactor(0.0);
-        application.GetSystem()->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, false);
+        application.GetSystem()->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, true);
         //std::cout << matKaug << std::endl;
         Eigen::saveMarket(matKaug, "C:/workspace/Matlab_temp/matKaug.mat");
 
         ChSparseMatrix matMaug;
         application.GetSystem()->KRMmatricesLoad(0, 0, 1.0);
         application.GetSystem()->GetSystemDescriptor()->SetMassFactor(1.0);
-        application.GetSystem()->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, true);
+        application.GetSystem()->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, false);
         //std::cout << matMaug << std::endl;
         Eigen::saveMarket(matMaug, "C:/workspace/Matlab_temp/matMaug.mat");
 
@@ -313,7 +313,7 @@ int main(int argc, char* argv[])
 
 
         ChEigenAnalysis eig_analysis(application);
-        eig_analysis.EigenAnalysis();
+        eig_analysis.EigenAnalysis(20);
 
 
         // Strict realtime timer

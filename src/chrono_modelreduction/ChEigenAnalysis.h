@@ -133,7 +133,7 @@ class ChEigenAnalysis {
         ChSparseMatrix matKaug;
         m_system->KRMmatricesLoad(1.0, 0, 0);
         m_system->GetSystemDescriptor()->SetMassFactor(0.0);
-        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, false);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matKaug, nullptr, true);
         //std::cout << matKaug << std::endl;
         Eigen::saveMarket(matKaug, "C:/workspace/Matlab_temp/matKaug.mat");
         //m_system->GetStiffnessMatrix(&matKaug);
@@ -141,7 +141,7 @@ class ChEigenAnalysis {
         ChSparseMatrix matMaug;
         m_system->KRMmatricesLoad(0, 0, 1.0);
         m_system->GetSystemDescriptor()->SetMassFactor(1.0);
-        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, true);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(&matMaug, nullptr, false);
         //std::cout << matMaug << std::endl;
         Eigen::saveMarket(matMaug, "C:/workspace/Matlab_temp/matMaug.mat");
         //m_system->GetMassMatrix(&matMaug);

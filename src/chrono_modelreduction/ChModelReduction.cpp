@@ -3,6 +3,11 @@
 #include <Spectra/SymGEigsSolver.h>
 #include <Spectra/MatOp/SparseCholesky.h>
 
+#include <Spectra/SymGEigsShiftSolver.h>
+#include <Spectra/MatOp/SymShiftInvert.h>
+#include <Spectra/MatOp/DenseSymMatProd.h>
+#include <Spectra/MatOp/SparseSymMatProd.h>
+
 namespace chrono
 {
     int chrono::ChSymGEigsSolver::compute(int requested_eigval) const
@@ -14,20 +19,32 @@ namespace chrono
         // Construct matrix operation object using the wrapper classes
         assert(matA.isCompressed() && "ChSymGEigsSolver: matA is not in a standard CSR format");
         assert(matB.isCompressed() && "ChSymGEigsSolver: matB is not in a standard CSR format");
-        SparseSymMatProd<double> op(getEigenMapSparseMatrix(matA));
-        SparseCholesky<double> Bop(getEigenMapSparseMatrix(matB));
+        
+        int m = convergence_speed;
+        double sigma = 100;
 
-        //SparseSymMatProd<double> op(matA);
-        //SparseCholesky<double> Bop(matB);
+        using OpType = SymShiftInvert<double, Eigen::Sparse, Eigen::Sparse>;
+        using BOpType = SparseSymMatProd<double>;
+
+        OpType op(getEigenMapSparseMatrix(matA), getEigenMapSparseMatrix(matB));
+        BOpType Bop(getEigenMapSparseMatrix(matB));
+        SymGEigsShiftSolver<OpType, BOpType, GEigsMode::ShiftInvert> geigs(op, Bop, requested_eigval, m, sigma);
 
 
-        // Construct generalized eigen solver object, requesting the largest three generalized eigenvalues
-        const SELECT_EIGENVALUE SelectionRule = SMALLEST_MAGN;
-        SymGEigsSolver<double, SelectionRule, SparseSymMatProd<double>, SparseCholesky<double>, GEIGS_CHOLESKY> geigs(&op, &Bop, requested_eigval, convergence_speed);
+        //SparseSymMatProd<double> op(getEigenMapSparseMatrix(matA));
+        //SparseCholesky<double> Bop(getEigenMapSparseMatrix(matB));
+
+        ////SparseSymMatProd<double> op(matA);
+        ////SparseCholesky<double> Bop(matB);
+
+
+        //// Construct generalized eigen solver object, requesting the largest three generalized eigenvalues
+        //const SELECT_EIGENVALUE SelectionRule = SMALLEST_MAGN;
+        //SymGEigsSolver<double, SelectionRule, SparseSymMatProd<double>, SparseCholesky<double>, GEIGS_CHOLESKY> geigs(&op, &Bop, requested_eigval, convergence_speed);
 
         // Initialize and compute
         geigs.init();
-        int nconv = geigs.compute();
+        int nconv = geigs.compute(SortRule::LargestMagn);
 
         // Retrieve results
         eig_val.resize(requested_eigval, 1);
@@ -35,13 +52,13 @@ namespace chrono
         Eigen::Map<Eigen::VectorXd> eig_val_map(eig_val.data(), requested_eigval, 1); //TODO: use default Chrono Vectors
         Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> eig_vect_map(eig_vect.data(), dim, requested_eigval);
 
-        if (geigs.info() == SUCCESSFUL)
+        if (geigs.info() == CompInfo::Successful)
         {
             eig_val_map = geigs.eigenvalues();
             eig_vect_map = geigs.eigenvectors();
         }
         
-        return geigs.info();
+        return geigs.info() == CompInfo::Successful ? 0:1;
     }
 }
 
