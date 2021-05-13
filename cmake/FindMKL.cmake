@@ -110,18 +110,18 @@ set(_MKL_ROOT_SEARCH_DIRS
 if (WIN32)
 	SET(PROGRAM_FILE_ENVVAR "PROGRAMFILES(x86)")
 	FILE(TO_CMAKE_PATH "$ENV{${PROGRAM_FILE_ENVVAR}}" PRG_FOLD)
-	list(APPEND _MKL_ROOT_SEARCH_DIRS "${PRG_FOLD}/Intel/Composer XE/mkl") # default until ParallelStudioXE2015
-	list(APPEND _MKL_ROOT_SEARCH_DIRS "${PRG_FOLD}/IntelSWTools/compilers_and_libraries/windows/mkl") # default for ParallelStudioXE2016 and later
 	list(APPEND _MKL_ROOT_SEARCH_DIRS "${PRG_FOLD}/Intel/oneAPI/mkl") # default for oneAPI (2020 and later)
+	list(APPEND _MKL_ROOT_SEARCH_DIRS "${PRG_FOLD}/IntelSWTools/compilers_and_libraries/windows/mkl") # default for ParallelStudioXE2016 and later
+	list(APPEND _MKL_ROOT_SEARCH_DIRS "${PRG_FOLD}/Intel/Composer XE/mkl") # default until ParallelStudioXE2015
 elseif(UNIX AND NOT APPLE)
 	foreach (_MKL_VER ${_MKL_TEST_VERSIONS})
 		list(APPEND _MKL_ROOT_SEARCH_DIRS "/opt/intel/composerxe-${_MKL_VER}/mkl") # default until ParallelStudioXE2015 (root permissions)
 		list(APPEND _MKL_ROOT_SEARCH_DIRS "$ENV{HOME}/intel/composerxe-${_MKL_VER}/mkl") # default until ParallelStudioXE2015 (no root permissions)
 	endforeach()
-	list(APPEND _MKL_ROOT_SEARCH_DIRS "/opt/intel/compilers_and_libraries/linux/mkl") # default for ParallelStudioXE2016 and later (root permissions)
 	list(APPEND _MKL_ROOT_SEARCH_DIRS "/opt/intel/oneapi/mkl") # default for oneAPI (2020) and later (root permissions)
+	list(APPEND _MKL_ROOT_SEARCH_DIRS "$ENV{HOME}/intel/oneapi/mkl") # default for oneAPI (2020) and later (no root permissions)
+	list(APPEND _MKL_ROOT_SEARCH_DIRS "/opt/intel/compilers_and_libraries/linux/mkl") # default for ParallelStudioXE2016 and later (root permissions)
     list(APPEND _MKL_ROOT_SEARCH_DIRS "$ENV{HOME}/intel/compilers_and_libraries/linux/mkl") # default for ParallelStudioXE2016 and later (no root permissions)
-    list(APPEND _MKL_ROOT_SEARCH_DIRS "$ENV{HOME}/intel/oneapi/mkl") # default for oneAPI (2020) and later (no root permissions)
 endif()
 
 
