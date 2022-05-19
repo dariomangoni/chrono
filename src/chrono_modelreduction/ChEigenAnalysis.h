@@ -29,6 +29,40 @@
 
 namespace chrono {
 
+
+    
+void PasteMatrix(ChSparseMatrix& matrTo, ChSparseMatrix& matrFrom, int insrow, int inscol, bool overwrite = true) {
+    if (overwrite) {
+        for (auto i = 0; i < matrFrom.rows(); i++) {
+            for (auto j = 0; j < matrFrom.cols(); j++) {
+                matrTo.coeffRef(insrow + i, inscol + j) = matrFrom.coeff(i, j);
+            }
+        }
+    } else {
+        for (auto i = 0; i < matrFrom.rows(); i++) {
+            for (auto j = 0; j < matrFrom.cols(); j++) {
+                matrTo.coeffRef(insrow + i, inscol + j) += matrFrom.coeff(i, j);
+            }
+        }
+    }
+}
+
+void PasteMatrixT(ChSparseMatrix& matrTo, ChSparseMatrix& matrFrom, int insrow, int inscol, bool overwrite = true) {
+    if (overwrite) {
+        for (auto i = 0; i < matrFrom.rows(); i++) {
+            for (auto j = 0; j < matrFrom.cols(); j++) {
+                matrTo.coeffRef(insrow + j, inscol + i) = matrFrom.coeff(i, j);
+            }
+        }
+    } else {
+        for (auto i = 0; i < matrFrom.rows(); i++) {
+            for (auto j = 0; j < matrFrom.cols(); j++) {
+                matrTo.coeffRef(insrow + j, inscol + i) += matrFrom.coeff(i, j);
+            }
+        }
+    }
+}
+
 #ifdef CHRONO_IRRLICHT
 
 class ChEigenAnalysis; // forward decl
@@ -105,6 +139,8 @@ class ChEigenAnalysis {
     // Eigen analysis matrices
     ChSparseMatrix matKaug;
     ChSparseMatrix matMaug;
+    ChSparseMatrix matA;
+    ChSparseMatrix matB;
     ChMatrixDynamic<double> eig_val;
     ChMatrixDynamic<double> eig_vect;
     ChMatrixDynamic<double> eig_vect_col; //TODO: check if ChVectorDynamic can be used here
@@ -191,6 +227,108 @@ class ChEigenAnalysis {
         m_timer_eigensolve.stop();
 
         eig_vect_col.resize(matKaug.rows(), 1);
+
+        // setup main vectors
+        integrable->StateSetup(X0, V, A);
+        integrable->StateSetup(X, V, A);
+        L.resize(integrable->GetNconstr());
+
+        L.fill(0);// set Lagrangians to zero
+        integrable->StateScatterReactions(L);  // -> system auxiliary data 
+
+        // store the initial configuration of the system
+        double T;
+        integrable->StateGather(X0, V, T);
+
+#ifdef CHRONO_IRRLICHT
+        if (irrlicht_app) gui_receiver.Initialize(*irrlicht_app, *this);
+#endif
+
+    }
+
+    virtual void EigenAnalysisDamped(int requested_eigval = -1, double sigma = 10e-2) {
+        m_system->Setup();
+        m_system->Update();
+
+        m_timer_assembly.start();
+
+        std::cout << m_system->GetNconstr() + m_system->GetNcoords_w() << " : " << m_system->GetNsysvars_w() << " : " << matMaug.rows() << std::endl;
+
+        double preshift = 0.1;
+
+        ChSparseMatrix matnn, matmn;
+
+        int n = m_system->GetNcoords_w();
+        int m = m_system->GetNconstr();
+
+        matnn.resize(n,n);
+        matmn.resize(m,n);
+
+
+        matA.resize(2*(n+m), 2*(n+m));
+        matB.resize(2*(n+m), 2*(n+m));
+
+        // loading K matrix
+        m_system->KRMmatricesLoad(1.0, preshift, preshift*preshift);
+        m_system->GetSystemDescriptor()->SetMassFactor(0.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(nullptr, &matnn, nullptr, nullptr, nullptr, nullptr, false, false);
+        PasteMatrix(matA, matnn, 0, 0, true);
+
+        // loading constraint Jacobian
+        m_system->ConstraintsLoadJacobians();
+        m_system->GetConstraintJacobianMatrix(&matmn);
+        PasteMatrix(matA, matmn, n, 0, true);
+        PasteMatrixT(matA, matmn, 0, n, true);
+
+        // loading R matrix
+        m_system->KRMmatricesLoad(0, 1.0, 2*preshift);
+        m_system->GetSystemDescriptor()->SetMassFactor(0.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(nullptr, &matnn, nullptr, nullptr, nullptr, nullptr, false, false);
+        PasteMatrix(matB, matnn, 0, 0, true);
+
+        // loading M matrix
+        m_system->KRMmatricesLoad(0, 0, 1.0);
+        m_system->GetSystemDescriptor()->SetMassFactor(1.0);
+        m_system->GetSystemDescriptor()->ConvertToMatrixForm(nullptr, &matnn, nullptr, nullptr, nullptr, nullptr, false, false);
+        PasteMatrix(matB, matnn, 0, n+m, true);
+
+        matB *= -1;
+        
+        for (auto i = 0; i<n+m; ++i){
+            matB.coeffRef(i +n+m, i) = 1.0;
+            matA.coeffRef(i+n+m, i+n+m) = 1.0;
+        }
+        
+        matA.makeCompressed();
+        matB.makeCompressed();
+
+        Eigen::saveMarket(matA, "matA.mat");
+        Eigen::saveMarket(matB, "matB.mat");
+
+        assert(requested_eigval < n+m && "ChEigenAnalyis: the requested modes exceed matrix dimension");
+
+        // requested_eigval = min(m-1,n); m = augmented matrix dimension, n = number of active variables -> if n=m it computes n-1 eigenvalues, if n<m it computes all n eigenvalues
+        if (requested_eigval == -1) 
+            requested_eigval = std::min(static_cast<int>(n+m) - 1, m_system->GetSystemDescriptor()->CountActiveVariables());
+
+        matA.makeCompressed();
+        matB.makeCompressed();
+
+        m_timer_assembly.stop();
+
+        m_timer_eigensolve.start();
+
+        ChSymGEigsSolver eig_solver(matA, matB, eig_val, eig_vect);
+
+        eig_solver.SetVerbose(verbose);
+        
+        eig_solver.computeShift(requested_eigval, sigma);
+        //eig_solver.computeRegularInverse(requested_eigval);
+        //eig_solver.computeCholesky(requested_eigval);
+
+        m_timer_eigensolve.stop();
+
+        eig_vect_col.resize(n+m, 1);
 
         // setup main vectors
         integrable->StateSetup(X0, V, A);

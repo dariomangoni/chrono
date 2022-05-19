@@ -159,7 +159,7 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Cq,
     int s_k = 0;
     if (H) {
         for (unsigned int ik = 0; ik < vstiffness.size(); ik++) {
-            vstiffness[ik]->Build_K(*H, true);
+            vstiffness[ik]->Build_K(*H, 0, 0, true);
         }
     }
 
@@ -221,7 +221,7 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z, ChVectorDynamic<
         // If present, add stiffness matrix K to upper-left block of Z.
         int s_k = 0;
         for (unsigned int ik = 0; ik < vstiffness.size(); ik++) {
-            vstiffness[ik]->Build_K(*Z, true);
+            vstiffness[ik]->Build_K(*Z, 0, 0, true);
         }
 
         // Fill Z by looping over constraints.
@@ -264,6 +264,62 @@ void ChSystemDescriptor::ConvertToMatrixForm(ChSparseMatrix* Z, ChVectorDynamic<
             }
         }
     }
+}
+
+void ChSystemDescriptor::BuildKRM(ChSparseMatrix* Z, int insrow, int inscol, bool resize) {
+    std::vector<ChVariables*>& mvariables = GetVariablesList();
+
+    // Count active variables, by scanning through all variable blocks, and set offsets.
+    n_q = CountActiveVariables();
+
+
+    if (resize)
+        Z->conservativeResize(n_q, n_q);
+    //Z->setZeroValues();
+
+    // Fill Z with masses and inertias.
+    int s_q = 0;
+    for (unsigned int iv = 0; iv < mvariables.size(); iv++) {
+        if (mvariables[iv]->IsActive()) {
+            // Masses and inertias in upper-left block of Z
+            mvariables[iv]->Build_M(*Z, s_q + insrow, s_q + inscol, c_a);
+            s_q += mvariables[iv]->Get_ndof();
+        }
+    }
+
+    // If present, add stiffness matrix K to upper-left block of Z.
+    int s_k = 0;
+    for (unsigned int ik = 0; ik < vstiffness.size(); ik++) {
+        vstiffness[ik]->Build_K(*Z, insrow, inscol, true);
+    }
+}
+
+void ChSystemDescriptor::BuildCq(ChSparseMatrix* Z, int insrow, int inscol, bool resize, bool transpose) {
+    std::vector<ChConstraint*>& mconstraints = GetConstraintsList();
+
+    // Count constraints.
+    int mn_c = 0;
+    for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
+        if (mconstraints[ic]->IsActive())
+            mn_c++;
+    }
+
+    if (resize)
+        Z->conservativeResize(mn_c, mn_c);
+    //Z->setZeroValues();
+
+    int s_c = 0;
+    for (unsigned int ic = 0; ic < mconstraints.size(); ic++) {
+        if (mconstraints[ic]->IsActive()) {
+            // Constraint Jacobian in lower-left block of Z
+            if (transpose)
+                mconstraints[ic]->Build_CqT(*Z, inscol + s_c);
+            else
+                mconstraints[ic]->Build_Cq(*Z, insrow + s_c);
+            s_c++;
+        }
+    }
+
 }
 
 void ChSystemDescriptor::DumpLastMatrices(bool assembled, const char* path) {

@@ -7,8 +7,9 @@ set(MODELREDUCTION_DEMOS
 # Add demos that require Irrlicht
 if(ENABLE_MODULE_IRRLICHT)
 set(MODELREDUCTION_DEMOS ${MODELREDUCTION_DEMOS}
-    demo_MR_system_reduction
-    demo_MR_beam_reduction
+  demo_MR_system_reduction
+  demo_MR_beam_reduction
+  demo_MR_beam_damped
 	demo_MR_visualize
 	demo_MR_rod_reduction
 	demo_MR_engine
@@ -22,6 +23,7 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 INCLUDE_DIRECTORIES(${CH_MODELREDUCTION_INCLUDES})
+
 
 include_directories(${CH_INCLUDES})
 set(COMPILER_FLAGS "${CH_CXX_FLAGS}")
@@ -62,6 +64,15 @@ foreach(PROGRAM ${MODELREDUCTION_DEMOS})
         LINK_FLAGS "${LINKER_FLAGS}")
     set_property(TARGET ${PROGRAM} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${PROGRAM}>")
     target_link_libraries(${PROGRAM} ${LIBS})
+
+    if (ENABLE_ARPACK)
+      set_target_properties(${PROGRAM} PROPERTIES
+        LINK_FLAGS "${CH_MKL_LINK_FLAGS}"
+        LINK_DIRECTORIES "${MKL_LIBRARY_DIRS}")
+      target_include_directories(${PROGRAM} PUBLIC "${MKL_INCLUDE_DIRS}")
+      target_compile_definitions(${PROGRAM} PRIVATE "MKL_LP64")
+      target_link_libraries(${PROGRAM} ${MKL_LIBRARIES} ${IOMP5_LIBRARY})
+    endif()
     
     install(TARGETS ${PROGRAM} DESTINATION ${CH_INSTALL_DEMO})
 endforeach(PROGRAM)

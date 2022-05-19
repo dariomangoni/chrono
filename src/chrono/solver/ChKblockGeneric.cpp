@@ -96,7 +96,7 @@ void ChKblockGeneric::DiagonalAdd(ChVectorRef result) {
     }
 }
 
-void ChKblockGeneric::Build_K(ChSparseMatrix& storage, bool add) {
+void ChKblockGeneric::Build_K(ChSparseMatrix& storage, int insrow, int inscol, bool add) {
     if (K.rows() == 0)
         return;
 
@@ -112,10 +112,7 @@ void ChKblockGeneric::Build_K(ChSparseMatrix& storage, bool add) {
                 int jn = this->GetVariableN(jv)->Get_ndof();
 
                 if (this->GetVariableN(jv)->IsActive()) {
-                    if (add)
-                        PasteMatrix(storage, K.block(kio, kjo, in, jn), io, jo, false);
-                    else
-                        PasteMatrix(storage, K.block(kio, kjo, in, jn), io, jo, true);
+                    PasteMatrix(storage, K.block(kio, kjo, in, jn), io+insrow, jo+inscol, !add);
                 }
 
                 kjo += jn;

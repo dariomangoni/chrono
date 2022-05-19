@@ -329,6 +329,9 @@ class ChApi ChSystemDescriptor {
                                      bool loadCq = true         ///< write constraints Jacobian (Cq) on Z
     );
 
+    void BuildKRM(ChSparseMatrix* Z, int insrow, int inscol, bool resize=true);
+    void BuildCq(ChSparseMatrix* Z, int insrow, int inscol, bool resize=true, bool transpose=false);
+
     /// Saves to disk the LAST used matrices of the problem.
     /// If assembled == true,
     ///    dump_Z.dat   has the assembled optimization matrix (Matlab sparse format)

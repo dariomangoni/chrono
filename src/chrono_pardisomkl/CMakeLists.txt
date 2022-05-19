@@ -54,6 +54,7 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
 endif ()
 
 set(CH_MKL_LINK_FLAGS "${CH_MKL_LINK_FLAGS}" PARENT_SCOPE)
+set(MKL_LIBRARY_DIRS "${MKL_LIBRARY_DIRS}"   PARENT_SCOPE)
 
 # ------------------------------------------------------------------------------
 # Collect all additional include directories necessary for the MKL module
