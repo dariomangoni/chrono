@@ -1,11 +1,10 @@
-# Unit tests for the Chrono::Modal module
+# Unit tests Chrono modal
 # ==================================================================
 
-message(STATUS "Unit tests for Chrono::Modal...")
+message(STATUS "Unit tests for Chrono::modal ...")
 
-set(TESTS
+set(TEST_PROGRAMS
     utest_MOD_eigensolve
-    utest_MOD_curved_beam
 )
 
 #--------------------------------------------------------------
@@ -23,17 +22,10 @@ set(COMPILER_FLAGS "${CH_CXX_FLAGS}")
 set(LINKER_FLAGS "${CH_LINKERFLAG_EXE}")
 set(LIBRARIES ChronoEngine ChronoEngine_modal)
 
-if(ENABLE_MODULE_PARDISO_MKL)
-    include_directories(${CH_MKL_INCLUDES})
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${CH_MKL_CXX_FLAGS}")
-    set(LINKER_FLAGS "${LINKER_FLAGS} ${CH_MKL_LINK_FLAGS}")
-    list(APPEND LIBRARIES "ChronoEngine_pardisomkl")
-endif()
-
 #--------------------------------------------------------------
 # Add executables
 
-foreach(PROGRAM ${TESTS})
+foreach(PROGRAM ${TEST_PROGRAMS})
   message(STATUS "...${PROGRAM}")
   
   add_executable(${PROGRAM}  "${PROGRAM}.cpp")
@@ -44,10 +36,10 @@ foreach(PROGRAM ${TESTS})
     COMPILE_FLAGS "${COMPILER_FLAGS}"
     LINK_FLAGS "${LINKER_FLAGS}")
   set_property(TARGET ${PROGRAM} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${PROGRAM}>")
-  target_link_libraries(${PROGRAM} ${LIBRARIES} gtest_main)
+  target_link_libraries(${PROGRAM} ${LIBRARIES} gtest_main fast_matrix_market::fast_matrix_market)
 
   install(TARGETS ${PROGRAM} DESTINATION ${CH_INSTALL_DEMO})
-
   add_test(${PROGRAM} ${PROJECT_BINARY_DIR}/bin/${PROGRAM})
+
   set_tests_properties(${PROGRAM} PROPERTIES WORKING_DIRECTORY ${MY_WORKING_DIR})
 endforeach()

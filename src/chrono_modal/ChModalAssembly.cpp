@@ -16,6 +16,7 @@
 
 #include "chrono_modal/ChModalAssembly.h"
 #include "chrono/physics/ChSystem.h"
+#include "chrono/core/ChSparsityPatternLearner.h"
 #include "chrono/fea/ChNodeFEAxyz.h"
 #include "chrono/fea/ChNodeFEAxyzrot.h"
 
@@ -173,7 +174,7 @@ void util_convert_to_colmajor(
 void ChModalAssembly::DoModalReduction(ChSparseMatrix& full_M,
                                        ChSparseMatrix& full_K,
                                        ChSparseMatrix& full_Cq,
-                                       const ChModalSolveUndamped& n_modes_settings,
+                                       const ChUnsymGenEigenvalueSolver& eigen_solver,
                                        const ChModalDamping& damping_model) {
     if (m_is_model_reduced)
         return;
@@ -205,19 +206,18 @@ void ChModalAssembly::DoModalReduction(ChSparseMatrix& full_M,
     // 1) compute eigenvalue and eigenvectors
     if (m_modal_reduction_type == ReductionType::HERTING) {
         unsigned int expected_eigs = 0;
-        for (auto freq_span : n_modes_settings.freq_spans)
-            expected_eigs += freq_span.nmodes;
+        throw std::runtime_error("Not implemented yet");
 
         if (expected_eigs < 6) {
             std::cout << "*** At least six rigid-body modes are required for the HERTING modal reduction. "
                       << "The default settings are used." << std::endl;
             this->ComputeModesExternalData(this->full_M_loc, this->full_K_loc, this->full_Cq_loc,
-                                           ChModalSolveUndamped(6));
+                                           ChUnsymGenEigenvalueSolverKrylovSchur());
         } else
-            this->ComputeModesExternalData(this->full_M_loc, this->full_K_loc, this->full_Cq_loc, n_modes_settings);
+            this->ComputeModesExternalData(this->full_M_loc, this->full_K_loc, this->full_Cq_loc, eigen_solver);
 
     } else if (m_modal_reduction_type == ReductionType::CRAIG_BAMPTON) {
-        this->ComputeModesExternalData(this->M_II_loc, this->K_II_loc, this->Cq_II_loc, n_modes_settings);
+        this->ComputeModesExternalData(this->M_II_loc, this->K_II_loc, this->Cq_II_loc, eigen_solver);
 
     } else {
         std::cout << "*** The modal reduction type is specified incorrectly..." << std::endl;
@@ -278,7 +278,7 @@ void ChModalAssembly::DoModalReduction(ChSparseMatrix& full_M,
     }
 }
 
-void ChModalAssembly::DoModalReduction(const ChModalSolveUndamped& n_modes_settings,
+void ChModalAssembly::DoModalReduction(const ChUnsymGenEigenvalueSolver& eigen_solver,
                                        const ChModalDamping& damping_model) {
     if (m_is_model_reduced)
         return;
@@ -293,7 +293,7 @@ void ChModalAssembly::DoModalReduction(const ChModalSolveUndamped& n_modes_setti
     this->GetSubassemblyConstraintJacobianMatrix(&full_Cq);
 
     // 2) compute modal reduction from full_M, full_K
-    this->DoModalReduction(full_M, full_K, full_Cq, n_modes_settings, damping_model);
+    this->DoModalReduction(full_M, full_K, full_Cq, eigen_solver, damping_model);
 }
 
 void ChModalAssembly::ComputeMassCenterFrame() {
@@ -1346,7 +1346,7 @@ void ChModalAssembly::SetupModalData(unsigned int nmodes_reduction) {
     }
 }
 
-bool ChModalAssembly::ComputeModes(const ChModalSolveUndamped& n_modes_settings) {
+bool ChModalAssembly::ComputeModes(const ChUnsymGenEigenvalueSolver& eigen_solver) {
     if (m_is_model_reduced)
         throw std::runtime_error(
             "Error: it is not supported to compute modes when the modal assembly is already in the reduced state.");
@@ -1371,7 +1371,7 @@ bool ChModalAssembly::ComputeModes(const ChModalSolveUndamped& n_modes_settings)
     m_timer_matrix_assembly.stop();
 
     // SOLVE EIGENVALUE
-    this->ComputeModesExternalData(full_M_loc, full_K_loc, full_Cq_loc, n_modes_settings);
+    this->ComputeModesExternalData(full_M, full_K, full_Cq, eigen_solver);
 
     return true;
 }
@@ -1379,17 +1379,20 @@ bool ChModalAssembly::ComputeModes(const ChModalSolveUndamped& n_modes_settings)
 bool ChModalAssembly::ComputeModesExternalData(const ChSparseMatrix& full_M,
                                                const ChSparseMatrix& full_K,
                                                const ChSparseMatrix& full_Cq,
-                                               const ChModalSolveUndamped& n_modes_settings) {
+                                               const ChUnsymGenEigenvalueSolver& eigen_solver) {
     // SOLVE EIGENVALUE
     // for undamped system (use generalized constrained eigen solver)
     // - Must work with large dimension and sparse matrices only
     // - Must work also in free-free cases, with 6 rigid body modes at 0 frequency.
     m_timer_modal_solver_call.start();
-    n_modes_settings.Solve(full_M, full_K, full_Cq, m_modal_eigvect, m_modal_eigvals, m_modal_freq);
+    ChSparseMatrix A, B;
+    eigen_solver.BuildUndampedSystem(full_M_loc, full_K_loc, full_Cq_loc, A, B, true);
+    eigen_solver.Solve(A, B, m_modal_eigvect, m_modal_eigvals, 1, 0.0);
     m_timer_modal_solver_call.stop();
 
     m_timer_setup.start();
 
+    ChUnsymGenEigenvalueSolver::GetNaturalFrequencies(m_modal_eigvals, m_modal_freq);
     m_modal_damping_ratios.setZero(m_modal_freq.rows());
 
     m_timer_setup.stop();
@@ -1397,7 +1400,8 @@ bool ChModalAssembly::ComputeModesExternalData(const ChSparseMatrix& full_M,
     return true;
 }
 
-bool ChModalAssembly::ComputeModesDamped(const ChModalSolveDamped& n_modes_settings) {
+
+bool ChModalAssembly::ComputeModesDamped(const ChUnsymGenEigenvalueSolver& eigen_solver) {
     if (m_is_model_reduced)
         throw std::runtime_error(
             "Error: it is not supported to compute modes when the modal assembly is already in the reduced state.");
@@ -1430,8 +1434,13 @@ bool ChModalAssembly::ComputeModesDamped(const ChModalSolveDamped& n_modes_setti
     // - Must work with large dimension and sparse matrices only
     // - Must work also in free-free cases, with 6 rigid body modes at 0 frequency.
     m_timer_modal_solver_call.start();
-    n_modes_settings.Solve(full_M_loc, full_R_loc, full_K_loc, full_Cq_loc, m_modal_eigvect, m_modal_eigvals,
-                           m_modal_freq, m_modal_damping_ratios);
+    ChSparseMatrix A, B;
+    eigen_solver.BuildDampedSystem(full_M_loc, full_R_loc, full_K_loc, full_Cq_loc, A, B, true);
+    eigen_solver.Solve(A, B, m_modal_eigvect, m_modal_eigvals, 1, 1e-6);
+
+    ChUnsymGenEigenvalueSolver::GetNaturalFrequencies(m_modal_eigvals, m_modal_freq);
+    ChUnsymGenEigenvalueSolver::GetDampingRatios(m_modal_eigvals, m_modal_damping_ratios);
+
     m_timer_modal_solver_call.stop();
 
     m_timer_setup.start();
@@ -1817,7 +1826,9 @@ void ChModalAssembly::GetSubassemblyMassMatrix(ChSparseMatrix* M) {
     temp_descriptor.SetMassFactor(1.0);
 
     // Fill system-level M matrix
-    M->resize(temp_descriptor.CountActiveVariables(), temp_descriptor.CountActiveVariables());
+    ChSparsityPatternLearner spl(temp_descriptor.CountActiveVariables(), temp_descriptor.CountActiveVariables());
+    temp_descriptor.PasteMassKRMMatrixInto(spl);
+    spl.Apply(*M);
     M->setZeroValues();
     temp_descriptor.PasteMassKRMMatrixInto(*M);
     // M->makeCompressed();
@@ -1840,7 +1851,9 @@ void ChModalAssembly::GetSubassemblyStiffnessMatrix(ChSparseMatrix* K) {
     temp_descriptor.SetMassFactor(0.0);
 
     // Fill system-level K matrix
-    K->resize(temp_descriptor.CountActiveVariables(), temp_descriptor.CountActiveVariables());
+    ChSparsityPatternLearner spl(temp_descriptor.CountActiveVariables(), temp_descriptor.CountActiveVariables());
+    temp_descriptor.PasteMassKRMMatrixInto(spl);
+    spl.Apply(*K);
     K->setZeroValues();
     temp_descriptor.PasteMassKRMMatrixInto(*K);
     // K->makeCompressed();
@@ -1863,7 +1876,9 @@ void ChModalAssembly::GetSubassemblyDampingMatrix(ChSparseMatrix* R) {
     temp_descriptor.SetMassFactor(0.0);
 
     // Fill system-level R matrix
-    R->resize(temp_descriptor.CountActiveVariables(), temp_descriptor.CountActiveVariables());
+    ChSparsityPatternLearner spl(temp_descriptor.CountActiveVariables(), temp_descriptor.CountActiveVariables());
+    temp_descriptor.PasteMassKRMMatrixInto(spl);
+    spl.Apply(*R);
     R->setZeroValues();
     temp_descriptor.PasteMassKRMMatrixInto(*R);
     // R->makeCompressed();
@@ -1884,7 +1899,9 @@ void ChModalAssembly::GetSubassemblyConstraintJacobianMatrix(ChSparseMatrix* Cq)
     this->LoadConstraintJacobians();
 
     // Fill system-level R matrix
-    Cq->resize(temp_descriptor.CountActiveConstraints(), temp_descriptor.CountActiveVariables());
+    ChSparsityPatternLearner spl(temp_descriptor.CountActiveConstraints(), temp_descriptor.CountActiveVariables());
+    temp_descriptor.PasteConstraintsJacobianMatrixInto(spl);
+    spl.Apply(*Cq);
     Cq->setZeroValues();
     temp_descriptor.PasteConstraintsJacobianMatrixInto(*Cq);
     // Cq->makeCompressed();

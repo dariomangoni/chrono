@@ -274,7 +274,7 @@ void MakeAndRunDemoCantilever(ChSystem& sys,
         // HERE PERFORM THE MODAL REDUCTION!
 
         modal_assembly->DoModalReduction(
-            num_modes,  // The number of modes to retain from modal reduction, or a ChModalSolveUndamped with more
+            num_modes,  // The number of modes to retain from modal reduction, or a ChModalSolverUndamped with more
                         // settings
             ChModalDampingRayleigh(
                 damping_alpha,
@@ -292,7 +292,7 @@ void MakeAndRunDemoCantilever(ChSystem& sys,
 
         // If you need to focus on modes in specific frequency regions, use {nmodes, about_freq} pairs as in :
         /*
-        modal_assembly->ComputeModes(ChModalSolveUndamped(
+        modal_assembly->ComputeModes(ChModalSolverUndamped(
             { { 8, 1e-3 },{2, 2.5} },   // 8 smallest freq.modes, plus 2 modes closest to 2.5 Hz
             500,                        // max iterations per each {modes,freq} pair
             1e-10,                      // tolerance

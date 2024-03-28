@@ -9,12 +9,7 @@
 // http://projectchrono.org/license-chrono.txt.
 //
 // =============================================================================
-// Authors: Alessandro Tasora, Radu Serban
-// =============================================================================
-//
-// Show how to use the ChModalAssembly to do a basic modal analysis (eigenvalues
-// and eigenvector of the ChModalAssembly, which can also contain constraints.
-//
+// Author: Dario Mangoni
 // =============================================================================
 
 #include "chrono/physics/ChSystemNSC.h"
@@ -25,6 +20,7 @@
 #include "chrono/fea/ChElementBeamEuler.h"
 #include "chrono/fea/ChBuilderBeam.h"
 #include "chrono/fea/ChMeshFileLoader.h"
+#include "chrono/timestepper/ChAssemblyAnalysis.h"
 
 #include "chrono/utils/ChUtilsInputOutput.h"
 #include "chrono/utils/ChUtilsValidation.h"
@@ -33,14 +29,19 @@
 
 #include "chrono/core/ChTimer.h"
 
-#include "chrono_modal/ChModalAssembly.h"
+#include "chrono_modal/ChUnsymGenEigenvalueSolver.h"
+#include "chrono_modal/ChSymGenEigenvalueSolver.h"
+#include "chrono_modal/ChGeneralizedEigenvalueSolver.h"
+
 
 #include "chrono/solver/ChDirectSolverLScomplex.h"
 
 #include "chrono_thirdparty/filesystem/path.h"
 #include <iomanip>
 
-#include <unsupported/Eigen/SparseExtra>
+// #include <unsupported/Eigen/SparseExtra>
+
+#include <fast_matrix_market/app/Eigen.hpp>
 
 #include "gtest/gtest.h"
 
@@ -53,9 +54,18 @@ static const std::string out_dir = val_dir + "modal/";
 static const std::string ref_dir = "testing/modal/analysis/";
 
 static const double tolerance = 1e-3;
-static const bool verbose = true;
 
-void prepare_folders() {
+double GetEigenvaluesMaxDiff(const ChVectorDynamic<double>& eig1, const ChVectorDynamic<double>& eig2) {
+    return (eig1 - eig2).lpNorm<Eigen::Infinity>();
+}
+
+double GetEigenvaluesMaxDiff(const ChVectorDynamic<std::complex<double>>& eig1,
+                             const ChVectorDynamic<std::complex<double>>& eig2) {
+    return std::max((eig1.real() - eig2.real()).lpNorm<Eigen::Infinity>(),
+                    (eig1.imag().cwiseAbs() - eig2.imag().cwiseAbs()).lpNorm<Eigen::Infinity>());
+}
+
+void prepare_folders(std::string testname) {
     // Create output directory (if it does not already exist)
     if (!filesystem::create_directory(filesystem::path(val_dir))) {
         std::cerr << "Error creating directory " << val_dir << std::endl;
@@ -65,11 +75,13 @@ void prepare_folders() {
         std::cerr << "Error creating directory " << out_dir << std::endl;
         throw std::invalid_argument("Error creating directory " + out_dir);
     }
+    if (!filesystem::create_directory(filesystem::path(out_dir + testname))) {
+        std::cerr << "Error creating directory " << out_dir + testname << std::endl;
+        throw std::invalid_argument("Error creating directory " + out_dir + testname);
+    }
 }
 
-TEST(ChGeneralizedEigenvalueSolverKrylovSchur, BeamFixBody) {
-    prepare_folders();
-
+std::shared_ptr<ChAssembly> BuildBeamFixBody(ChSystem& sys) {
     /*
      * Beam with end body
      *
@@ -77,7 +89,6 @@ TEST(ChGeneralizedEigenvalueSolverKrylovSchur, BeamFixBody) {
      *
      */
 
-    ChSystemNSC sys;
     auto assembly = chrono_types::make_shared<ChAssembly>();
 
     sys.Add(assembly);
@@ -89,8 +100,6 @@ TEST(ChGeneralizedEigenvalueSolverKrylovSchur, BeamFixBody) {
     double beam_L = 6;
 
     double body_end_xwidth = 0.5;
-
-    unsigned int num_modes = 24;
 
     // beam
     auto mesh = chrono_types::make_shared<ChMesh>();
@@ -107,7 +116,6 @@ TEST(ChGeneralizedEigenvalueSolverKrylovSchur, BeamFixBody) {
     section->SetRayleighDampingAlpha(0.001);
     section->SetAsRectangularSection(beam_wy, beam_wz);
 
-    // This helps creating sequences of nodes and ChElementBeamEuler elements:
     ChBuilderBeamEuler builder;
 
     builder.BuildBeam(mesh,                      // the mesh where to put the created nodes and elements
@@ -132,32 +140,392 @@ TEST(ChGeneralizedEigenvalueSolverKrylovSchur, BeamFixBody) {
     sys.Setup();
     sys.Update();
 
-    ChGeneralizedEigenvalueSolverKrylovSchur eigen_solver;
-    ChModalSolveUndamped modal_solver(num_modes, 1e-5,
-                                      500,            // max iterations per each {modes,freq} pair
-                                      1e-10,          // tolerance
-                                      true,           // verbose
-                                      eigen_solver);  //  solver type
+    return assembly;
+}
 
-    ChMatrixDynamic<std::complex<double>> eigvects;
-    ChVectorDynamic<std::complex<double>> eigvals;
-    ChVectorDynamic<double> freq;
+void generateMRKCqfromAssembly(std::shared_ptr<ChAssembly> assembly, std::string refname) {
+    ChSystemNSC sys;
+    // auto assembly = BuildBeamFixBody(sys);
 
-    modal_solver.Solve(*assembly, eigvects, eigvals, freq);
+    ChSparseMatrix M;
+    ChSparseMatrix K;
+    ChSparseMatrix R;
+    ChSparseMatrix Cq;
 
-    if (verbose) {
-        for (unsigned int mode = 0; mode < eigvects.cols(); ++mode) {
-            std::cout << "Mode: " << std::setw(2) << mode << " | " << std::setw(4) << eigvals(mode) << std::endl;
+    assembly->Setup();
+    assembly->Update();
+
+    ChSystemDescriptor temp_descriptor;
+
+    temp_descriptor.BeginInsertion();
+    assembly->InjectVariables(temp_descriptor);
+    assembly->InjectKRMMatrices(temp_descriptor);
+    assembly->InjectConstraints(temp_descriptor);
+    temp_descriptor.EndInsertion();
+
+    temp_descriptor.UpdateCountsAndOffsets();
+
+    // Generate the A and B in state space
+    int n_vars = temp_descriptor.CountActiveVariables();
+    int n_constr = temp_descriptor.CountActiveConstraints();
+    M.resize(n_vars, n_vars);
+    K.resize(n_vars, n_vars);
+    R.resize(n_vars, n_vars);
+    Cq.resize(n_constr, n_vars);
+
+    // Stiffness matrix
+    assembly->LoadKRMMatrices(-1.0, 0.0, 0.0);
+    temp_descriptor.SetMassFactor(0.0);
+    temp_descriptor.PasteMassKRMMatrixInto(K, 0, 0);
+
+    // Damping matrix
+    assembly->LoadKRMMatrices(0.0, 1.0, 0.0);
+    temp_descriptor.SetMassFactor(0.0);
+    temp_descriptor.PasteMassKRMMatrixInto(R, 0, 0);
+
+    // Mass matrix
+    assembly->LoadKRMMatrices(0.0, 0.0, 1.0);
+    temp_descriptor.SetMassFactor(1.0);
+    temp_descriptor.PasteMassKRMMatrixInto(M, 0, 0);
+
+    // Constraint Jacobian
+    assembly->LoadConstraintJacobians();
+    temp_descriptor.PasteConstraintsJacobianMatrixInto(Cq, 0, 0);
+
+    std::ofstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
+    std::ofstream stream_K(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_K.txt"));
+    std::ofstream stream_R(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_R.txt"));
+    std::ofstream stream_Cq(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Cq.txt"));
+
+    if (stream_M.fail() || stream_K.fail() || stream_R.fail() || stream_Cq.fail()) {
+        std::cerr << "Error opening file for writing in " << ref_dir + refname << " folder" << std::endl;
+        return;
+    }
+
+    fast_matrix_market::write_matrix_market_eigen(stream_M, M);
+    fast_matrix_market::write_matrix_market_eigen(stream_K, K);
+    fast_matrix_market::write_matrix_market_eigen(stream_R, R);
+    fast_matrix_market::write_matrix_market_eigen(stream_Cq, Cq);
+}
+
+// int main() {
+//     std::string testname = "SymMKCqChrono";
+//
+//     // Create a system
+//     ChSystemNSC sys;
+//     auto assembly = BuildBeamFixBody(sys);
+//     generateMRKCqfromAssembly(assembly, testname);
+//
+//     return 0;
+// }
+
+TEST(CountNonZerosForEachRow, Count) {
+    std::string refname = "CountNonZeros";
+
+    ChSparseMatrix Q;
+    Eigen::VectorXi Q_nnz_rows_MATLAB;
+    Eigen::VectorXi Q_nnz_cols_MATLAB;
+
+    std::ifstream stream_Q(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q.txt"));
+    std::ifstream stream_Q_nnz_rows(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q_nnz_rows.txt"));
+    std::ifstream stream_Q_nnz_cols(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q_nnz_cols.txt"));
+    fast_matrix_market::read_matrix_market_eigen(stream_Q, Q);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_Q_nnz_rows, Q_nnz_rows_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_Q_nnz_cols, Q_nnz_cols_MATLAB);
+
+    Eigen::VectorXi Q_nnz_rows_CHRONO(Q.rows());
+    Q_nnz_rows_CHRONO.setZero();
+    Eigen::VectorXi Q_nnz_cols_CHRONO(Q.cols());
+    Q_nnz_cols_CHRONO.setZero();
+
+    CountNonZerosForEachRow(Q, Q_nnz_rows_CHRONO, 0);
+    CountNonZerosForEachRowTransposed(Q, Q_nnz_cols_CHRONO, 0);
+
+    ASSERT_EQ(Q_nnz_rows_CHRONO, Q_nnz_rows_MATLAB);
+    ASSERT_EQ(Q_nnz_cols_CHRONO, Q_nnz_cols_MATLAB);
+}
+
+template <typename EigenSolverType, typename ScalarType>
+void ExecuteEigenSolverCallAB(EigenSolverType eigen_solver, std::string refname) {
+    ChSparseMatrix A;
+    ChSparseMatrix B;
+    ChMatrixDynamic<ScalarType> sigma_mat;
+    ChMatrixDynamic<int> reqeigs_mat;
+    ChMatrixDynamic<ScalarType> eigvects_MATLAB;
+    ChVectorDynamic<ScalarType> eigvals_MATLAB;
+
+    ChMatrixDynamic<ScalarType> eigvects_CHRONO;
+    ChVectorDynamic<ScalarType> eigvals_CHRONO;
+
+    std::ifstream stream_A(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_A.txt"));
+    std::ifstream stream_B(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_B.txt"));
+    std::ifstream stream_sigma(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_sigma.txt"));
+    std::ifstream stream_reqeigs(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_reqeigs.txt"));
+    std::ifstream stream_eigvals_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvals_MATLAB.txt"));
+    std::ifstream stream_eigvects_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvects_MATLAB.txt"));
+
+    fast_matrix_market::read_matrix_market_eigen(stream_A, A);
+    fast_matrix_market::read_matrix_market_eigen(stream_B, B);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_sigma, sigma_mat);
+    ScalarType sigma = sigma_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs, reqeigs_mat);
+    int reqeigs = reqeigs_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
+
+    eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+
+    eigen_solver.SortRitzPairs(eigvals_MATLAB, eigvects_MATLAB);
+
+    // std::ofstream stream_eigvals_CHRONO(
+    //     utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvals_CHRONO.txt"));
+    // std::ofstream stream_eigvects_CHRONO(
+    //     utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvects_CHRONO.txt"));
+    // fast_matrix_market::write_matrix_market_eigen_dense(stream_eigvals_CHRONO, eigvals_CHRONO);
+    // fast_matrix_market::write_matrix_market_eigen_dense(stream_eigvects_CHRONO, eigvects_CHRONO);
+
+    double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
+    ASSERT_NEAR(max_delta_eigvals, 0, tolerance) << "Eigenvalues not matching.\n"
+                                                 << "MATLAB:\n"
+                                                 << eigvals_MATLAB << "\nCHRONO:\n"
+                                                 << eigvals_CHRONO << std::endl;
+
+    double max_residual_CHRONO = 0;
+    int max_residual_CHRONO_idx = -1;
+    for (auto nv = 0; nv < eigvals_CHRONO.size(); nv++) {
+        double cur_residual =
+            (A * eigvects_CHRONO.col(nv) - eigvals_CHRONO(nv) * B * eigvects_CHRONO.col(nv)).lpNorm<Eigen::Infinity>();
+        if (cur_residual > max_residual_CHRONO) {
+            max_residual_CHRONO = cur_residual;
+            max_residual_CHRONO_idx = nv;
         }
     }
 
-    std::string testname = std::string(::testing::UnitTest::GetInstance()->current_test_suite()->name()) + "_" +
-                           std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
+    ASSERT_NEAR(max_residual_CHRONO, 0, tolerance)
+        << "Residuals exceeding threshold (index: " << max_residual_CHRONO_idx << ")" << std::endl;
+}
 
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymAB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
+                                                                          "SymAB");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymAB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(), "SymAB");
+}
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymMKCqChrono_AB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
+                                                                          "SymMKCqChrono");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymMKCqChrono_AB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(),
+                                                                      "SymMKCqChrono");
+}
+
+void ExecuteEigenSolverCallMKCq(ChSymGenEigenvalueSolver& eigen_solver, std::string refname) {
+    ChSparseMatrix M;
+    ChSparseMatrix K;
+    ChSparseMatrix Cq;
+    ChMatrixDynamic<double> sigma_mat;
+    ChMatrixDynamic<int> reqeigs_mat;
+    ChMatrixDynamic<double> eigvects_MATLAB;
+    ChVectorDynamic<double> eigvals_MATLAB;
+
+    ChMatrixDynamic<double> eigvects_CHRONO;
+    ChVectorDynamic<double> eigvals_CHRONO;
+
+    std::ifstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
+    std::ifstream stream_K(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_K.txt"));
+    std::ifstream stream_Cq(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Cq.txt"));
+    std::ifstream stream_sigma(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_sigma.txt"));
+    std::ifstream stream_reqeigs(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_reqeigs.txt"));
+    std::ifstream stream_eigvals_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvals_MATLAB.txt"));
+    std::ifstream stream_eigvects_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvects_MATLAB.txt"));
+
+    fast_matrix_market::read_matrix_market_eigen(stream_M, M);
+    fast_matrix_market::read_matrix_market_eigen(stream_K, K);
+    fast_matrix_market::read_matrix_market_eigen(stream_Cq, Cq);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_sigma, sigma_mat);
+    double sigma = sigma_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs, reqeigs_mat);
+    int reqeigs = reqeigs_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
+
+    eigen_solver.SortRitzPairs(eigvals_MATLAB, eigvects_MATLAB);
+
+    // ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
+    const bool scaleCq = true;
+
+    ChSparseMatrix A, B;
+    ChGeneralizedEigenvalueSolver<double>::BuildUndampedSystem(M, K, Cq, A, B, scaleCq);
+
+    eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+
+    // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
+    double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
+
+    ASSERT_NEAR(max_delta_eigvals, 0, tolerance) << "Eigenvalues not matching.\n"
+                                                 << "MATLAB:\n"
+                                                 << eigvals_MATLAB << "\nCHRONO:\n"
+                                                 << eigvals_CHRONO << std::endl;
+}
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymMKCqChrono) {
+    ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
+    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCq");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymMKCqChrono) {
+    ChSymGenEigenvalueSolverLanczos eigen_solver;
+    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCqChrono");
+}
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymMKCq) {
+    ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
+    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCq");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymMKCq) {
+    ChSymGenEigenvalueSolverLanczos eigen_solver;
+    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCq");
+}
+
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymAB) {
+    ExecuteEigenSolverCallAB<ChUnsymGenEigenvalueSolverKrylovSchur, std::complex<double>>(
+        ChUnsymGenEigenvalueSolverKrylovSchur(chrono_types::make_shared<ChSolverSparseComplexLU>()), "UnsymAB");
+}
+
+void ExecuteEigenSolverCallMRKCq(std::string refname) {
+    ChSparseMatrix M;
+    ChSparseMatrix K;
+    ChSparseMatrix R;
+    ChSparseMatrix Cq;
+    ChMatrixDynamic<std::complex<double>> sigma_mat;
+    ChMatrixDynamic<int> reqeigs_mat;
     ChMatrixDynamic<std::complex<double>> eigvects_MATLAB;
     ChVectorDynamic<std::complex<double>> eigvals_MATLAB;
-    ChVectorDynamic<double> freq_MATLAB;
-    Eigen::loadMarketVector(eigvals_MATLAB, utils::GetValidationDataFile(ref_dir + testname + "_eigvals_MATLAB.txt"));
-    Eigen::saveMarketVector(eigvals, out_dir + testname + "_eigvals_CHRONO.txt");
-    ASSERT_NEAR((eigvals_MATLAB - eigvals).cwiseQuotient(eigvals).lpNorm<Eigen::Infinity>(), 0, tolerance);
+
+    ChMatrixDynamic<std::complex<double>> eigvects_CHRONO;
+    ChVectorDynamic<std::complex<double>> eigvals_CHRONO;
+
+    std::ifstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
+    std::ifstream stream_R(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_R.txt"));
+    std::ifstream stream_K(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_K.txt"));
+    std::ifstream stream_Cq(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Cq.txt"));
+    std::ifstream stream_sigma(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_sigma.txt"));
+    std::ifstream stream_reqeigs(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_reqeigs.txt"));
+    std::ifstream stream_eigvals_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvals_MATLAB.txt"));
+    std::ifstream stream_eigvects_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvects_MATLAB.txt"));
+
+    fast_matrix_market::read_matrix_market_eigen(stream_M, M);
+    fast_matrix_market::read_matrix_market_eigen(stream_K, K);
+    fast_matrix_market::read_matrix_market_eigen(stream_R, R);
+    fast_matrix_market::read_matrix_market_eigen(stream_Cq, Cq);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_sigma, sigma_mat);
+    std::complex<double> sigma = sigma_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs, reqeigs_mat);
+    int reqeigs = reqeigs_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
+
+    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver(chrono_types::make_shared<ChSolverSparseComplexLU>());
+
+    const bool scaleCq = true;
+    ChSparseMatrix A, B;
+    eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
+
+    eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+
+    eigen_solver.SortRitzPairs(eigvals_MATLAB, eigvects_MATLAB);
+
+    // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
+    double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
+
+    ASSERT_NEAR(max_delta_eigvals, 0, tolerance) << "Eigenvalues not matching.\n"
+                                                 << "MATLAB:\n"
+                                                 << eigvals_MATLAB << "\nCHRONO:\n"
+                                                 << eigvals_CHRONO << std::endl;
+}
+
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymMRKCq) {
+    ExecuteEigenSolverCallMRKCq("UnsymMRKCq");
+}
+
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymMRKCq_multifreq) {
+    std::string refname = "UnsymMRKCq_multifreq";
+
+    ChSparseMatrix M;
+    ChSparseMatrix K;
+    ChSparseMatrix R;
+    ChSparseMatrix Cq;
+    ChMatrixDynamic<std::complex<double>> sigma_1_mat;
+    ChMatrixDynamic<int> reqeigs_1_mat;
+    ChMatrixDynamic<std::complex<double>> sigma_2_mat;
+    ChMatrixDynamic<int> reqeigs_2_mat;
+    ChMatrixDynamic<std::complex<double>> eigvects_MATLAB;
+    ChVectorDynamic<std::complex<double>> eigvals_MATLAB;
+
+    ChMatrixDynamic<std::complex<double>> eigvects_CHRONO;
+    ChVectorDynamic<std::complex<double>> eigvals_CHRONO;
+
+    std::ifstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
+    std::ifstream stream_R(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_R.txt"));
+    std::ifstream stream_K(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_K.txt"));
+    std::ifstream stream_Cq(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Cq.txt"));
+    std::ifstream stream_sigma_1(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_sigma_1.txt"));
+    std::ifstream stream_sigma_2(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_sigma_2.txt"));
+    std::ifstream stream_reqeigs_1(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_reqeigs_1.txt"));
+    std::ifstream stream_reqeigs_2(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_reqeigs_2.txt"));
+    std::ifstream stream_eigvals_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvals_MATLAB.txt"));
+    std::ifstream stream_eigvects_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvects_MATLAB.txt"));
+
+    fast_matrix_market::read_matrix_market_eigen(stream_M, M);
+    fast_matrix_market::read_matrix_market_eigen(stream_K, K);
+    fast_matrix_market::read_matrix_market_eigen(stream_R, R);
+    fast_matrix_market::read_matrix_market_eigen(stream_Cq, Cq);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_sigma_1, sigma_1_mat);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_sigma_2, sigma_2_mat);
+    std::complex<double> sigma_1 = sigma_1_mat(0, 0);
+    std::complex<double> sigma_2 = sigma_2_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs_1, reqeigs_1_mat);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs_2, reqeigs_2_mat);
+    int reqeigs_1 = reqeigs_1_mat(0, 0);
+    int reqeigs_2 = reqeigs_2_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
+
+    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver(chrono_types::make_shared<ChSolverSparseComplexLU>());
+
+    const bool scaleCq = true;
+    int eigvects_clipping_length = M.rows();
+
+    ChSparseMatrix A, B;
+    eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
+
+    std::list<std::pair<int, std::complex<double>>> eig_requests;
+    eig_requests.push_back(std::make_pair(reqeigs_1, sigma_1));
+    eig_requests.push_back(std::make_pair(reqeigs_2, sigma_2));
+    eigen_solver.sort_ritz_pairs = true;
+    modal::Solve<>(eigen_solver, A, B, eigvects_CHRONO, eigvals_CHRONO, eig_requests, eigvects_clipping_length);
+
+    // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
+    double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
+
+    ASSERT_NEAR(max_delta_eigvals, 0, tolerance) << "Eigenvalues not matching.\n"
+                                                 << "MATLAB:\n"
+                                                 << eigvals_MATLAB << "\nCHRONO:\n"
+                                                 << eigvals_CHRONO << std::endl;
 }

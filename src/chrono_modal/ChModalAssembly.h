@@ -17,7 +17,8 @@
 
 #include "chrono_modal/ChApiModal.h"
 #include "chrono_modal/ChModalDamping.h"
-#include "chrono_modal/ChEigenvalueSolver.h"
+#include "chrono_modal/ChUnsymGenEigenvalueSolver.h"
+#include "chrono_modal/ChModalSolverDamped.h"
 #include "chrono/physics/ChAssembly.h"
 #include "chrono/solver/ChVariablesGeneric.h"
 #include <complex>
@@ -64,27 +65,32 @@ class ChApiModal ChModalAssembly : public ChAssembly {
     /// Compute the undamped modes for the current assembly.
     /// Later you can fetch results via GetEigenVectors(), GetUndampedFrequencies() etc.
     /// Usually done for the assembly in full state, not available in reduced state.
-    bool ComputeModes(const ChModalSolveUndamped& n_modes_settings);
+    bool ComputeModes(const ChUnsymGenEigenvalueSolver& modal_solver);
+
+    /// Compute the undamped modes for the current assembly.
+    /// Later you can fetch results via GetEigenVectors(), GetUndampedFrequencies() etc.
+    /// Usually done for the assembly in full state, not available in reduced state.
+    bool ComputeModesFaster(const ChUnsymGenEigenvalueSolver& modal_solver);
 
     /// Compute the undamped modes from M and K matrices. Later you can fetch results via GetEigenVectors()
     /// etc.
     bool ComputeModesExternalData(const ChSparseMatrix& full_M,
                                   const ChSparseMatrix& full_K,
                                   const ChSparseMatrix& full_Cq,
-                                  const ChModalSolveUndamped& n_modes_settings);
+                                  const ChUnsymGenEigenvalueSolver& n_modes_settings);
 
     /// Compute the damped modes for the entire modal assembly.
     /// Expect complex eigenvalues/eigenvectors if damping is used.
     /// Later you can fetch results via GetEigenVectors(), GetUndampedFrequencies(),
     /// GetDampingRatios() etc. Usually done for the assembly in full state, not available in reduced
     /// state.
-    bool ComputeModesDamped(const ChModalSolveDamped& n_modes_settings);
+    bool ComputeModesDamped(const ChUnsymGenEigenvalueSolver& modal_solver);
 
     /// Perform modal reduction on this modal assembly, from the current "full" ("boundary"+"internal") assembly.
     /// - An undamped modal analysis will be done on the full assembly, followed by a modal reduction transformation.
     /// - The "boundary" nodes will be retained.
     /// - The "internal" nodes will be replaced by n_modes modal coordinates.
-    void DoModalReduction(const ChModalSolveUndamped& n_modes_settings,
+    void DoModalReduction(const ChUnsymGenEigenvalueSolver& modal_solver,
                           const ChModalDamping& damping_model = ChModalDampingNone());
 
     /// Perform modal reduction on this modal assembly that contains only the "boundary" nodes, whereas
@@ -101,7 +107,7 @@ class ChApiModal ChModalAssembly : public ChAssembly {
         ChSparseMatrix& full_M,   ///< mass matrix of the full assembly (boundary+internal)
         ChSparseMatrix& full_K,   ///< stiffness matrix of the full assembly (boundary+internal)
         ChSparseMatrix& full_Cq,  ///< constraint jacobian matrix of the full assembly (boundary+internal)
-        const ChModalSolveUndamped&
+        const ChUnsymGenEigenvalueSolver&
             n_modes_settings,  ///< settings for the modal analysis, such as the number of modes to extract
         const ChModalDamping& damping_model = ChModalDampingNone()  ///< damping model
     );
@@ -509,6 +515,13 @@ class ChApiModal ChModalAssembly : public ChAssembly {
 
     /// Get cumulative time for modal solver.
     double GetTimeModalSolver() const { return m_timer_modal_solver_call(); }
+
+    /// Reset all timers.
+    void ResetTimers() {
+        m_timer_matrix_assembly.reset();
+        m_timer_setup.reset();
+        m_timer_modal_solver_call.reset();
+    }
 
     // SERIALIZATION
 

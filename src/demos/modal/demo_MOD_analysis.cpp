@@ -24,7 +24,12 @@
 #include "chrono/physics/ChLinkMotorRotationAngle.h"
 #include "chrono/fea/ChElementBeamEuler.h"
 #include "chrono/fea/ChBuilderBeam.h"
+#include "chrono/fea/ChMeshFileLoader.h"
+#include "chrono/core/ChRandom.h"
+
 #include "chrono/fea/ChMesh.h"
+
+#include "chrono/core/ChTimer.h"
 
 #include "chrono_modal/ChModalAssembly.h"
 #include "chrono_irrlicht/ChVisualSystemIrrlicht.h"
@@ -134,7 +139,7 @@ void MakeAndRunDemoCantilever(ChSystem& sys, ChVisualSystemIrrlicht& vis, bool b
     mesh->AddVisualShapeFEA(visualizebeamC);
 
     // Just for later reference, dump M,R,K,Cq matrices. Ex. for comparison with Matlab eigs()
-    assembly->WriteSubassemblyMatrices(true, true, true, true, out_dir + "/dump");
+    // assembly->WriteSubassemblyMatrices(true, true, true, true, out_dir + "/dump");
 
     // Here we perform the modal analysis on the ChModalAssembly.
     // - We compute only the first n modes. This helps dealing with very large
@@ -148,62 +153,295 @@ void MakeAndRunDemoCantilever(ChSystem& sys, ChVisualSystemIrrlicht& vis, bool b
     //   this will pause the dynamic simulation and plot the modes of any ChModalAssembly present in the system
     //   as an oscillating animation. Use the GUI of Irrlicht 3D view to change the ID and amplitude of the plotted
     //   mode.
-    assembly->ComputeModes(num_modes);
+    ChTimer timer1;
+    timer1.reset();
+
+    timer1.start();
+    ChGeneralizedEigenvalueSolverKrylovSchur eig_solver;
+    ChModalSolverUndamped mod_solver(num_modes, 1e-5,
+                                    500,    // max iterations per each {modes,freq} pair
+                                    1e-10,  // tolerance
+                                    false,  // verbose
+                                    eig_solver);
+    assembly->ComputeModes(mod_solver);
+    timer1.stop();
+    std::cout << "Time for ComputeModes: " << timer1() << std::endl;
+    std::cout << "         MatrixAssembly: " << eig_solver.GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "         EigenSetup: " << eig_solver.GetTimeEigenSetup() << "s" << std::endl;
+    std::cout << "         GetTimeEigenSolver: " << eig_solver.GetTimeEigenSolver() << "s" << std::endl;
+    std::cout << "         SolutionPostProcessing: " << eig_solver.GetTimeSolutionPostProcessing() << "s" << std::endl;
+
+    timer1.reset();
+
+    timer1.start();
+    ChGeneralizedEigenvalueSolverKrylovSchur eig_solver2;
+    ChModalSolverUndamped mod_solver2(num_modes, 1e-5,
+                                     500,    // max iterations per each {modes,freq} pair
+                                     1e-10,  // tolerance
+                                     false,  // verbose
+                                     eig_solver2);
+    assembly->ComputeModesFaster(mod_solver2);
+    timer1.stop();
+    std::cout << "Time for ComputeModesFaster: " << timer1() << std::endl;
+    std::cout << "         MatrixAssembly: " << eig_solver2.GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "         EigenSetup: " << eig_solver2.GetTimeEigenSetup() << "s" << std::endl;
+    std::cout << "         GetTimeEigenSolver: " << eig_solver2.GetTimeEigenSolver() << "s" << std::endl;
+    std::cout << "         SolutionPostProcessing: " << eig_solver2.GetTimeSolutionPostProcessing() << "s" << std::endl;
 
     // Just for logging the frequencies:
-    std::cout << " The undamped modal frequencies of the modal assembly (not the whole system) in full state are: "
-              << std::endl;
-    for (int i = 0; i < assembly->GetUndampedFrequencies().rows(); ++i) {
-        std::cout << "Mode n." << i << "  frequency [Hz]: " << assembly->GetUndampedFrequencies()(i)
-                  << "  damping ratio:" << assembly->GetDampingRatios()(i)
-                  << "    Re=" << assembly->GetEigenValues()(i).real()
-                  << "  Im=" << assembly->GetEigenValues()(i).imag() << std::endl;
-    }
+    // std::cout << " The undamped modal frequencies of the modal assembly (not the whole system) in full state are: "
+    //          << std::endl;
+    // for (int i = 0; i < assembly->GetUndampedFrequencies().rows(); ++i) {
+    //    std::cout << "Mode n." << i << "  frequency [Hz]: " << assembly->GetUndampedFrequencies()(i)
+    //              << "  damping ratio:" << assembly->GetDampingRatios()(i)
+    //              << "    Re=" << assembly->GetEigenValues()(i).real()
+    //              << "  Im=" << assembly->GetEigenValues()(i).imag() << std::endl;
+    //}
 
     // Here we perform the complex-modal analysis (damped modes) on the ChModalAssembly.
     // Short way:
     ////assembly->ComputeModesDamped(num_modes);
     // Or, if you need more control on the eigenvalue solver, do this:
-    ////assembly->ComputeModesDamped(ChModalSolveDamped( ...parameters...));
+    ////assembly->ComputeModesDamped(ChModalSolverDamped( ...parameters...));
 
-    // Set linear solver
-#ifdef CHRONO_PARDISO_MKL
-    ChSolverComplexPardisoMKL factorization;
-    factorization.GetMklEngine().pardisoParameterArray()[12] = 1;  // custom setting for Pardiso
-#else
-    ChSolverSparseComplexQR factorization;
-#endif
+//    // Set linear solver
+//#ifdef CHRONO_PARDISO_MKL
+//    ChSolverComplexPardisoMKL factorization;
+//    factorization.GetMklEngine().pardisoParameterArray()[12] = 1;  // custom setting for Pardiso
+//#else
+//    ChSolverSparseComplexQR factorization;
+//#endif
+//
+//    assembly->ComputeModesDamped(ChModalSolverDamped(
+//        num_modes,                                              // n. of requested eigenmodes
+//        1e-5,                                                   // base frequency, or vector of frequency spans
+//        500,                                                    // the max. number of iterations
+//        1e-10,                                                  // the tolerance
+//        true,                                                   // verbose
+//        ChUnsymGenEigenvalueSolverKrylovSchur(&factorization)  // the eigenpair solver algorithm
+//        ));
+//
+//    // Just for logging the frequencies:
+//    std::cout << " The damped modal results of the modal assembly (not the whole system) in full state are: "
+//              << std::endl;
+//    for (int i = 0; i < assembly->GetUndampedFrequencies().rows(); ++i) {
+//        std::cout << "Damped mode n." << i << "  frequency [Hz]: " << assembly->GetUndampedFrequencies()(i)
+//                  << "  damping ratio:" << assembly->GetDampingRatios()(i)
+//                  << "    Re=" << assembly->GetEigenValues()(i).real()
+//                  << "  Im=" << assembly->GetEigenValues()(i).imag() << std::endl;
+//    }
+//
+//    // This is needed if you want to see things in Irrlicht
+//    vis.BindAll();
+//
+//    int current_example = ID_current_example;
+//    while ((ID_current_example == current_example) && vis.Run()) {
+//        vis.BeginScene();
+//        vis.Render();
+//        tools::drawGrid(&vis, 1, 1, 12, 12, ChCoordsys<>(ChVector3d(0, 0, 0), CH_PI_2, VECT_Z),
+//                        ChColor(0.5f, 0.5f, 0.5f), true);
+//        vis.EndScene();
+//    }
+}
 
-    assembly->ComputeModesDamped(ChModalSolveDamped(
-        num_modes,                                              // n. of requested eigenmodes
-        1e-5,                                                   // base frequency, or vector of frequency spans
-        500,                                                    // the max. number of iterations
-        1e-10,                                                  // the tolerance
-        true,                                                   // verbose
-        ChQuadraticEigenvalueSolverKrylovSchur(&factorization)  // the eigenpair solver algorithm
-        ));
+void MakeAndRunDemoMesh(ChSystem& sys, ChVisualSystemIrrlicht& vis) {
+    // Clear previous demo, if any:
+    sys.Clear();
+    sys.SetChTime(0);
 
-    // Just for logging the frequencies:
-    std::cout << " The damped modal results of the modal assembly (not the whole system) in full state are: "
+    // CREATE THE ASSEMBLY.
+    //
+    // The ChModalAssembly is the most important item when doing modal analysis.
+    // You must add finite elements, bodies and constraints into this assembly in order
+    // to compute the modal frequencies etc.; objects not added into this won't be counted.
+    auto assembly = chrono_types::make_shared<ChModalAssembly>();
+    sys.Add(assembly);
+
+    // FINITE ELEMENT MESH
+    // Create a mesh, that is a container for groups
+    // of FEA elements and their referenced nodes.
+    auto my_mesh = chrono_types::make_shared<ChMesh>();
+
+    // Create a material, that must be assigned to each solid element in the mesh,
+    // and set its parameters
+    auto mmaterial = chrono_types::make_shared<ChContinuumElastic>();
+    mmaterial->SetYoungModulus(0.016e9);  // rubber 0.01e9, steel 200e9
+    mmaterial->SetPoissonRatio(0.4);
+    mmaterial->SetRayleighDampingBeta(0.004);
+    mmaterial->SetDensity(1000);
+
+    // Global parameter for tire:
+    double tire_rad = 0.8;
+    double tire_vel_z0 = -3;
+    ChVector3d tire_center(0, 0.02 + tire_rad, 0.5);
+    ChMatrix33<> tire_alignment(QuatFromAngleY(CH_PI));  // create rotated 180 deg on y
+
+    // Create the surface material
+    auto mysurfmaterial = chrono_types::make_shared<ChContactMaterialSMC>();
+    mysurfmaterial->SetYoungModulus(10e4);
+    mysurfmaterial->SetFriction(0.3f);
+    mysurfmaterial->SetRestitution(0.2f);
+    mysurfmaterial->SetAdhesion(0);
+
+    // Load an ABAQUS .INP tetrahedron mesh file from disk, defining a tetrahedron mesh.
+    // Note that not all features of INP files are supported. Also, quadratic tetrahedrons are promoted to linear.
+    // This is much easier than creating all nodes and elements via C++ programming.
+    // Ex. you can generate these .INP files using Abaqus or exporting from the SolidWorks simulation tool.
+
+    std::map<std::string, std::vector<std::shared_ptr<ChNodeFEAbase>>> node_sets;
+
+    // try {
+    //     ChMeshFileLoader::FromAbaqusFile(my_mesh,
+    //                                      GetChronoDataFile("models/tractor_wheel/tractor_wheel_coarse.INP").c_str(),
+    //                                      mmaterial, node_sets, tire_center, tire_alignment);
+
+    //} catch (std::exception myerr) {
+    //    std::cerr << myerr.what() << std::endl;
+    //    return;
+    //}
+
+    for (int i = 0; i < 3; ++i) {
+        ChCoordsys<> cdown1(VNULL, QuatFromAngleX(CH_PI_2));
+        ChCoordsys<> cdown2(ChVector3d(0, -0.4, 0));
+        ChCoordsys<> crot(VNULL, QuatFromAngleY(5 * CH_2PI * ChRandom::Get()));
+        for (int j = 0; j < 3; ++j) {
+            try {
+                ChCoordsys<> cydisp(ChVector3d(0.3 * j, 0.1 + i * 0.1, 0));
+                ChCoordsys<> ctot = cdown2 >> cdown1 >> cydisp >> crot;
+                ChMatrix33<> mrot(ctot.rot);
+                ChMeshFileLoader::FromTetGenFile(my_mesh, GetChronoDataFile("fea/beam.node").c_str(),
+                                                 GetChronoDataFile("fea/beam.ele").c_str(), mmaterial, ctot.pos, mrot);
+            } catch (std::exception myerr) {
+                std::cerr << myerr.what();
+                return;
+            }
+        }
+    }
+
+    // try {
+    //     ChMeshFileLoader::FromTetGenFile(my_mesh, GetChronoDataFile("fea/beam.node").c_str(),
+    //                                      GetChronoDataFile("fea/beam.ele").c_str(), mmaterial);
+    //     std::cout << "Mesh loaded succesfully" << std::endl;
+    // } catch (std::exception myerr) {
+    //     std::cerr << myerr.what() << std::endl;
+    //     return;
+    // }
+
+    // Remember to add the mesh to the system!
+    assembly->Add(my_mesh);
+
+    // VISUALIZATION ASSETS:
+
+    // auto visualizebeamA = chrono_types::make_shared<ChVisualShapeFEA>(mesh);
+    // visualizebeamA->SetFEMdataType(ChVisualShapeFEA::DataType::ELEM_BEAM_TX);
+    // visualizebeamA->SetColorscaleMinMax(-0.001, 1200);
+    // visualizebeamA->SetSmoothFaces(true);
+    // visualizebeamA->SetWireframe(false);
+    // mesh->AddVisualShapeFEA(visualizebeamA);
+
+    auto visualizebeamC = chrono_types::make_shared<ChVisualShapeFEA>(my_mesh);
+    visualizebeamC->SetFEMglyphType(ChVisualShapeFEA::GlyphType::NODE_CSYS);
+    visualizebeamC->SetFEMdataType(ChVisualShapeFEA::DataType::NONE);
+    visualizebeamC->SetSymbolsThickness(0.2);
+    visualizebeamC->SetSymbolsScale(0.1);
+    visualizebeamC->SetZbufferHide(false);
+    my_mesh->AddVisualShapeFEA(visualizebeamC);
+
+    //// Just for later reference, dump M,R,K,Cq matrices. Ex. for comparison with Matlab eigs()
+    // assembly->WriteSubassemblyMatrices(true, true, true, true, out_dir + "/dump");
+
+    // Here we perform the modal analysis on the ChModalAssembly.
+    // - We compute only the first n modes. This helps dealing with very large
+    //   systems with many DOFs.
+    // - If the assembly is free floating (ex like an helicopter or an airplane,
+    //   i.e. there is no part that is fixed to ground) it will give six modes with 0 frequency,
+    //   the so called rigid body modes.
+    // - After computing the modes, you can access the eigenmodes, eigenvalues (also scaled as frequencies)
+    //   from the ChModalAssembly member data, ex. via assembly->GetUndampedFrequencies
+    // - For an interactive display of the modes, in Irrlicht view, use application.SetModalShow(true);
+    //   this will pause the dynamic simulation and plot the modes of any ChModalAssembly present in the system
+    //   as an oscillating animation. Use the GUI of Irrlicht 3D view to change the ID and amplitude of the plotted
+    //   mode.
+    ChTimer timer1;
+    timer1.reset();
+
+    timer1.start();
+    ChGeneralizedEigenvalueSolverKrylovSchur eig_solver;
+    ChModalSolverUndamped mod_solver(num_modes, 1e-5,
+                                    500,    // max iterations per each {modes,freq} pair
+                                    1e-10,  // tolerance
+                                    false,  // verbose
+                                    eig_solver);
+    assembly->ComputeModes(mod_solver);
+    timer1.stop();
+    std::cout << "Time for ComputeModes: " << timer1() << std::endl;
+    std::cout << "         ASS:Setup: " << assembly->GetTimeSetup() << "s" << std::endl;
+    std::cout << "         ASS:MatrixAssembly: " << assembly->GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "         ASS:ModalSolver: " << assembly->GetTimeModalSolver() << "s" << std::endl;
+    std::cout << "             MOD:MatrixAssembly: " << mod_solver.GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "             MOD:GetTimeEigenSolver: " << mod_solver.GetTimeEigenSolver() << "s" << std::endl;
+    std::cout << "                 EIG:MatrixAssembly: " << eig_solver.GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "                 EIG:EigenSetup: " << eig_solver.GetTimeEigenSetup() << "s" << std::endl;
+    std::cout << "                 EIG:GetTimeEigenSolver: " << eig_solver.GetTimeEigenSolver() << "s" << std::endl;
+    std::cout << "                 EIG:SolutionPostProcessing: " << eig_solver.GetTimeSolutionPostProcessing() << "s"
               << std::endl;
-    for (int i = 0; i < assembly->GetUndampedFrequencies().rows(); ++i) {
-        std::cout << "Damped mode n." << i << "  frequency [Hz]: " << assembly->GetUndampedFrequencies()(i)
-                  << "  damping ratio:" << assembly->GetDampingRatios()(i)
-                  << "    Re=" << assembly->GetEigenValues()(i).real()
-                  << "  Im=" << assembly->GetEigenValues()(i).imag() << std::endl;
-    }
+    std::cout << "             MOD:SolutionPostProcessing: " << mod_solver.GetTimeSolutionPostProcessing() << "s"
+              << std::endl;
 
-    // This is needed if you want to see things in Irrlicht
-    vis.BindAll();
+    timer1.reset();
+    assembly->ResetTimers();
 
-    int current_example = ID_current_example;
-    while ((ID_current_example == current_example) && vis.Run()) {
-        vis.BeginScene();
-        vis.Render();
-        tools::drawGrid(&vis, 1, 1, 12, 12, ChCoordsys<>(ChVector3d(0, 0, 0), CH_PI_2, VECT_Z),
-                        ChColor(0.5f, 0.5f, 0.5f), true);
-        vis.EndScene();
-    }
+    ChVectorDynamic<std::complex<double>> eigenvalues_splitmatrix(assembly->GetEigenValues());
+    ChMatrixDynamic<std::complex<double>> eigenvectors_splitmatrix(assembly->GetEigenVectors());
+
+    timer1.start();
+    ChGeneralizedEigenvalueSolverKrylovSchur eig_solver2;
+    ChModalSolverUndamped mod_solver2(num_modes, 1e-5,
+                                     500,    // max iterations per each {modes,freq} pair
+                                     1e-10,  // tolerance
+                                     false,  // verbose
+                                     eig_solver2);
+    assembly->ComputeModesFaster(mod_solver2);
+    timer1.stop();
+    std::cout << "Time for ComputeModesFaster: " << timer1() << std::endl;
+    std::cout << "         ASS:Setup: " << assembly->GetTimeSetup() << "s" << std::endl;
+    std::cout << "         ASS:MatrixAssembly: " << assembly->GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "         ASS:ModalSolver: " << assembly->GetTimeModalSolver() << "s" << std::endl;
+    std::cout << "             MOD:MatrixAssembly: " << mod_solver2.GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "             MOD:GetTimeEigenSolver: " << mod_solver2.GetTimeEigenSolver() << "s" << std::endl;
+    std::cout << "                 EIG:MatrixAssembly: " << eig_solver2.GetTimeMatrixAssembly() << "s" << std::endl;
+    std::cout << "                 EIG:EigenSetup: " << eig_solver2.GetTimeEigenSetup() << "s" << std::endl;
+    std::cout << "                 EIG:GetTimeEigenSolver: " << eig_solver2.GetTimeEigenSolver() << "s" << std::endl;
+    std::cout << "                 EIG:SolutionPostProcessing: " << eig_solver2.GetTimeSolutionPostProcessing() << "s"
+              << std::endl;
+    std::cout << "             MOD:SolutionPostProcessing: " << mod_solver2.GetTimeSolutionPostProcessing() << "s"
+              << std::endl;
+
+    ChVectorDynamic<std::complex<double>> eigenvalues_onematrix = assembly->GetEigenValues();
+    ChMatrixDynamic<std::complex<double>> eigenvectors_onematrix = assembly->GetEigenVectors();
+
+    std::cout << "Difference eigvals: " << (eigenvalues_splitmatrix - eigenvalues_onematrix).lpNorm<Eigen::Infinity>()
+              << std::endl;
+
+    std::cout << "Difference eigvect: " << (eigenvectors_splitmatrix - eigenvectors_onematrix).lpNorm<Eigen::Infinity>()
+              << std::endl;
+
+    //    // Set linear solver
+    // #ifdef CHRONO_PARDISO_MKL
+    //    ChSolverComplexPardisoMKL factorization;
+    //    factorization.GetMklEngine().pardisoParameterArray()[12] = 1;  // custom setting for Pardiso
+    // #else
+    //    ChSolverSparseComplexQR factorization;
+    // #endif
+    //
+    //    assembly->ComputeModesDamped(ChModalSolverDamped(
+    //        num_modes,                                              // n. of requested eigenmodes
+    //        1e-5,                                                   // base frequency, or vector of frequency spans
+    //        500,                                                    // the max. number of iterations
+    //        1e-10,                                                  // the tolerance
+    //        true,                                                   // verbose
+    //        ChUnsymGenEigenvalueSolverKrylovSchur(&factorization)  // the eigenpair solver algorithm
+    //        ));
 }
 
 void MakeAndRunDemoLbeam(ChSystem& sys, ChVisualSystemIrrlicht& vis, bool body1fixed, bool body2fixed) {
@@ -317,11 +555,23 @@ void MakeAndRunDemoLbeam(ChSystem& sys, ChVisualSystemIrrlicht& vis, bool body1f
     //   this will pause the dynamic simulation and plot the modes of any ChModalAssembly present in the system
     //   as an oscillating animation. Use the GUI of Irrlicht 3D view to change the ID and amplitude of the plotted
     //   mode.
+
+    ChTimer timer1;
+    timer1.start();
     assembly->ComputeModes(num_modes);
+    timer1.stop();
+    std::cout << "Time for ComputeModes: " << timer1() << std::endl;
+
+    timer1.reset();
+
+    timer1.start();
+    assembly->ComputeModesFaster(num_modes);
+    timer1.stop();
+    std::cout << "Time for ComputeModesFaster: " << timer1() << std::endl;
 
     // If you need to enter more detailed settings for the eigenvalue solver, do this :
     /*
-    assembly->ComputeModes(ChModalSolveUndamped(
+    assembly->ComputeModes(ChModalSolverUndamped(
         num_modes,      // n. lowest nodes to search, or modes clusters {{freq1,nnodes2},{freq2,nnodes2},{...,...}}
         1e-5,           // base freq.
         500,            // max iterations
@@ -375,6 +625,9 @@ class MyEventReceiver : public irr::IEventReceiver {
                     return true;
                 case irr::KEY_KEY_5:
                     ID_current_example = 5;
+                    return true;
+                case irr::KEY_KEY_6:
+                    ID_current_example = 6;
                     return true;
                 default:
                     break;
@@ -442,38 +695,41 @@ int main(int argc, char* argv[]) {
     vis.SetInfoTab(1);
 
     // Run the sub-demos
-    while (true) {
-        switch (ID_current_example) {
-            case 1:
-                MakeAndRunDemoCantilever(sys, vis,
-                                         true);  // root fixed
-                break;
-            case 2:
-                MakeAndRunDemoCantilever(sys, vis,
-                                         false);  // root free, for free-free mode
-                break;
-            case 3:
-                MakeAndRunDemoLbeam(sys, vis,
-                                    true,    // end 1 fixed
-                                    false);  // end 2 free
-                break;
-            case 4:
-                MakeAndRunDemoLbeam(sys, vis,
-                                    false,   // end 1 free
-                                    false);  // end 2 free
-                break;
-            case 5:
-                MakeAndRunDemoLbeam(sys, vis,
-                                    true,   // end 1 fixed
-                                    true);  // end 2 fixed
-                break;
-            default:
-                break;
-        }
+    // while (true) {
+    // switch (ID_current_example) {
+    //    case 1:
+    //        MakeAndRunDemoCantilever(sys, vis,
+    //                                 true);  // root fixed
+    //        break;
+    //    case 2:
+    //        MakeAndRunDemoCantilever(sys, vis,
+    //                                 false);  // root free, for free-free mode
+    //        break;
+    //    case 3:
+    //        MakeAndRunDemoLbeam(sys, vis,
+    //                            true,    // end 1 fixed
+    //                            false);  // end 2 free
+    //        break;
+    //    case 4:
+    //        MakeAndRunDemoLbeam(sys, vis,
+    //                            false,   // end 1 free
+    //                            false);  // end 2 free
+    //        break;
+    //    case 5:
+    //        MakeAndRunDemoLbeam(sys, vis,
+    //                            true,   // end 1 fixed
+    //                            true);  // end 2 fixed
+    //        break;
+    //    case 6:
+    MakeAndRunDemoMesh(sys, vis);  // end 2 fixed
+    //        break;
+    //    default:
+    //        break;
+    //}
 
-        if (!vis.Run())
-            break;
-    }
+    //    if (!vis.Run())
+    //        break;
+    //}
 
     return 0;
 }
