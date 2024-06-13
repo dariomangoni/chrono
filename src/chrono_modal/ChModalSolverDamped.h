@@ -86,7 +86,7 @@ class ChApiModal ChModalSolverDamped : public ChModalSolver {
     /// Return the number of found modes, where n is not necessarily n_lower_modes (or the sum of ChFreqSpan::nmodes if
     /// multiple spans)
     virtual int Solve(
-        ChAssembly& assembly,  ///< input M matrix, n_v x n_v
+        const ChAssembly& assembly,  ///< input M matrix, n_v x n_v
         ChMatrixDynamic<std::complex<double>>&
             eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
         ChVectorDynamic<std::complex<double>>& eigvals,  ///< output vector with n eigenvalues, will be resized.

@@ -22,6 +22,7 @@
 #include "chrono/solver/ChDirectSolverLScomplex.h"
 #include "chrono/utils/ChConstants.h"
 #include "chrono/core/ChMatrix.h"
+#include "chrono/physics/ChSystem.h"
 #include "chrono/core/ChSparsityPatternLearner.h"
 
 #include <Eigen/Core>
@@ -51,6 +52,7 @@ void BuildQuadraticEigenProblemMatrices(ChAssembly& assembly,
     // A  =  [  0     I     0 ]
     //       [ -K    -R  -Cq' ]
     //       [ -Cq    0     0 ]
+    // WARNING: Cq and Cq' sign is not flipped yet: the user is expected to flip it during scaling (if any)
 
     // B  =  [  I     0     0 ]
     //       [  0     M     0 ]
@@ -83,18 +85,24 @@ void BuildQuadraticEigenProblemMatrices(ChAssembly& assembly,
     }
 }
 
-int ChModalSolverDamped::Solve(ChAssembly& assembly,
+int ChModalSolverDamped::Solve(const ChAssembly& assembly,
                                ChMatrixDynamic<std::complex<double>>& eigvects,
                                ChVectorDynamic<std::complex<double>>& eigvals,
                                ChVectorDynamic<double>& freq,
                                ChVectorDynamic<double>& damp_ratios) const {
+    ChAssembly* assembly_nonconst = const_cast<ChAssembly*>(&assembly);
+
+    std::shared_ptr<ChSystemDescriptor> descriptor_bkp;
+    if (assembly_nonconst->GetSystem()->GetSystemDescriptor())
+        descriptor_bkp = assembly_nonconst->GetSystem()->GetSystemDescriptor();
+
     // Extract matrices from the system descriptor
     ChSystemDescriptor temp_descriptor;
 
     temp_descriptor.BeginInsertion();
-    assembly.InjectVariables(temp_descriptor);
-    assembly.InjectKRMMatrices(temp_descriptor);
-    assembly.InjectConstraints(temp_descriptor);
+    assembly_nonconst->InjectVariables(temp_descriptor);
+    assembly_nonconst->InjectKRMMatrices(temp_descriptor);
+    assembly_nonconst->InjectConstraints(temp_descriptor);
     temp_descriptor.EndInsertion();
 
     temp_descriptor.UpdateCountsAndOffsets();
@@ -106,15 +114,14 @@ int ChModalSolverDamped::Solve(ChAssembly& assembly,
     // Leverage the sparsity pattern learner to allocate the proper size
     ChSparsityPatternLearner A_spl(2 * n_vars + n_constr, 2 * n_vars + n_constr);
     ChSparsityPatternLearner B_spl(2 * n_vars + n_constr, 2 * n_vars + n_constr);
-    BuildQuadraticEigenProblemMatrices(assembly, temp_descriptor, A_spl, B_spl, n_vars);
+    BuildQuadraticEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A_spl, B_spl, n_vars);
 
     // Build the actual matrices
     ChSparseMatrix A(2 * n_vars + n_constr, 2 * n_vars + n_constr);
     ChSparseMatrix B(2 * n_vars + n_constr, 2 * n_vars + n_constr);
-    BuildQuadraticEigenProblemMatrices(assembly, temp_descriptor, A, B, n_vars);
-
-    A.setZeroValues();
-    B.setZeroValues();
+    A_spl.Apply(A);
+    B_spl.Apply(B);
+    BuildQuadraticEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A, B, n_vars);
 
     // Scale constraints matrix
     double scaling = 1.0;
@@ -127,20 +134,25 @@ int ChModalSolverDamped::Solve(ChAssembly& assembly,
                 }
             }
         }
-        scaling = -scaling / n_vars;
+        scaling = scaling / n_vars;
     }
 
+    // TODO: check scaling!
+
     // Cq scaling
-    for (unsigned int k = 0; k < n_constr; ++k) {
-        for (ChSparseMatrix::InnerIterator it(A, 2 * n_vars + k); it; ++it) {
-            it.valueRef() *= -scaling;
+    for (auto row_i = 2 * n_vars; row_i < 2 * n_vars + n_constr; row_i++) {
+        for (auto nnz_i = A.outerIndexPtr()[row_i];
+             nnz_i <
+             (A.isCompressed() ? A.outerIndexPtr()[row_i + 1] : A.outerIndexPtr()[row_i] + A.innerNonZeroPtr()[row_i]);
+             ++nnz_i) {
+            A.valuePtr()[nnz_i] *= -scaling;
         }
     }
 
     // CqT scaling
     for (unsigned int k = 0; k < n_vars; ++k) {
         for (ChSparseMatrix::InnerIterator it(A, n_vars + k); it; ++it) {
-            if (it.index() >= 2 * n_vars) {
+            if (it.col() >= 2 * n_vars) {
                 it.valueRef() *= -scaling;
             }
         }
@@ -148,7 +160,6 @@ int ChModalSolverDamped::Solve(ChAssembly& assembly,
 
     A.makeCompressed();
     B.makeCompressed();
-
 
     std::list<std::pair<int, std::complex<double>>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
@@ -158,12 +169,19 @@ int ChModalSolverDamped::Solve(ChAssembly& assembly,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    int found_eigs =
+        modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
     m_timer_eigen_solver.stop();
 
     m_timer_solution_postprocessing.start();
     m_solver->GetNaturalFrequencies(eigvals, freq);
+    m_solver->GetDampingRatios(eigvals, damp_ratios);
     m_timer_solution_postprocessing.stop();
+
+    if (descriptor_bkp) {
+        assembly_nonconst->GetSystem()->SetSystemDescriptor(descriptor_bkp);
+        assembly_nonconst->Setup();
+    }
 
     return found_eigs;
 }

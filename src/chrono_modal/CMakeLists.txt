@@ -17,7 +17,6 @@ MESSAGE(STATUS "\n==== Chrono Modal module ====\n")
 MARK_AS_ADVANCED(CLEAR SPECTRA_INCLUDE_DIR)
 
 #-----------------------------------------------------------------------------
-# LIST THE FILES THAT MAKE THE MODAL LIBRARY
 
 SET(ChronoEngine_MODAL_SOURCES 
     ChModalAssembly.cpp
@@ -90,4 +89,30 @@ INSTALL(TARGETS ChronoEngine_modal
 INSTALL(FILES ${ChronoEngine_MODAL_HEADERS}
         DESTINATION include/chrono_modal)
 
+#-----------------------------------------------------------------------------
+
+        
+if(ENABLE_MODULE_IRRLICHT)
+
+  add_library(ChronoEngine_modal_irrlicht
+    ChModalVisualSystemIrrlicht.h
+    ChModalVisualSystemIrrlicht.cpp
+  )
+
+  set_target_properties(ChronoEngine_modal_irrlicht PROPERTIES
+                        COMPILE_FLAGS "${CXX_FLAGS} ${CH_IRRLICHT_CXX_FLAGS}"
+                        LINK_FLAGS "${CH_LINKERFLAG_LIB}")
+
+  target_include_directories(ChronoEngine_modal_irrlicht PRIVATE ${CH_IRRLICHT_INCLUDES})
+  target_compile_definitions(ChronoEngine_modal_irrlicht PRIVATE "CH_API_COMPILE_MODAL")
+  target_compile_definitions(ChronoEngine_modal_irrlicht PRIVATE "CH_IGNORE_DEPRECATED")
+
+  target_link_libraries(ChronoEngine_modal_irrlicht ChronoEngine_modal ChronoEngine_irrlicht)
+
+  install(TARGETS ChronoEngine_modal_irrlicht
+          RUNTIME DESTINATION bin
+          LIBRARY DESTINATION lib
+          ARCHIVE DESTINATION lib)
+
+endif()
 

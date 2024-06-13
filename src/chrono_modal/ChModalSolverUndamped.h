@@ -19,6 +19,7 @@
 #include "chrono/core/ChMatrix.h"
 #include "chrono/core/ChTimer.h"
 #include "chrono/physics/ChAssembly.h"
+#include "chrono_modal/ChGeneralizedEigenvalueSolver.h"
 #include "chrono_modal/ChSymGenEigenvalueSolver.h"
 #include "chrono_modal/ChModalSolver.h"
 
@@ -26,19 +27,26 @@ namespace chrono {
 
 namespace modal {
 
+void BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
+                                          ChSystemDescriptor& temp_descriptor,
+                                          ChSparseMatrix& A,
+                                          ChSparseMatrix& B,
+                                          int n_vars);
+
 /// Class for computing eigenvalues/eigenvectors for the undamped constrained system.
-/// It dispatches the settings to some solver of ChSymGenEigenvalueSolver class.
+/// It dispatches the settings to some solver of ChGeneralizedEigenvalueSolver class.
 /// It handles multiple runs of the solver if one wants to find specific ranges of frequencies.
 /// Finally it guarantees that eigenvalues are sorted in the appropriate order of increasing frequency.
-class ChApiModal ChModalSolverUndamped : public ChModalSolver {
+template <typename EigenvalueSolverType, typename ScalarType>
+class ChModalSolverUndamped : public ChModalSolver {
   public:
     /// Constructor for the case of N lower modes.
     /// Ex.
     ///  ChModalSolverUndamped(7);
-    /// finds first 7 lowest modes, using default settings (i.e. the ChSymGenEigenvalueSolverLanczos).
+    /// finds first 7 lowest modes, using default settings (i.e. the ChGeneralizedEigenvalueSolverLanczos).
     /// Ex.
-    ///  ChModalSolverUndamped(5, 1e-5, 500, 1e-10, false, ChSymGenEigenvalueSolverKrylovSchur());
-    /// finds first 5 lowest modes using the ChSymGenEigenvalueSolverKrylovSchur() solver.
+    ///  ChModalSolverUndamped(5, 1e-5, 500, 1e-10, false, ChSymGenEigenvalueSolverLanczos());
+    /// finds first 5 lowest modes using the ChSymGenEigenvalueSolverLanczos() solver.
     ChModalSolverUndamped(
         int n_lower_modes,        ///< n of lower modes
         double base_freq = 1e-5,  ///< frequency to whom the nodes are clustered. Use 1e-5 to get n lower modes. As
@@ -47,7 +55,7 @@ class ChApiModal ChModalSolverUndamped : public ChModalSolver {
         bool clip_position_coords = true,
         bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
         bool verbose = false,  ///< turn to true to see some diagnostic
-        const ChSymGenEigenvalueSolver& solver = ChSymGenEigenvalueSolverKrylovSchur())
+        const EigenvalueSolverType& solver = ChSymGenEigenvalueSolverLanczos())
         : ChModalSolver(n_lower_modes, base_freq, clip_position_coords, scaleCq, verbose), m_solver(solver){};
 
     /// Constructor for the case of multiple spans of frequency analysis
@@ -65,7 +73,7 @@ class ChApiModal ChModalSolverUndamped : public ChModalSolver {
                           bool clip_position_coords = true,
                           bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
                           bool verbose = false,  ///< turn to true to see some diagnostic
-                          const ChSymGenEigenvalueSolver& solver = ChSymGenEigenvalueSolverKrylovSchur())
+                          const EigenvalueSolverType& solver = ChSymGenEigenvalueSolverLanczos())
         : ChModalSolver(freq_spans, clip_position_coords, scaleCq, verbose), m_solver(solver){};
 
     virtual ~ChModalSolverUndamped(){};
@@ -74,15 +82,123 @@ class ChApiModal ChModalSolverUndamped : public ChModalSolver {
     /// Return the n. of found modes, where n is not necessarily n_lower_modes (or the sum of ChFreqSpan::nmodes if
     /// multiple spans)
     virtual int Solve(
-        ChAssembly& assembly,               ///< assembly on which to apply the eigen solver
-        ChMatrixDynamic<double>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
-        ChVectorDynamic<double>& eigvals,   ///< output vector with n eigenvalues, will be resized.
-        ChVectorDynamic<double>& freq       ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
+        const ChAssembly& assembly,             ///< assembly on which to apply the eigen solver
+        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
+        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
+        ChVectorDynamic<ScalarType>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
     ) const;
 
   protected:
-    const ChSymGenEigenvalueSolver& m_solver;
+    const EigenvalueSolverType& m_solver;
 };
+
+template <typename EigenvalueSolverType, typename ScalarType>
+int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChAssembly& assembly,
+                                                                   ChMatrixDynamic<ScalarType>& eigvects,
+                                                                   ChVectorDynamic<ScalarType>& eigvals,
+                                                                   ChVectorDynamic<ScalarType>& freq) const {
+    ChAssembly* assembly_nonconst = const_cast<ChAssembly*>(&assembly);
+
+    std::shared_ptr<ChSystemDescriptor> descriptor_bkp;
+    if (assembly_nonconst->GetSystem()->GetSystemDescriptor())
+        descriptor_bkp = assembly_nonconst->GetSystem()->GetSystemDescriptor();
+
+    m_timer_matrix_assembly.start();
+
+    ChSystemDescriptor sysd;
+    ChSystemDescriptor temp_descriptor;
+
+    temp_descriptor.BeginInsertion();
+    assembly_nonconst->InjectVariables(temp_descriptor);
+    assembly_nonconst->InjectKRMMatrices(temp_descriptor);
+    assembly_nonconst->InjectConstraints(temp_descriptor);
+    temp_descriptor.EndInsertion();
+
+    temp_descriptor.UpdateCountsAndOffsets();
+
+    // Generate the A and B in state space
+    int n_vars = temp_descriptor.CountActiveVariables();
+    int n_constr = temp_descriptor.CountActiveConstraints();
+
+    // A  =  [ -K   -Cq' ]
+    //       [ -Cq    0  ]
+
+    // B  =  [  M     0  ]
+    //       [  0     0  ]
+
+    ChSparsityPatternLearner A_spl(n_vars + n_constr, n_vars + n_constr);
+    ChSparsityPatternLearner B_spl(n_vars + n_constr, n_vars + n_constr);
+    BuildGeneralizedEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A_spl, B_spl, n_vars);
+
+    ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
+    ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
+    A_spl.Apply(A);
+    B_spl.Apply(B);
+
+    A.setZeroValues();
+    B.setZeroValues();
+    BuildGeneralizedEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A, B, n_vars);
+
+    // Scale constraints matrix
+    double scaling = 1.0;
+    if (m_scaleCq) {
+        scaling = 0.0;
+        for (int k = 0; k < A.outerSize(); ++k) {
+            for (ChSparseMatrix::InnerIterator it(A, k); it; ++it) {
+                if (it.row() < n_vars && it.col() == it.row()) {
+                    scaling += it.valueRef();
+                }
+            }
+        }
+        scaling = scaling / n_vars;
+    }
+
+    // TODO: check scaling!
+    // Cq scaling
+    for (auto row_i = n_vars; row_i < n_vars + n_constr; row_i++) {
+        for (auto nnz_i = A.outerIndexPtr()[row_i];
+             nnz_i <
+             (A.isCompressed() ? A.outerIndexPtr()[row_i + 1] : A.outerIndexPtr()[row_i] + A.innerNonZeroPtr()[row_i]);
+             ++nnz_i) {
+            A.valuePtr()[nnz_i] *= -scaling;
+        }
+    }
+
+    // CqT scaling
+    for (unsigned int k = 0; k < n_vars; ++k) {
+        for (ChSparseMatrix::InnerIterator it(A, k); it; ++it) {
+            if (it.col() >= n_vars) {
+                it.valueRef() *= -scaling;
+            }
+        }
+    }
+
+    A.makeCompressed();
+    B.makeCompressed();
+
+    std::list<std::pair<int, double>> eig_requests;
+    for (int i = 0; i < m_freq_spans.size(); i++) {
+        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver.GetOptimalShift(m_freq_spans[i].freq)));
+    }
+
+    m_timer_matrix_assembly.stop();
+
+    m_timer_eigen_solver.start();
+    int found_eigs =
+        modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    m_timer_eigen_solver.stop();
+
+    m_timer_solution_postprocessing.start();
+    m_solver.GetNaturalFrequencies(eigvals, freq);
+    m_timer_solution_postprocessing.stop();
+
+    if (descriptor_bkp) {
+        assembly_nonconst->GetSystem()->SetSystemDescriptor(descriptor_bkp);
+        assembly_nonconst->Setup();
+    }
+
+    return found_eigs;
+}
 
 }  // end namespace modal
 

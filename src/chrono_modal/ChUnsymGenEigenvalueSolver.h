@@ -59,6 +59,7 @@ class ChApiModal ChUnsymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolv
     static double GetNaturalFrequency(ScalarType eigval) { return std::abs(eigval) / CH_2PI; };
 
     static ScalarType GetOptimalShift(double frequency) { return frequency * CH_2PI; };
+
 };
 
 /// Solves the generalized eigenvalue problem with the Krylov-Schur iterative method.

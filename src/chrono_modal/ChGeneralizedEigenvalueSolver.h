@@ -88,6 +88,7 @@ class ChGeneralizedEigenvalueSolver {
         // TODO: do the permutation only if not already ordered
         auto perm = GetPermutationMatrix(
             eigvals.rows(), std::bind(ordering_fun, eigvals, std::placeholders::_1, std::placeholders::_2));
+
         eigvects = eigvects * perm;
         eigvals = perm.transpose() * eigvals;
     }
@@ -158,10 +159,6 @@ class ChGeneralizedEigenvalueSolver {
         if (scaleCq) {
             // std::cout << "Scaling Cq" << std::endl;
             scaling = K.diagonal().mean();
-            for (int k = 0; k < Cq.outerSize(); ++k)
-                for (ChSparseMatrix::InnerIterator it(Cq, k); it; ++it) {
-                    it.valueRef() *= scaling;
-                }
         }
 
         A.resize(2 * n_vars + n_constr, 2 * n_vars + n_constr);
@@ -189,10 +186,10 @@ class ChGeneralizedEigenvalueSolver {
 
         A.setZero();
         PlaceMatrix(A, -K, n_vars, 0);
-        PlaceMatrix(A, -Cq, 2 * n_vars, 0);
+        PlaceMatrix(A, -scaling * Cq, 2 * n_vars, 0);
         PlaceMatrix(A, identity_n_vars, 0, n_vars);
         PlaceMatrix(A, -R, n_vars, n_vars);
-        PlaceMatrix(A, -Cq.transpose(), n_vars, 2 * n_vars);
+        PlaceMatrix(A, -scaling * Cq.transpose(), n_vars, 2 * n_vars);
         A.makeCompressed();
 
         // Preallocate the B matrix
@@ -270,7 +267,6 @@ class ChGeneralizedEigenvalueSolver {
                      int eigvects_clipping_length);
 };
 
-
 template <typename EigSolverType, typename ScalarTyp>
 int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& A,
@@ -289,11 +285,14 @@ int Solve(EigSolverType& eig_solver,
     eigvals.resize(num_modes_total);
     int found_eigs = 0;
 
+    // disable the automatic sorting of eigenvalues for any case
+    bool sort_ritz_pairs_bkp = eig_solver.sort_ritz_pairs;
+    eig_solver.sort_ritz_pairs = false;
+
     if (eig_requests.size() == 0)
         return 0;
     else if (eig_requests.size() == 1) {
         eigvects.resize(A.rows(), num_modes_total);
-        eig_solver.m_timer_matrix_assembly.stop();
 
         eig_solver.m_timer_eigen_solver.start();
 
@@ -305,16 +304,18 @@ int Solve(EigSolverType& eig_solver,
 
         eig_solver.m_timer_solution_postprocessing.start();
 
-        if (eigvects_clipping || found_eigs != num_modes_total)
-            eigvects.conservativeResize(eigvects_clipping ? eigvects_clipping_length : Eigen::NoChange_t::NoChange,
-                                        found_eigs != num_modes_total ? found_eigs : Eigen::NoChange_t::NoChange);
+        // these cases must not be handled by ternary if because otherwise the 
+        if (eigvects_clipping) {
+            if (found_eigs == num_modes_total)
+                eigvects.conservativeResize(eigvects_clipping_length, Eigen::NoChange_t::NoChange);
+            else
+                eigvects.conservativeResize(eigvects_clipping_length, found_eigs);
+        } else if (found_eigs != num_modes_total)
+            eigvects.conservativeResize(Eigen::NoChange_t::NoChange, found_eigs);
+
 
     } else {
         eigvects.resize(eigvects_clipping ? eigvects_clipping_length : A.rows(), num_modes_total);
-        eig_solver.m_timer_matrix_assembly.stop();
-
-        bool sort_ritz_pairs_bkp = eig_solver.sort_ritz_pairs;
-        eig_solver.sort_ritz_pairs = false;
 
         // for each freq_spans finds the closest modes to i-th input frequency:
         for (const auto& eig_req : eig_requests) {
@@ -327,7 +328,8 @@ int Solve(EigSolverType& eig_solver,
 
             eig_solver.m_timer_eigen_solver.start();
 
-            int converged_eigs = eig_solver.Solve(A, B, eigvects_singlespan, eigvals_singlespan, eig_req.first, eig_req.second);
+            int converged_eigs =
+                eig_solver.Solve(A, B, eigvects_singlespan, eigvals_singlespan, eig_req.first, eig_req.second);
             eig_solver.m_timer_eigen_solver.stop();
 
             eig_solver.m_timer_solution_postprocessing.start();
@@ -345,12 +347,13 @@ int Solve(EigSolverType& eig_solver,
 
         if (found_eigs != num_modes_total)
             eigvects.conservativeResize(Eigen::NoChange_t::NoChange, found_eigs);
-
-        eig_solver.sort_ritz_pairs = sort_ritz_pairs_bkp;
     }
 
     if (found_eigs != num_modes_total)
         eigvals.conservativeResize(found_eigs);
+
+    // re-enable original ritz pairs sorting
+    eig_solver.sort_ritz_pairs = sort_ritz_pairs_bkp;
 
     if (eig_solver.sort_ritz_pairs)
         eig_solver.SortRitzPairs(eigvals, eigvects);

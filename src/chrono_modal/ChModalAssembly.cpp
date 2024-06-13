@@ -20,8 +20,6 @@
 #include "chrono/fea/ChNodeFEAxyz.h"
 #include "chrono/fea/ChNodeFEAxyzrot.h"
 
-#include <unsupported/Eigen/SparseExtra>  //TODO: remove after debug
-
 namespace chrono {
 
 using namespace fea;
@@ -175,6 +173,7 @@ void ChModalAssembly::DoModalReduction(ChSparseMatrix& full_M,
                                        ChSparseMatrix& full_K,
                                        ChSparseMatrix& full_Cq,
                                        const ChUnsymGenEigenvalueSolver& eigen_solver,
+                                       const std::vector<ChModalSolver::ChFreqSpan> freq_span,
                                        const ChModalDamping& damping_model) {
     if (m_is_model_reduced)
         return;
@@ -206,18 +205,20 @@ void ChModalAssembly::DoModalReduction(ChSparseMatrix& full_M,
     // 1) compute eigenvalue and eigenvectors
     if (m_modal_reduction_type == ReductionType::HERTING) {
         unsigned int expected_eigs = 0;
-        throw std::runtime_error("Not implemented yet");
+        for (auto fspan : freq_span)
+            expected_eigs += fspan.nmodes;
 
         if (expected_eigs < 6) {
             std::cout << "*** At least six rigid-body modes are required for the HERTING modal reduction. "
                       << "The default settings are used." << std::endl;
             this->ComputeModesExternalData(this->full_M_loc, this->full_K_loc, this->full_Cq_loc,
-                                           ChUnsymGenEigenvalueSolverKrylovSchur());
+                                           ChUnsymGenEigenvalueSolverKrylovSchur(), freq_span);
         } else
-            this->ComputeModesExternalData(this->full_M_loc, this->full_K_loc, this->full_Cq_loc, eigen_solver);
+            this->ComputeModesExternalData(this->full_M_loc, this->full_K_loc, this->full_Cq_loc, eigen_solver,
+                                           freq_span);
 
     } else if (m_modal_reduction_type == ReductionType::CRAIG_BAMPTON) {
-        this->ComputeModesExternalData(this->M_II_loc, this->K_II_loc, this->Cq_II_loc, eigen_solver);
+        this->ComputeModesExternalData(this->M_II_loc, this->K_II_loc, this->Cq_II_loc, eigen_solver, freq_span);
 
     } else {
         std::cout << "*** The modal reduction type is specified incorrectly..." << std::endl;
@@ -279,6 +280,7 @@ void ChModalAssembly::DoModalReduction(ChSparseMatrix& full_M,
 }
 
 void ChModalAssembly::DoModalReduction(const ChUnsymGenEigenvalueSolver& eigen_solver,
+                                       const std::vector<ChModalSolver::ChFreqSpan> freq_span,
                                        const ChModalDamping& damping_model) {
     if (m_is_model_reduced)
         return;
@@ -293,7 +295,7 @@ void ChModalAssembly::DoModalReduction(const ChUnsymGenEigenvalueSolver& eigen_s
     this->GetSubassemblyConstraintJacobianMatrix(&full_Cq);
 
     // 2) compute modal reduction from full_M, full_K
-    this->DoModalReduction(full_M, full_K, full_Cq, eigen_solver, damping_model);
+    this->DoModalReduction(full_M, full_K, full_Cq, eigen_solver, freq_span, damping_model);
 }
 
 void ChModalAssembly::ComputeMassCenterFrame() {
@@ -1346,7 +1348,8 @@ void ChModalAssembly::SetupModalData(unsigned int nmodes_reduction) {
     }
 }
 
-bool ChModalAssembly::ComputeModes(const ChUnsymGenEigenvalueSolver& eigen_solver) {
+bool ChModalAssembly::ComputeModes(const ChUnsymGenEigenvalueSolver& eigen_solver,
+                                   const std::vector<ChModalSolver::ChFreqSpan> freq_span) {
     if (m_is_model_reduced)
         throw std::runtime_error(
             "Error: it is not supported to compute modes when the modal assembly is already in the reduced state.");
@@ -1371,23 +1374,15 @@ bool ChModalAssembly::ComputeModes(const ChUnsymGenEigenvalueSolver& eigen_solve
     m_timer_matrix_assembly.stop();
 
     // SOLVE EIGENVALUE
-    this->ComputeModesExternalData(full_M, full_K, full_Cq, eigen_solver);
+    this->ComputeModesExternalData(full_M, full_K, full_Cq, eigen_solver, freq_span);
 
     return true;
 }
 
-bool ChModalAssembly::ComputeModesExternalData(const ChSparseMatrix& full_M,
-                                               const ChSparseMatrix& full_K,
-                                               const ChSparseMatrix& full_Cq,
-                                               const ChUnsymGenEigenvalueSolver& eigen_solver) {
-    // SOLVE EIGENVALUE
-    // for undamped system (use generalized constrained eigen solver)
-    // - Must work with large dimension and sparse matrices only
-    // - Must work also in free-free cases, with 6 rigid body modes at 0 frequency.
+bool ChModalAssembly::ComputeModesFaster(const ChModalSolverDamped& modal_solver) {
     m_timer_modal_solver_call.start();
-    ChSparseMatrix A, B;
-    eigen_solver.BuildUndampedSystem(full_M_loc, full_K_loc, full_Cq_loc, A, B, true);
-    eigen_solver.Solve(A, B, m_modal_eigvect, m_modal_eigvals, 1, 0.0);
+
+    modal_solver.Solve(*this, m_modal_eigvect, m_modal_eigvals, m_modal_freq, m_modal_damping_ratios);
     m_timer_modal_solver_call.stop();
 
     m_timer_setup.start();
@@ -1400,6 +1395,39 @@ bool ChModalAssembly::ComputeModesExternalData(const ChSparseMatrix& full_M,
     return true;
 }
 
+bool ChModalAssembly::ComputeModesExternalData(const ChSparseMatrix& full_M,
+                                               const ChSparseMatrix& full_K,
+                                               const ChSparseMatrix& full_Cq,
+                                               const ChUnsymGenEigenvalueSolver& eigen_solver,
+                                               const std::vector<ChModalSolver::ChFreqSpan> freq_span) {
+    // SOLVE EIGENVALUE
+    // for undamped system (use generalized constrained eigen solver)
+    // - Must work with large dimension and sparse matrices only
+    // - Must work also in free-free cases, with 6 rigid body modes at 0 frequency.
+    m_timer_matrix_assembly.start();
+    ChSparseMatrix A, B;
+    eigen_solver.BuildUndampedSystem(full_M_loc, full_K_loc, full_Cq_loc, A, B, true);
+
+    std::list<std::pair<int, std::complex<double>>> eig_requests;
+    for (const auto& span : freq_span) {
+        eig_requests.push_back(std::make_pair(span.nmodes, eigen_solver.GetOptimalShift(span.freq)));
+    }
+    m_timer_matrix_assembly.stop();
+
+    m_timer_modal_solver_call.start();
+
+    modal::Solve<>(eigen_solver, A, B, m_modal_eigvect, m_modal_eigvals, eig_requests, full_M_loc.rows());
+    m_timer_modal_solver_call.stop();
+
+    m_timer_setup.start();
+
+    ChUnsymGenEigenvalueSolver::GetNaturalFrequencies(m_modal_eigvals, m_modal_freq);
+    m_modal_damping_ratios.setZero(m_modal_freq.rows());
+
+    m_timer_setup.stop();
+
+    return true;
+}
 
 bool ChModalAssembly::ComputeModesDamped(const ChUnsymGenEigenvalueSolver& eigen_solver) {
     if (m_is_model_reduced)
