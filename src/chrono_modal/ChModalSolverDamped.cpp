@@ -186,6 +186,45 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
     return found_eigs;
 }
 
+int ChModalSolverDamped::Solve(const ChSparseMatrix& K,
+                               const ChSparseMatrix& R,
+                               const ChSparseMatrix& M,
+                               const ChSparseMatrix& Cq,
+                               ChMatrixDynamic<std::complex<double>>& eigvects,
+                               ChVectorDynamic<std::complex<double>>& eigvals,
+                               ChVectorDynamic<double>& freq,
+                               ChVectorDynamic<double>& damp_ratios) const {
+
+    m_timer_matrix_assembly.start();
+
+    // Generate the A and B in state space
+    int n_vars = K.rows();
+    int n_constr = Cq.rows();
+
+    ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
+    ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
+    m_solver->BuildDampedSystem(K, R, M, Cq, A, B, m_scaleCq);
+
+    std::list<std::pair<int, std::complex<double>>> eig_requests;
+    for (int i = 0; i < m_freq_spans.size(); i++) {
+        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver->GetOptimalShift(m_freq_spans[i].freq)));
+    }
+
+    m_timer_matrix_assembly.stop();
+
+    m_timer_eigen_solver.start();
+    int found_eigs =
+        modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    m_timer_eigen_solver.stop();
+
+    m_timer_solution_postprocessing.start();
+    m_solver->GetNaturalFrequencies(eigvals, freq);
+    m_solver->GetDampingRatios(eigvals, damp_ratios);
+    m_timer_solution_postprocessing.stop();
+
+    return found_eigs;
+}
+
 }  // end namespace modal
 
 }  // end namespace chrono

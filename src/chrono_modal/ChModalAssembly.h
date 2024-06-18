@@ -66,8 +66,8 @@ class ChApiModal ChModalAssembly : public ChAssembly {
     /// Compute the undamped modes for the current assembly.
     /// Later you can fetch results via GetEigenVectors(), GetUndampedFrequencies() etc.
     /// Usually done for the assembly in full state, not available in reduced state.
-    bool ComputeModes(const ChUnsymGenEigenvalueSolver& modal_solver, const std::vector<ChModalSolver::ChFreqSpan> freq_span
-);
+    bool ComputeModes(const ChUnsymGenEigenvalueSolver& modal_solver,
+                      const std::vector<ChModalSolver::ChFreqSpan> freq_span);
 
     /// Compute the undamped modes for the current assembly.
     /// Later you can fetch results via GetEigenVectors(), GetUndampedFrequencies() etc.
@@ -94,7 +94,7 @@ class ChApiModal ChModalAssembly : public ChAssembly {
     /// - The "boundary" nodes will be retained.
     /// - The "internal" nodes will be replaced by n_modes modal coordinates.
     void DoModalReduction(const ChUnsymGenEigenvalueSolver& modal_solver,
-        const std::vector<ChModalSolver::ChFreqSpan> freq_span,
+                          const std::vector<ChModalSolver::ChFreqSpan> freq_span,
                           const ChModalDamping& damping_model = ChModalDampingNone());
 
     /// Perform modal reduction on this modal assembly that contains only the "boundary" nodes, whereas

@@ -71,7 +71,7 @@ class ChApiModal ChModalSolverDamped : public ChModalSolver {
     /// frequency with Y Hz where Y < X, then such Y mode(s) is discarded.
     ChModalSolverDamped(
         std::vector<ChFreqSpan> freq_spans,  ///< vector of {nmodes,freq}_i , will provide first nmodes_i starting at
-                                              ///< freq_i per each i vector entry
+                                             ///< freq_i per each i vector entry
         bool clip_position_coords = true,
         bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
         bool verbose = false,  ///< turn to true to see some diagnostic
@@ -87,6 +87,18 @@ class ChApiModal ChModalSolverDamped : public ChModalSolver {
     /// multiple spans)
     virtual int Solve(
         const ChAssembly& assembly,  ///< input M matrix, n_v x n_v
+        ChMatrixDynamic<std::complex<double>>&
+            eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
+        ChVectorDynamic<std::complex<double>>& eigvals,  ///< output vector with n eigenvalues, will be resized.
+        ChVectorDynamic<double>& freq,  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
+        ChVectorDynamic<double>& damp_ratios  ///< output vector with n damping ratios, will be resized.
+    ) const;
+
+    virtual int Solve(
+        const ChSparseMatrix& K,
+        const ChSparseMatrix& R,
+        const ChSparseMatrix& M,
+        const ChSparseMatrix& Cq,
         ChMatrixDynamic<std::complex<double>>&
             eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
         ChVectorDynamic<std::complex<double>>& eigvals,  ///< output vector with n eigenvalues, will be resized.

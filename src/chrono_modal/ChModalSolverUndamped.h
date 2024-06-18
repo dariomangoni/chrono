@@ -81,8 +81,17 @@ class ChModalSolverUndamped : public ChModalSolver {
     /// Solve the constrained eigenvalue problem (-wsquare*M + K)*x = 0 s.t. Cq*x = 0
     /// Return the n. of found modes, where n is not necessarily n_lower_modes (or the sum of ChFreqSpan::nmodes if
     /// multiple spans)
-    virtual int Solve(
+    int Solve(
         const ChAssembly& assembly,             ///< assembly on which to apply the eigen solver
+        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
+        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
+        ChVectorDynamic<ScalarType>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
+    ) const;
+
+    int Solve(
+        const ChSparseMatrix& K,
+        const ChSparseMatrix& M,
+        const ChSparseMatrix& Cq,
         ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
         ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
         ChVectorDynamic<ScalarType>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
@@ -139,6 +148,10 @@ int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChAssem
     B.setZeroValues();
     BuildGeneralizedEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A, B, n_vars);
 
+    m_timer_matrix_assembly.stop();
+
+    m_timer_matrix_assembly.start();
+
     // Scale constraints matrix
     double scaling = 1.0;
     if (m_scaleCq) {
@@ -175,6 +188,47 @@ int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChAssem
 
     A.makeCompressed();
     B.makeCompressed();
+
+    std::list<std::pair<int, double>> eig_requests;
+    for (int i = 0; i < m_freq_spans.size(); i++) {
+        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver.GetOptimalShift(m_freq_spans[i].freq)));
+    }
+
+    m_timer_matrix_assembly.stop();
+
+    m_timer_eigen_solver.start();
+    int found_eigs =
+        modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    m_timer_eigen_solver.stop();
+
+    m_timer_solution_postprocessing.start();
+    m_solver.GetNaturalFrequencies(eigvals, freq);
+    m_timer_solution_postprocessing.stop();
+
+    if (descriptor_bkp) {
+        assembly_nonconst->GetSystem()->SetSystemDescriptor(descriptor_bkp);
+        assembly_nonconst->Setup();
+    }
+
+    return found_eigs;
+}
+
+template <typename EigenvalueSolverType, typename ScalarType>
+int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChSparseMatrix& K,
+                                                                   const ChSparseMatrix& M,
+                                                                   const ChSparseMatrix& Cq,
+                                                                   ChMatrixDynamic<ScalarType>& eigvects,
+                                                                   ChVectorDynamic<ScalarType>& eigvals,
+                                                                   ChVectorDynamic<ScalarType>& freq) const {
+    m_timer_matrix_assembly.start();
+
+    // Generate the A and B in state space
+    int n_vars = K.rows();
+    int n_constr = Cq.rows();
+
+    ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
+    ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
+    m_solver::BuildUndampedSystem(K, M, Cq, A, B, m_scaleCq);
 
     std::list<std::pair<int, double>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
