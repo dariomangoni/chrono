@@ -37,9 +37,10 @@ void BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
 /// It dispatches the settings to some solver of ChGeneralizedEigenvalueSolver class.
 /// It handles multiple runs of the solver if one wants to find specific ranges of frequencies.
 /// Finally it guarantees that eigenvalues are sorted in the appropriate order of increasing frequency.
-template <typename EigenvalueSolverType, typename ScalarType>
+template <typename EigenvalueSolverType>
 class ChModalSolverUndamped : public ChModalSolver {
   public:
+    using ScalarType = typename EigenvalueSolverType::ScalarType;
     /// Constructor for the case of N lower modes.
     /// Ex.
     ///  ChModalSolverUndamped(7);
@@ -101,11 +102,11 @@ class ChModalSolverUndamped : public ChModalSolver {
     const EigenvalueSolverType& m_solver;
 };
 
-template <typename EigenvalueSolverType, typename ScalarType>
-int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChAssembly& assembly,
-                                                                   ChMatrixDynamic<ScalarType>& eigvects,
-                                                                   ChVectorDynamic<ScalarType>& eigvals,
-                                                                   ChVectorDynamic<ScalarType>& freq) const {
+template <typename EigenvalueSolverType>
+int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembly,
+                                                       ChMatrixDynamic<ScalarType>& eigvects,
+                                                       ChVectorDynamic<ScalarType>& eigvals,
+                                                       ChVectorDynamic<ScalarType>& freq) const {
     ChAssembly* assembly_nonconst = const_cast<ChAssembly*>(&assembly);
 
     std::shared_ptr<ChSystemDescriptor> descriptor_bkp;
@@ -213,13 +214,13 @@ int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChAssem
     return found_eigs;
 }
 
-template <typename EigenvalueSolverType, typename ScalarType>
-int ChModalSolverUndamped<EigenvalueSolverType, ScalarType>::Solve(const ChSparseMatrix& K,
-                                                                   const ChSparseMatrix& M,
-                                                                   const ChSparseMatrix& Cq,
-                                                                   ChMatrixDynamic<ScalarType>& eigvects,
-                                                                   ChVectorDynamic<ScalarType>& eigvals,
-                                                                   ChVectorDynamic<ScalarType>& freq) const {
+template <typename EigenvalueSolverType>
+int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
+                                                       const ChSparseMatrix& M,
+                                                       const ChSparseMatrix& Cq,
+                                                       ChMatrixDynamic<ScalarType>& eigvects,
+                                                       ChVectorDynamic<ScalarType>& eigvals,
+                                                       ChVectorDynamic<ScalarType>& freq) const {
     m_timer_matrix_assembly.start();
 
     // Generate the A and B in state space
