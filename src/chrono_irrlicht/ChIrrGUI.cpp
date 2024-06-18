@@ -265,7 +265,7 @@ void ChIrrGUI::Initialize(ChVisualSystemIrrlicht* vis) {
 
     guienv->addStaticText(L"Symbols scale", irr::core::rect<irr::s32>(130, 330, 200, 330 + 15), false, false, g_tab1);
     g_symbolscale = guienv->addEditBox(L"", irr::core::rect<irr::s32>(170, 345, 200, 345 + 15), true, g_tab1, 9921);
-    SetSymbolscale(symbolscale);
+    SetSymbolScale(symbolscale);
 
     // -- g_tab3
 
@@ -308,7 +308,7 @@ void ChIrrGUI::AddUserEventReceiver(irr::IEventReceiver* receiver) {
     m_user_receivers.push_back(receiver);
 }
 
-void ChIrrGUI::SetSymbolscale(double val) {
+void ChIrrGUI::SetSymbolScale(double val) {
     symbolscale = std::max(10e-12, val);
     char message[50];
     snprintf(message, sizeof(message), "%g", symbolscale);
