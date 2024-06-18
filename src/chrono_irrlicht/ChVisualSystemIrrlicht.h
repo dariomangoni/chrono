@@ -242,7 +242,10 @@ class ChApiIrr ChVisualSystemIrrlicht : virtual public ChVisualSystem {
     irr::gui::IGUIEnvironment* GetGUIEnvironment() { return m_device->getGUIEnvironment(); }
 
     /// Get the window ID.
-    void* GetWindowId() const { return m_device_params.WindowId; };
+    void* GetWindowId() const { return m_device_params.WindowId; }
+
+    /// Return the Irrlicht ChIrrGUI object.
+    ChIrrGUI* GetGUI() {return m_gui.get(); }
 
     /// Process all visual assets in the associated ChSystem.
     /// This function is called by default by Initialize(), but can also be called later if further modifications to

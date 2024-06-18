@@ -31,7 +31,59 @@ namespace modal {
 
 /// @addtogroup modal_vis
 /// @{
-///
+
+template <typename ScalarType>
+class ChModalVisualSystemIrrlicht;
+
+template <typename ScalarType>
+class ChModalEventReceiver : public irr::IEventReceiver {
+  public:
+    // Construct a custom event receiver.
+    ChModalEventReceiver(ChModalVisualSystemIrrlicht<ScalarType>* vsys) : m_modal_vsys(vsys) {}
+
+    virtual bool OnEvent(const irr::SEvent& event) {
+        // Process GUI events
+        if (event.EventType == irr::EET_GUI_EVENT) {
+            irr::s32 id = event.GUIEvent.Caller->getID();
+
+            switch (event.GUIEvent.EventType) {
+                case irr::gui::EGET_EDITBOX_ENTER:
+                    switch (id) {
+                        case 9927: {
+                            double val = atof(
+                                irr::core::stringc(((irr::gui::IGUIEditBox*)event.GUIEvent.Caller)->getText()).c_str());
+                            m_modal_vsys->SetAmplitude(val);
+
+                        } break;
+                        case 9928: {
+                            double val = atof(
+                                irr::core::stringc(((irr::gui::IGUIEditBox*)event.GUIEvent.Caller)->getText()).c_str());
+                            m_modal_vsys->SetSpeedFactor(val);
+
+                        } break;
+                    }
+                    break;
+
+                case irr::gui::EGET_SCROLL_BAR_CHANGED:
+                    switch (id) {
+                        case 9926: {
+                            int mode_sel = ((irr::gui::IGUIScrollBar*)event.GUIEvent.Caller)->getPos();
+                            m_modal_vsys->SetMode(mode_sel);
+                        } break;
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        return false;
+    }
+
+  private:
+    ChModalVisualSystemIrrlicht<ScalarType>* m_modal_vsys;
+};
 
 template <typename ScalarType>
 class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
@@ -53,41 +105,38 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     /// Render the Irrlicht scene and additional visual elements.
     virtual void Render() override;
 
-    void SetMode(int mode) { m_selected_mode = ChClamp(mode, 0, m_eigvects->cols()); }
+    void SetMode(int mode);
 
     void ResetTimer() { m_timer.reset(); }
 
-    void SetAmplitude(double amplitude) { m_amplitude = amplitude; }
+    void SetAmplitude(double amplitude);
 
-    void SetTimeFactor(double time_factor) { m_time_factor = time_factor; }
+    void SetSpeedFactor(double speed_factor);
 
     void ResetInitialState();
 
     void AttachAssembly(const ChAssembly& assembly,
                         const ChMatrixDynamic<ScalarType>& eigvects,
-                        const ChVectorDynamic<double>& freq) {
-        m_assembly = const_cast<ChAssembly*>(&assembly);
+                        const ChVectorDynamic<double>& freq);
 
-        UpdateModes(eigvects, freq);
-    }
+    void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects, const ChVectorDynamic<double>& freq);
 
-    void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects, const ChVectorDynamic<double>& freq) {
-        m_eigvects = &eigvects;
-        m_freq = &freq;
-        m_selected_mode = 0;
-    }
+    void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects,
+                     const ChVectorDynamic<double>& freq,
+                     const ChVectorDynamic<double>& damping_ratios);
 
   protected:
     ChAssembly* m_assembly = nullptr;
     const ChMatrixDynamic<ScalarType>* m_eigvects = nullptr;
     const ChVectorDynamic<double>* m_freq = nullptr;
+    const ChVectorDynamic<double>* m_damping_ratios = nullptr;
 
     mutable int m_selected_mode = 0;
     ChTimer m_timer;
 
     ChState m_assembly_initial_state;
     double m_amplitude = 1.0;
-    double m_time_factor = 1.0;
+    double m_speed_factor = 1.0;
 
     template <typename U = ScalarType>
     typename std::enable_if<std::is_same<U, double>::value, ChVectorDynamic<double>>::type GetModeShape(
@@ -102,17 +151,64 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
         double angle) {
         return eigv.stableNormalized().real() * sin(angle) + eigv.stableNormalized().imag() * cos(angle);
     }
+
+    // UI components
+    irr::gui::IGUIScrollBar* g_selected_mode;
+    irr::gui::IGUIStaticText* g_selected_mode_info;
+    irr::gui::IGUIEditBox* g_amplitude;
+    irr::gui::IGUIEditBox* g_speed_factor;
+    ChModalEventReceiver<ScalarType>* m_receiver;
 };
 
+//// ChModalVisualSystemIrrlicht definitions ////
+
 template <typename ScalarType>
-ChModalVisualSystemIrrlicht<ScalarType>::~ChModalVisualSystemIrrlicht() {}
+ChModalVisualSystemIrrlicht<ScalarType>::~ChModalVisualSystemIrrlicht() {
+    delete m_receiver;
+}
 
 template <typename ScalarType>
 void ChModalVisualSystemIrrlicht<ScalarType>::Initialize() {
+    bool m_modal_initialized = m_initialized;
     ChVisualSystemIrrlicht::Initialize();
+    if (m_modal_initialized)
+        return;
 
-    m_timer.reset();
     ResetInitialState();
+
+    // Set the modal event receiver
+    m_receiver = new ChModalEventReceiver<ScalarType>(this);
+    AddUserEventReceiver(m_receiver);
+
+    auto guienv = GetDevice()->getGUIEnvironment();
+
+    auto gui = GetGUI();
+
+    auto g_tab2 = gui->AddTab(L"Modal");
+
+    // -- g_tab2
+
+    guienv->addStaticText(L"Amplitude", irr::core::rect<irr::s32>(10, 10, 80, 10 + 15), false, false, g_tab2);
+    g_amplitude = guienv->addEditBox(L"", irr::core::rect<irr::s32>(80, 10, 120, 10 + 15), true, g_tab2, 9927);
+    SetAmplitude(m_amplitude);
+    guienv->addStaticText(L"SpeedFactor", irr::core::rect<irr::s32>(10, 25, 80, 25 + 15), false, false, g_tab2);
+    g_speed_factor = guienv->addEditBox(L"", irr::core::rect<irr::s32>(80, 25, 120, 25 + 15), true, g_tab2, 9928);
+    SetSpeedFactor(m_speed_factor);
+
+    guienv->addStaticText(L"Mode", irr::core::rect<irr::s32>(10, 50, 100, 50 + 15), false, false, g_tab2);
+    g_selected_mode =
+        GetGUIEnvironment()->addScrollBar(true, irr::core::rect<irr::s32>(10, 65, 200, 65 + 15), g_tab2, 9926);
+    g_selected_mode->setMin(1);
+    g_selected_mode->setMax(1);
+    g_selected_mode->setSmallStep(1);
+    g_selected_mode->setLargeStep(10);
+    g_selected_mode_info = GetGUIEnvironment()->addStaticText(
+        L"", irr::core::rect<irr::s32>(10, 65 + 15, 200, 65 + 15 + 45), false, false, g_tab2);
+
+    g_selected_mode->setEnabled(true);
+    g_selected_mode_info->setEnabled(true);
+    g_amplitude->setEnabled(true);
+    g_speed_factor->setEnabled(true);
 }
 
 template <typename ScalarType>
@@ -124,7 +220,7 @@ inline void ChModalVisualSystemIrrlicht<ScalarType>::BeginScene(bool backBuffer,
     if (m_timer.GetTimeMilliseconds() == 0.0)
         m_timer.start();
 
-    double angle = m_time_factor * CH_2PI * m_freq->coeff(m_selected_mode) * m_timer.GetTimeSeconds();
+    double angle = m_speed_factor * CH_2PI * m_freq->coeff(m_selected_mode) * m_timer.GetTimeSeconds();
 
     ChState assembly_state_new;
     ChStateDelta assembly_state_delta;
@@ -164,6 +260,75 @@ void ChModalVisualSystemIrrlicht<ScalarType>::ResetInitialState() {
 
     double time;
     m_assembly->IntStateGather(0, m_assembly_initial_state, 0, dummy_state_delta, time);
+
+    m_timer.reset();
+}
+
+template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::SetMode(int mode) {
+    if (mode - 1 < 0 || mode - 1 >= (int)m_eigvects->cols()) {
+        g_selected_mode->setPos(1);
+        return;
+    }
+
+    m_selected_mode = mode - 1;
+
+    g_selected_mode->setPos(m_selected_mode+1);
+
+    char message[50];
+    if (m_damping_ratios)
+        snprintf(message, sizeof(message), "n = %i\nf = %.3g Hz\nz = %.2g", m_selected_mode + 1,
+                 (*m_freq)[m_selected_mode], (*m_damping_ratios)[m_selected_mode]);
+    else
+        snprintf(message, sizeof(message), "n = %i\nf = %.3g Hz", m_selected_mode + 1, (*m_freq)[m_selected_mode]);
+    g_selected_mode_info->setText(irr::core::stringw(message).c_str());
+}
+
+template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::SetAmplitude(double amplitude) {
+    m_amplitude = std::max(0.0, amplitude);
+    char message[50];
+    snprintf(message, sizeof(message), "%g", m_amplitude);
+    g_amplitude->setText(irr::core::stringw(message).c_str());
+}
+
+template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::SetSpeedFactor(double speed_factor) {
+    m_speed_factor = std::max(0.0, speed_factor);
+    char message[50];
+    snprintf(message, sizeof(message), "%g", m_speed_factor);
+    g_speed_factor->setText(irr::core::stringw(message).c_str());
+}
+
+template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::AttachAssembly(const ChAssembly& assembly,
+                                                             const ChMatrixDynamic<ScalarType>& eigvects,
+                                                             const ChVectorDynamic<double>& freq) {
+    m_assembly = const_cast<ChAssembly*>(&assembly);
+
+    UpdateModes(eigvects, freq);
+}
+
+template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects,
+                                                          const ChVectorDynamic<double>& freq) {
+    m_eigvects = &eigvects;
+    m_freq = &freq;
+    m_damping_ratios = nullptr;
+
+    g_selected_mode->setMin(1); // required to refit the scale
+    g_selected_mode->setMax(m_eigvects->cols()-1);
+    SetMode(1);
+}
+
+template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects,
+                                                          const ChVectorDynamic<double>& freq,
+                                                          const ChVectorDynamic<double>& damping_ratios) {
+    m_damping_ratios = &damping_ratios;
+    UpdateModes(eigvects, freq);
+
+    SetMode(1); // required to print the damping ratio
 }
 
 // @} modal_vis
