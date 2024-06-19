@@ -20,7 +20,6 @@
 #include "chrono/core/ChTimer.h"
 #include "chrono/physics/ChAssembly.h"
 #include "chrono_modal/ChGeneralizedEigenvalueSolver.h"
-#include "chrono_modal/ChSymGenEigenvalueSolver.h"
 #include "chrono_modal/ChModalSolver.h"
 
 namespace chrono {
@@ -46,18 +45,17 @@ class ChModalSolverUndamped : public ChModalSolver {
     ///  ChModalSolverUndamped(7);
     /// finds first 7 lowest modes, using default settings (i.e. the ChGeneralizedEigenvalueSolverLanczos).
     /// Ex.
-    ///  ChModalSolverUndamped(5, 1e-5, 500, 1e-10, false, ChSymGenEigenvalueSolverLanczos());
-    /// finds first 5 lowest modes using the ChSymGenEigenvalueSolverLanczos() solver.
+    ///  ChModalSolverUndamped(5, 1e-5, 500, 1e-10, false, ChUnsymGenEigenvalueSolverKrylovSchur());
+    /// finds first 5 lowest modes using the ChUnsymGenEigenvalueSolverKrylovSchur() solver.
     ChModalSolverUndamped(
         int n_lower_modes,        ///< n of lower modes
         double base_freq = 1e-5,  ///< frequency to whom the nodes are clustered. Use 1e-5 to get n lower modes. As
                                   ///< sigma in shift&invert, as: sigma = -pow(base_freq * CH_2PI, 2). Too small gives
                                   ///< ill conditioning (no convergence). Too large misses rigid body modes
-        bool clip_position_coords = true,
         bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
         bool verbose = false,  ///< turn to true to see some diagnostic
-        const EigenvalueSolverType& solver = ChSymGenEigenvalueSolverLanczos())
-        : ChModalSolver(n_lower_modes, base_freq, clip_position_coords, scaleCq, verbose), m_solver(solver){};
+        const EigenvalueSolverType& solver = EigenvalueSolverType())
+        : ChModalSolver(n_lower_modes, base_freq, scaleCq, verbose), m_solver(solver){};
 
     /// Constructor for the case of multiple spans of frequency analysis
     /// ex. ChModalSolverUndamped({{10,1e-5,},{5,40}} , 500) ;
@@ -71,11 +69,10 @@ class ChModalSolverUndamped : public ChModalSolver {
     /// frequency with Y Hz where Y < X, then such Y mode(s) is discarded.
     ChModalSolverUndamped(std::vector<ChFreqSpan> freq_spans,  ///< vector of {nmodes,freq}_i , will provide first
                                                                ///< nmodes_i starting at freq_i per each i vector entry
-                          bool clip_position_coords = true,
                           bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
                           bool verbose = false,  ///< turn to true to see some diagnostic
-                          const EigenvalueSolverType& solver = ChSymGenEigenvalueSolverLanczos())
-        : ChModalSolver(freq_spans, clip_position_coords, scaleCq, verbose), m_solver(solver){};
+                          const EigenvalueSolverType& solver = EigenvalueSolverType())
+        : ChModalSolver(freq_spans, scaleCq, verbose), m_solver(solver){};
 
     virtual ~ChModalSolverUndamped(){};
 
@@ -86,7 +83,7 @@ class ChModalSolverUndamped : public ChModalSolver {
         const ChAssembly& assembly,             ///< assembly on which to apply the eigen solver
         ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
         ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
-        ChVectorDynamic<ScalarType>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
+        ChVectorDynamic<double>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
     ) const;
 
     int Solve(
@@ -95,8 +92,11 @@ class ChModalSolverUndamped : public ChModalSolver {
         const ChSparseMatrix& Cq,
         ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
         ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
-        ChVectorDynamic<ScalarType>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
+        ChVectorDynamic<double>& freq  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
     ) const;
+
+    const EigenvalueSolverType& GetEigenSolver() const { return m_solver; }
+
 
   protected:
     const EigenvalueSolverType& m_solver;
@@ -106,7 +106,7 @@ template <typename EigenvalueSolverType>
 int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembly,
                                                        ChMatrixDynamic<ScalarType>& eigvects,
                                                        ChVectorDynamic<ScalarType>& eigvals,
-                                                       ChVectorDynamic<ScalarType>& freq) const {
+                                                       ChVectorDynamic<double>& freq) const {
     ChAssembly* assembly_nonconst = const_cast<ChAssembly*>(&assembly);
 
     std::shared_ptr<ChSystemDescriptor> descriptor_bkp;
@@ -220,7 +220,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
                                                        const ChSparseMatrix& Cq,
                                                        ChMatrixDynamic<ScalarType>& eigvects,
                                                        ChVectorDynamic<ScalarType>& eigvals,
-                                                       ChVectorDynamic<ScalarType>& freq) const {
+                                                       ChVectorDynamic<double>& freq) const {
     m_timer_matrix_assembly.start();
 
     // Generate the A and B in state space
@@ -229,9 +229,9 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
 
     ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
     ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
-    m_solver::BuildUndampedSystem(K, M, Cq, A, B, m_scaleCq);
+    m_solver.BuildUndampedSystem(K, M, Cq, A, B, m_scaleCq);
 
-    std::list<std::pair<int, double>> eig_requests;
+    std::list<std::pair<int, ScalarType>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
         eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver.GetOptimalShift(m_freq_spans[i].freq)));
     }
@@ -246,11 +246,6 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
     m_timer_solution_postprocessing.start();
     m_solver.GetNaturalFrequencies(eigvals, freq);
     m_timer_solution_postprocessing.stop();
-
-    if (descriptor_bkp) {
-        assembly_nonconst->GetSystem()->SetSystemDescriptor(descriptor_bkp);
-        assembly_nonconst->Setup();
-    }
 
     return found_eigs;
 }

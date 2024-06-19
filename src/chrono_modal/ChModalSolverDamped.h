@@ -51,13 +51,12 @@ class ChApiModal ChModalSolverDamped : public ChModalSolver {
         double base_freq,   ///< frequency to whom the nodes are clustered. Use 1e-5 to get n lower modes. As
                             ///< sigma in shift&invert, as: sigma = -pow(base_freq * CH_2PI, 2). Too small gives
                             ///< ill conditioning (no convergence). Too large misses rigid body modes.
-        bool clip_position_coords = true,
         bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
         bool verbose = false,  ///< turn to true to see some diagnostic
         std::shared_ptr<ChUnsymGenEigenvalueSolver> solver = chrono_types::make_shared<
             ChUnsymGenEigenvalueSolverKrylovSchur>()  /// solver to use (default: direct, null-space based)
         )
-        : ChModalSolver(n_lower_modes, base_freq, clip_position_coords, scaleCq, verbose), m_solver(solver){};
+        : ChModalSolver(n_lower_modes, base_freq, scaleCq, verbose), m_solver(solver){};
 
     /// Constructor for the case of multiple spans of frequency analysis
     /// ex. ChModalSolverDamped({{10,1e-5,},{5,40}} , 500);
@@ -72,13 +71,12 @@ class ChApiModal ChModalSolverDamped : public ChModalSolver {
     ChModalSolverDamped(
         std::vector<ChFreqSpan> freq_spans,  ///< vector of {nmodes,freq}_i , will provide first nmodes_i starting at
                                              ///< freq_i per each i vector entry
-        bool clip_position_coords = true,
         bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
         bool verbose = false,  ///< turn to true to see some diagnostic
         std::shared_ptr<ChUnsymGenEigenvalueSolver> solver = chrono_types::make_shared<
             ChUnsymGenEigenvalueSolverKrylovSchur>()  /// solver to use (default: direct, null-space based)
         )
-        : ChModalSolver(freq_spans, clip_position_coords, scaleCq, verbose), m_solver(solver){};
+        : ChModalSolver(freq_spans, scaleCq, verbose), m_solver(solver){};
 
     virtual ~ChModalSolverDamped(){};
 
@@ -105,6 +103,9 @@ class ChApiModal ChModalSolverDamped : public ChModalSolver {
         ChVectorDynamic<double>& freq,  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
         ChVectorDynamic<double>& damp_ratios  ///< output vector with n damping ratios, will be resized.
     ) const;
+
+    std::shared_ptr<ChUnsymGenEigenvalueSolver> GetEigenSolver() const { return m_solver; }
+
 
   protected:
     std::shared_ptr<ChUnsymGenEigenvalueSolver> m_solver;

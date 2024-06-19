@@ -281,9 +281,8 @@ int main(int argc, char* argv[]) {
     ChSolverSparseComplexQR factorization;
 #endif
 
-    // auto eig_solver = chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>(factorization);
-    auto eig_solver = chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>();
-    ChModalSolverDamped modal_solver(num_modes, 1e-5, true, true, false, eig_solver);
+    auto eig_solver = chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>(factorization);
+    ChModalSolverDamped modal_solver(num_modes, 1e-5, true, false, eig_solver);
 
     ChMatrixDynamic<std::complex<double>> eigvects;
     ChVectorDynamic<std::complex<double>> eigvals;
