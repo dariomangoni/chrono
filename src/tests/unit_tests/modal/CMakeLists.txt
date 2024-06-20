@@ -4,7 +4,8 @@
 message(STATUS "Unit tests for Chrono::modal ...")
 
 set(TEST_PROGRAMS
-    utest_MOD_eigensolve
+    utest_MOD_eigensolver
+    utest_MOD_curved_beam
 )
 
 #--------------------------------------------------------------

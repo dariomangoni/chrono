@@ -19,6 +19,7 @@
 #include "chrono/core/ChMatrix.h"
 #include "chrono/core/ChTimer.h"
 #include "chrono/physics/ChAssembly.h"
+#include "chrono/core/ChSparsityPatternLearner.h"
 #include "chrono_modal/ChGeneralizedEigenvalueSolver.h"
 #include "chrono_modal/ChModalSolver.h"
 
@@ -26,7 +27,7 @@ namespace chrono {
 
 namespace modal {
 
-void BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
+void ChApiModal BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
                                           ChSystemDescriptor& temp_descriptor,
                                           ChSparseMatrix& A,
                                           ChSparseMatrix& B,
@@ -153,7 +154,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
 
     m_timer_matrix_assembly.start();
 
-    // Scale constraints matrix
+    // Find scaling factor for Cq
     double scaling = 1.0;
     if (m_scaleCq) {
         scaling = 0.0;
@@ -167,7 +168,6 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
         scaling = scaling / n_vars;
     }
 
-    // TODO: check scaling!
     // Cq scaling
     for (auto row_i = n_vars; row_i < n_vars + n_constr; row_i++) {
         for (auto nnz_i = A.outerIndexPtr()[row_i];
@@ -190,7 +190,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     A.makeCompressed();
     B.makeCompressed();
 
-    std::list<std::pair<int, double>> eig_requests;
+    std::list<std::pair<int, ScalarType>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
         eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver.GetOptimalShift(m_freq_spans[i].freq)));
     }

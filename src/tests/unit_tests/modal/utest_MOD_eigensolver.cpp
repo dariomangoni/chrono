@@ -14,12 +14,9 @@
 
 #include "chrono/physics/ChSystemNSC.h"
 #include "chrono/physics/ChLinkMate.h"
-#include "chrono/physics/ChLinkLock.h"
 #include "chrono/physics/ChBodyEasy.h"
-#include "chrono/physics/ChLinkMotorRotationAngle.h"
 #include "chrono/fea/ChElementBeamEuler.h"
 #include "chrono/fea/ChBuilderBeam.h"
-#include "chrono/fea/ChMeshFileLoader.h"
 #include "chrono/timestepper/ChAssemblyAnalysis.h"
 
 #include "chrono/utils/ChUtilsInputOutput.h"
@@ -32,14 +29,12 @@
 #include "chrono_modal/ChUnsymGenEigenvalueSolver.h"
 #include "chrono_modal/ChSymGenEigenvalueSolver.h"
 #include "chrono_modal/ChGeneralizedEigenvalueSolver.h"
-
+#include "chrono_modal/ChModalSolverUndamped.h"
 
 #include "chrono/solver/ChDirectSolverLScomplex.h"
 
 #include "chrono_thirdparty/filesystem/path.h"
 #include <iomanip>
-
-// #include <unsupported/Eigen/SparseExtra>
 
 #include <fast_matrix_market/app/Eigen.hpp>
 
@@ -51,7 +46,7 @@ using namespace chrono::fea;
 
 static const std::string val_dir = "../RESULTS/";
 static const std::string out_dir = val_dir + "modal/";
-static const std::string ref_dir = "testing/modal/analysis/";
+static const std::string ref_dir = "testing/modal/eigensolver/";
 
 static const double tolerance = 1e-3;
 
@@ -143,14 +138,13 @@ std::shared_ptr<ChAssembly> BuildBeamFixBody(ChSystem& sys) {
     return assembly;
 }
 
-void generateMRKCqfromAssembly(std::shared_ptr<ChAssembly> assembly, std::string refname) {
+void generateKRMCqFromAssembly(std::shared_ptr<ChAssembly> assembly,
+                               ChSparseMatrix& K,
+                               ChSparseMatrix& R,
+                               ChSparseMatrix& M,
+                               ChSparseMatrix& Cq) {
     ChSystemNSC sys;
     // auto assembly = BuildBeamFixBody(sys);
-
-    ChSparseMatrix M;
-    ChSparseMatrix K;
-    ChSparseMatrix R;
-    ChSparseMatrix Cq;
 
     assembly->Setup();
     assembly->Update();
@@ -191,10 +185,16 @@ void generateMRKCqfromAssembly(std::shared_ptr<ChAssembly> assembly, std::string
     // Constraint Jacobian
     assembly->LoadConstraintJacobians();
     temp_descriptor.PasteConstraintsJacobianMatrixInto(Cq, 0, 0);
+}
 
-    std::ofstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
+void dumpKRMMatricesFromAssembly(std::shared_ptr<ChAssembly> assembly, std::string refname) {
+    ChSparseMatrix K, R, M, Cq;
+
+    generateKRMCqFromAssembly(assembly, K, R, M, Cq);
+
     std::ofstream stream_K(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_K.txt"));
     std::ofstream stream_R(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_R.txt"));
+    std::ofstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
     std::ofstream stream_Cq(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Cq.txt"));
 
     if (stream_M.fail() || stream_K.fail() || stream_R.fail() || stream_Cq.fail()) {
@@ -209,15 +209,55 @@ void generateMRKCqfromAssembly(std::shared_ptr<ChAssembly> assembly, std::string
 }
 
 // int main() {
-//     std::string testname = "SymMKCqChrono";
+//     std::string testname = "SymKMCqChrono";
 //
 //     // Create a system
 //     ChSystemNSC sys;
 //     auto assembly = BuildBeamFixBody(sys);
-//     generateMRKCqfromAssembly(assembly, testname);
+//     generateKRMCqFromAssembly(assembly, testname);
 //
 //     return 0;
 // }
+
+// Compare the two variants of Solve() for ChModalSolverUndamped
+// The main difference is how the scaling is applied.
+TEST(ChModalSolver, Undamped_UnsymKrylovSchur) {
+    std::string refname = "ChModalSolverUndamped_ChUnsymGenEigenvalueSolverKrylovSchur";
+
+    // Create a system
+    ChSystemNSC sys;
+    auto assembly = BuildBeamFixBody(sys);
+
+    ChSparseMatrix K, R, M, Cq;
+    generateKRMCqFromAssembly(assembly, K, R, M, Cq);
+
+    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
+    int num_modes = 10;
+
+    ChModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur> modal_solver(num_modes, 1e-5, true, false,
+                                                                              eigen_solver);
+
+    ChMatrixDynamic<std::complex<double>> eigenvectors_assembly;
+    ChVectorDynamic<std::complex<double>> eigenvalues_assembly;
+    ChVectorDynamic<double> freq_assembly;
+
+    modal_solver.Solve(*assembly, eigenvectors_assembly, eigenvalues_assembly, freq_assembly);
+
+    ChMatrixDynamic<std::complex<double>> eigenvectors_KRMCq;
+    ChVectorDynamic<std::complex<double>> eigenvalues_KRMCq;
+    ChVectorDynamic<double> freq_KRMCq;
+
+    modal_solver.Solve(*assembly, eigenvectors_KRMCq, eigenvalues_KRMCq, freq_KRMCq);
+
+    double eigvects_diff = (eigenvectors_assembly - eigenvectors_KRMCq).lpNorm<Eigen::Infinity>();
+    double eigvals_diff = (eigenvalues_assembly - eigenvalues_KRMCq).lpNorm<Eigen::Infinity>();
+
+    ASSERT_NEAR(eigvects_diff, 0, tolerance)
+        << "Eigvects difference: " << eigvects_diff << " above threshold: " << tolerance << std::endl;
+
+    ASSERT_NEAR(eigvals_diff, 0, tolerance)
+        << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;
+}
 
 TEST(CountNonZerosForEachRow, Count) {
     std::string refname = "CountNonZeros";
@@ -318,17 +358,17 @@ TEST(ChSymGenEigenvalueSolverLanczos, SymAB) {
     ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(), "SymAB");
 }
 
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymMKCqChrono_AB) {
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCqChrono_AB) {
     ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
-                                                                          "SymMKCqChrono");
+                                                                          "SymKMCqChrono");
 }
 
-TEST(ChSymGenEigenvalueSolverLanczos, SymMKCqChrono_AB) {
+TEST(ChSymGenEigenvalueSolverLanczos, SymKMCqChrono_AB) {
     ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(),
-                                                                      "SymMKCqChrono");
+                                                                      "SymKMCqChrono");
 }
 
-void ExecuteEigenSolverCallMKCq(ChSymGenEigenvalueSolver& eigen_solver, std::string refname) {
+void ExecuteEigenSolverCallKMCq(ChSymGenEigenvalueSolver& eigen_solver, std::string refname) {
     ChSparseMatrix M;
     ChSparseMatrix K;
     ChSparseMatrix Cq;
@@ -379,24 +419,24 @@ void ExecuteEigenSolverCallMKCq(ChSymGenEigenvalueSolver& eigen_solver, std::str
                                                  << eigvals_CHRONO << std::endl;
 }
 
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymMKCqChrono) {
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCqChrono) {
     ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
-    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCq");
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
 }
 
-TEST(ChSymGenEigenvalueSolverLanczos, SymMKCqChrono) {
+TEST(ChSymGenEigenvalueSolverLanczos, SymKMCqChrono) {
     ChSymGenEigenvalueSolverLanczos eigen_solver;
-    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCqChrono");
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCqChrono");
 }
 
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymMKCq) {
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCq) {
     ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
-    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCq");
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
 }
 
-TEST(ChSymGenEigenvalueSolverLanczos, SymMKCq) {
+TEST(ChSymGenEigenvalueSolverLanczos, SymKMCq) {
     ChSymGenEigenvalueSolverLanczos eigen_solver;
-    ExecuteEigenSolverCallMKCq(eigen_solver, "SymMKCq");
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
 }
 
 TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymAB) {
@@ -404,7 +444,7 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymAB) {
         ChUnsymGenEigenvalueSolverKrylovSchur(chrono_types::make_shared<ChSolverSparseComplexLU>()), "UnsymAB");
 }
 
-void ExecuteEigenSolverCallMRKCq(std::string refname) {
+void ExecuteEigenSolverCallKRMCq(std::string refname) {
     ChSparseMatrix M;
     ChSparseMatrix K;
     ChSparseMatrix R;
@@ -458,12 +498,12 @@ void ExecuteEigenSolverCallMRKCq(std::string refname) {
                                                  << eigvals_CHRONO << std::endl;
 }
 
-TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymMRKCq) {
-    ExecuteEigenSolverCallMRKCq("UnsymMRKCq");
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq) {
+    ExecuteEigenSolverCallKRMCq("UnsymKRMCq");
 }
 
-TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymMRKCq_multifreq) {
-    std::string refname = "UnsymMRKCq_multifreq";
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
+    std::string refname = "UnsymKRMCq_multifreq";
 
     ChSparseMatrix M;
     ChSparseMatrix K;

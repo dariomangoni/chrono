@@ -40,13 +40,13 @@ void ChApiModal CountNonZerosForEachRowTransposed(const ChSparseMatrix& Q_transp
 
 namespace modal {
 
-template <typename EigSolverType, typename ScalarTyp>
+template <typename EigSolverType>
 int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& A,
           ChSparseMatrix& B,
-          ChMatrixDynamic<ScalarTyp>& eigvects,
-          ChVectorDynamic<ScalarTyp>& eigvals,
-          const std::list<std::pair<int, ScalarTyp>>& eig_requests,
+          ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
+          ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
+          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
           int eigvects_clipping_length);
 
 /// Base interface class for generalized eigenvalue solvers.
@@ -54,7 +54,7 @@ int Solve(EigSolverType& eig_solver,
 template <typename ScalarT>
 class ChGeneralizedEigenvalueSolver {
   public:
-    using ScalarType = ScalarT;
+    using ScalarType = typename ScalarT;
 
     ChGeneralizedEigenvalueSolver() {}
 
@@ -257,23 +257,23 @@ class ChGeneralizedEigenvalueSolver {
 
     int m_min_subspace_size = 30;  // TODO: make it constant or tunable
 
-    template <typename EigSolverType, typename ScalarTyp>
+    template <typename EigSolverType>
     friend int Solve(EigSolverType& eig_solver,
                      ChSparseMatrix& A,
                      ChSparseMatrix& B,
-                     ChMatrixDynamic<ScalarTyp>& eigvects,
-                     ChVectorDynamic<ScalarTyp>& eigvals,
-                     const std::list<std::pair<int, ScalarTyp>>& eig_requests,
+                     ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
+                     ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
+                     const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
                      int eigvects_clipping_length);
 };
 
-template <typename EigSolverType, typename ScalarTyp>
+template <typename EigSolverType>
 int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& A,
           ChSparseMatrix& B,
-          ChMatrixDynamic<ScalarTyp>& eigvects,
-          ChVectorDynamic<ScalarTyp>& eigvals,
-          const std::list<std::pair<int, ScalarTyp>>& eig_requests,
+          ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
+          ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
+          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
           int eigvects_clipping_length = 0) {
     bool eigvects_clipping = eigvects_clipping_length > 0;
 
@@ -321,8 +321,8 @@ int Solve(EigSolverType& eig_solver,
         for (const auto& eig_req : eig_requests) {
             eig_solver.m_timer_matrix_assembly.start();
 
-            ChMatrixDynamic<ScalarTyp> eigvects_singlespan;
-            ChVectorDynamic<ScalarTyp> eigvals_singlespan;
+            ChMatrixDynamic<typename EigSolverType::ScalarType> eigvects_singlespan;
+            ChVectorDynamic<typename EigSolverType::ScalarType> eigvals_singlespan;
 
             eig_solver.m_timer_matrix_assembly.stop();
 
