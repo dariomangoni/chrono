@@ -28,7 +28,7 @@ using namespace fea;
 namespace modal {
 
 ChModalDampingReductionR::ChModalDampingReductionR(ChModalAssembly& massembly) {
-    massembly.GetSubassemblyDampingMatrix(&full_R);
+    massembly.GetSubassemblyMatrices(nullptr, &full_R, nullptr, nullptr);
 }
 
 void ChModalDampingFactorRmm::ComputeR(ChModalAssembly& assembly,
@@ -91,12 +91,10 @@ void ChModalDampingFactorAssembly::ComputeR(ChModalAssembly& assembly,
     ChMatrixDynamic<std::complex<double>> modes_V_reduced(n_bou_mod_coords, n_eff_modes);
     ChVectorDynamic<std::complex<double>> eig_reduced(n_eff_modes);
     ChVectorDynamic<> freq_reduced(n_eff_modes);
-    ChSparseMatrix M_reduced;
-    assembly.GetSubassemblyMassMatrix(&M_reduced);
-    ChSparseMatrix K_reduced;
-    assembly.GetSubassemblyStiffnessMatrix(&K_reduced);
-    ChSparseMatrix Cq_reduced;
-    assembly.GetSubassemblyConstraintJacobianMatrix(&Cq_reduced);
+    ChSparseMatrix K_reduced, M_reduced, Cq_reduced;
+
+    assembly.GetSubassemblyMatrices(&K_reduced, nullptr, &M_reduced, &Cq_reduced);
+
 
     if (false) {
         std::ofstream fileM("dump_modalreduced_M.dat");
