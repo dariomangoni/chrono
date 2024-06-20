@@ -562,7 +562,8 @@ void ChModalAssembly::PartitionLocalSystemMatrices() {
 
 void ChModalAssembly::ApplyModeAccelerationTransformation(const ChModalDamping& damping_model) {
     if (m_modal_reduction_type == ReductionType::HERTING && m_modal_eigvect.cols() < 6) {
-        std::cerr << "ChModalAssembly: at least six rigid-body modes are required for Herting reduction method" << std::endl;
+        std::cerr << "ChModalAssembly: at least six rigid-body modes are required for Herting reduction method"
+                  << std::endl;
         throw std::invalid_argument("Error: at least six rigid-body modes are required for Herting reduction method.");
     }
 
@@ -575,20 +576,18 @@ void ChModalAssembly::ApplyModeAccelerationTransformation(const ChModalDamping& 
                 "Error: it is forbidden to use AddLink() to connect internal bodies/nodes in ChModalAssembly().");
     }
 
-    Eigen::SparseMatrix<double, Eigen::ColMajor, int> K_II_col;
+    // avoid computing K_IIc^{-1}, effectively do n times a linear solve:
+    ChSparseMatrix H_II;
     if (m_num_constr_internal) {
         // K_IIc = [  K_II   Cq_II' ]
         //         [ Cq_II     0    ]
-        ChSparseMatrix K_IIc_loc;
-        util_sparse_assembly_2x2symm(K_IIc_loc, K_II_loc, Cq_II_loc * m_scaling_factor_CqI);
-        util_convert_to_colmajor(K_II_col, K_IIc_loc);
-
+        util_sparse_assembly_2x2symm(H_II, K_II_loc, Cq_II_loc * m_scaling_factor_CqI);
+        m_solver_invKIIc.analyzePattern(H_II);
+        m_solver_invKIIc.factorize(H_II);
     } else {
-        util_convert_to_colmajor(K_II_col, K_II_loc);
+        m_solver_invKIIc.analyzePattern(K_II_loc);
+        m_solver_invKIIc.factorize(K_II_loc);
     }
-    // avoid computing K_IIc^{-1}, effectively do n times a linear solve:
-    m_solver_invKIIc.analyzePattern(K_II_col);
-    m_solver_invKIIc.factorize(K_II_col);
 
     // 1) Matrix of static modes (constrained, so use K_IIc instead of K_II,
     // the original unconstrained static reduction is: Psi_S = - K_II^{-1} * K_IB.

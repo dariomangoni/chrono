@@ -612,7 +612,7 @@ class ChApiModal ChModalAssembly : public ChAssembly {
         Psi_D_LambdaI;  ///< dynamic mode transformation matrix - corresponding to internal Lagrange multipliers.
     ChMatrixDynamic<> Psi_Cor_LambdaI;  ///< static correction mode - corresponding to internal Lagrange multipliers.
 
-    Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>>
+    Eigen::SparseQR<ChSparseMatrix, Eigen::COLAMDOrdering<int>>
         m_solver_invKIIc;  // linear solver for K_IIc^{-1}
 
     // Results of eigenvalue analysis like ComputeModes() or ComputeModesDamped():
