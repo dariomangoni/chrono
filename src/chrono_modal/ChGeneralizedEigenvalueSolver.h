@@ -46,8 +46,7 @@ int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& B,
           ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
           ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
-          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
-          int eigvects_clipping_length);
+          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests);
 
 /// Base interface class for generalized eigenvalue solvers.
 /// Currently it implies that the derived eigensolvers are iterative.
@@ -91,6 +90,75 @@ class ChGeneralizedEigenvalueSolver {
 
         eigvects *= perm;
         eigvals = perm.transpose() * eigvals;
+    }
+
+    static double GetMaxResidual(const ChSparseMatrix& A,
+                                 const ChSparseMatrix& B,
+                                 const ChMatrixDynamic<ScalarType>& eigvects,
+                                 const ChVectorDynamic<ScalarType>& eigvals) {
+        int n = eigvects.rows();
+        int m = eigvects.cols();
+
+        double max_residual = -1;
+
+        ChVectorDynamic<ScalarType> residuals_col;
+        for (int i = 0; i < m; i++) {
+            residuals_col = A * eigvects.col(i) - eigvals(i) * B * eigvects.col(i);
+            double cur_residual = residuals_col.lpNorm<Eigen::Infinity>();
+            max_residual = std::max(cur_residual, max_residual);
+        }
+
+        return max_residual;
+    }
+
+    static double GetMaxResidual(const ChSparseMatrix& K,
+                                 const ChSparseMatrix& M,
+                                 const ChSparseMatrix& Cq,
+                                 const ChMatrixDynamic<ScalarType>& eigvects,
+                                 const ChVectorDynamic<ScalarType>& eigvals) {
+        int n = K.rows();
+        int m = Cq.rows();
+        double max_residual = 0;
+        for (auto nv = 0; nv < eigvals.size(); nv++) {
+            double cur_residual_state =
+                (K * eigvects.col(nv).topRows(n) + Cq.transpose() * eigvects.col(nv).bottomRows(m) +
+                 eigvals(nv) * M * eigvects.col(nv).topRows(n))
+                    .lpNorm<Eigen::Infinity>();
+            double cur_residual_lambda = (Cq * eigvects.col(nv).topRows(n)).lpNorm<Eigen::Infinity>();
+            double cur_residual = std::max(cur_residual_state, cur_residual_lambda);
+            if (cur_residual > max_residual) {
+                max_residual = cur_residual;
+            }
+        }
+
+        return max_residual;
+    }
+
+    static double GetMaxResidual(const ChSparseMatrix& K,
+                                 const ChSparseMatrix& R,
+                                 const ChSparseMatrix& M,
+                                 const ChSparseMatrix& Cq,
+                                 const ChMatrixDynamic<ScalarType>& eigvects,
+                                 const ChVectorDynamic<ScalarType>& eigvals) {
+        int n = K.rows();
+        int m = Cq.rows();
+        double max_residual = 0;
+        for (auto nv = 0; nv < eigvals.size(); nv++) {
+            double cur_residual_state_p =
+                (eigvects.col(nv).segment(n, n) - eigvals(nv) * eigvects.col(nv).topRows(n)).lpNorm<Eigen::Infinity>();
+
+            double cur_residual_state_v =
+                (K * eigvects.col(nv).topRows(n) + R * eigvects.col(nv).segment(n, n) +
+                 Cq.transpose() * eigvects.col(nv).bottomRows(m) + eigvals(nv) * M * eigvects.col(nv).segment(n, n))
+                    .lpNorm<Eigen::Infinity>();
+            double cur_residual_lambda = (Cq * eigvects.col(nv).topRows(n)).lpNorm<Eigen::Infinity>();
+            double cur_residual = std::max(std::max(cur_residual_state_p, cur_residual_state_v), cur_residual_lambda);
+            if (cur_residual > max_residual) {
+                max_residual = cur_residual;
+            }
+        }
+
+        return max_residual;
     }
 
     /// Build the quadratic eigenvalue problem matrix for the undamped case.
@@ -277,8 +345,7 @@ class ChGeneralizedEigenvalueSolver {
                      ChSparseMatrix& B,
                      ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
                      ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
-                     const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
-                     int eigvects_clipping_length);
+                     const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests);
 };
 
 template <typename EigSolverType>
@@ -287,10 +354,7 @@ int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& B,
           ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
           ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
-          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
-          int eigvects_clipping_length = 0) {
-    bool eigvects_clipping = eigvects_clipping_length > 0;
-
+          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests) {
     int num_modes_total = 0;
     for (const auto& eig_req : eig_requests) {
         num_modes_total += eig_req.first;
@@ -318,17 +382,11 @@ int Solve(EigSolverType& eig_solver,
 
         eig_solver.m_timer_solution_postprocessing.start();
 
-        // these cases must not be handled by ternary if because otherwise the
-        if (eigvects_clipping) {
-            if (found_eigs == num_modes_total)
-                eigvects.conservativeResize(eigvects_clipping_length, Eigen::NoChange_t::NoChange);
-            else
-                eigvects.conservativeResize(eigvects_clipping_length, found_eigs);
-        } else if (found_eigs != num_modes_total)
+        if (found_eigs != num_modes_total)
             eigvects.conservativeResize(Eigen::NoChange_t::NoChange, found_eigs);
 
     } else {
-        eigvects.resize(eigvects_clipping ? eigvects_clipping_length : A.rows(), num_modes_total);
+        eigvects.resize(A.rows(), num_modes_total);
 
         // for each freq_spans finds the closest modes to i-th input frequency:
         for (const auto& eig_req : eig_requests) {
@@ -349,10 +407,8 @@ int Solve(EigSolverType& eig_solver,
 
             int min_converged_eigs = std::min(eig_req.first, converged_eigs);
 
-            eig_solver.InsertUniqueRitzPairs(
-                eigvals_singlespan,
-                eigvects_clipping ? eigvects_singlespan.topRows(eigvects_clipping_length) : eigvects_singlespan,
-                eigvals, eigvects, eig_solver.GetNaturalFrequency, found_eigs, min_converged_eigs);
+            eig_solver.InsertUniqueRitzPairs(eigvals_singlespan, eigvects_singlespan, eigvals, eigvects,
+                                             eig_solver.GetNaturalFrequency, found_eigs, min_converged_eigs);
 
             eig_solver.m_timer_solution_postprocessing.stop();
         }

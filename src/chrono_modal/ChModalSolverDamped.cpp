@@ -105,8 +105,6 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
     assembly_nonconst->InjectConstraints(temp_descriptor);
     temp_descriptor.EndInsertion();
 
-    temp_descriptor.UpdateCountsAndOffsets();
-
     // Generate the A and B in state space
     int n_vars = temp_descriptor.CountActiveVariables();
     int n_constr = temp_descriptor.CountActiveConstraints();
@@ -134,7 +132,7 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
                 }
             }
         }
-        scaling = scaling / n_vars;
+        scaling = -scaling / n_vars;
     }
 
     // TODO: check scaling!
@@ -169,8 +167,16 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs =
-        modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
+
+    // the scaling does not affect the eigenvalues
+    // but affects the constraint part of the eigenvectors
+    if (m_clip_position_coords) {
+        eigvects = eigvects.middleRows(n_vars, n_vars);
+    } else {
+        eigvects.bottomRows(n_constr) *= scaling;
+    }
+
     m_timer_eigen_solver.stop();
 
     m_timer_solution_postprocessing.start();
@@ -194,7 +200,6 @@ int ChModalSolverDamped::Solve(const ChSparseMatrix& K,
                                ChVectorDynamic<std::complex<double>>& eigvals,
                                ChVectorDynamic<double>& freq,
                                ChVectorDynamic<double>& damp_ratios) const {
-
     m_timer_matrix_assembly.start();
 
     // Generate the A and B in state space
@@ -203,7 +208,7 @@ int ChModalSolverDamped::Solve(const ChSparseMatrix& K,
 
     ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
     ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
-    m_solver->BuildDampedSystem(K, R, M, Cq, A, B, m_scaleCq);
+    double scaling = m_solver->BuildDampedSystem(M, R, K, Cq, A, B, m_scaleCq);
 
     std::list<std::pair<int, std::complex<double>>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
@@ -213,9 +218,16 @@ int ChModalSolverDamped::Solve(const ChSparseMatrix& K,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs =
-        modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
     m_timer_eigen_solver.stop();
+
+    // the scaling does not affect the eigenvalues
+    // but affects the constraint part of the eigenvectors
+    if (m_clip_position_coords) {
+        eigvects = eigvects.middleRows(n_vars, n_vars);
+    } else {
+        eigvects.bottomRows(n_constr) *= scaling;
+    }
 
     m_timer_solution_postprocessing.start();
     m_solver->GetNaturalFrequencies(eigvals, freq);

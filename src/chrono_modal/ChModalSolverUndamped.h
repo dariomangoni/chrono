@@ -115,7 +115,6 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
 
     m_timer_matrix_assembly.start();
 
-    ChSystemDescriptor sysd;
     ChSystemDescriptor temp_descriptor;
 
     temp_descriptor.BeginInsertion();
@@ -123,8 +122,6 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     assembly_nonconst->InjectKRMMatrices(temp_descriptor);
     assembly_nonconst->InjectConstraints(temp_descriptor);
     temp_descriptor.EndInsertion();
-
-    temp_descriptor.UpdateCountsAndOffsets();
 
     // Generate the A and B in state space
     int n_vars = temp_descriptor.CountActiveVariables();
@@ -198,8 +195,16 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs =
-        modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+    int found_eigs = modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests);
+
+    // the scaling does not affect the eigenvalues
+    // but affects the constraint part of the eigenvectors
+    if (m_clip_position_coords) {
+        eigvects = eigvects.topRows(n_vars);
+    } else {
+        eigvects.bottomRows(n_constr) *= scaling;
+    }
+
     m_timer_eigen_solver.stop();
 
     m_timer_solution_postprocessing.start();
@@ -229,7 +234,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
 
     ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
     ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
-    m_solver.BuildUndampedSystem(K, M, Cq, A, B, m_scaleCq);
+    double scaling = m_solver.BuildUndampedSystem(M, K, Cq, A, B, m_scaleCq);
 
     std::list<std::pair<int, ScalarType>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
@@ -240,7 +245,15 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
 
     m_timer_eigen_solver.start();
     int found_eigs =
-        modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests, m_clip_position_coords ? n_vars : A.rows());
+        modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests);
+
+    // the scaling does not affect the eigenvalues
+    // but affects the constraint part of the eigenvectors
+    if (m_clip_position_coords) {
+        eigvects = eigvects.topRows(n_vars);
+    } else {
+        eigvects.bottomRows(n_constr) *= scaling;
+    }
     m_timer_eigen_solver.stop();
 
     m_timer_solution_postprocessing.start();
