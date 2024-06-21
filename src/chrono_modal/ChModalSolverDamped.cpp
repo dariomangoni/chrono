@@ -26,7 +26,6 @@
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 
-
 using namespace Eigen;
 
 namespace chrono {

@@ -176,7 +176,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     }
 
     // CqT scaling and sign change
-    for (unsigned int k = 0; k < n_vars; ++k) {
+    for (auto k = 0; k < n_vars; ++k) {
         for (ChSparseMatrix::InnerIterator it(A, k); it; ++it) {
             if (it.col() >= n_vars) {
                 it.valueRef() *= -scaling;

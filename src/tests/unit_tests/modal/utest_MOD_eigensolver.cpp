@@ -59,27 +59,28 @@ double GetEigenvaluesMaxDiff(const ChVectorDynamic<std::complex<double>>& eig1,
                     (eig1.imag().cwiseAbs() - eig2.imag().cwiseAbs()).lpNorm<Eigen::Infinity>());
 }
 
-template <typename ScalarType>
-double GetEigenvectsMaxDiff(const ChMatrixDynamic<ScalarType>& eigv1,
-                            const ChMatrixDynamic<ScalarType>& eigv2,
-                            double non_null_tol = 1e-6) {
-    double max_diff = 0;
-
-    for (auto e_sel = 0; e_sel < eigv1.cols(); ++e_sel) {
-        int non_null_id = -1;
-        for (auto row_sel = 0; row_sel < eigv1.rows(); ++row_sel) {
-            if (std::abs(eigv1(row_sel, e_sel)) > non_null_tol) {
-                non_null_id = row_sel;
-                break;
-            }
-        }
-        ScalarType eigv_ratio = eigv2(non_null_id, e_sel) / eigv1(non_null_id, e_sel);
-        ChVectorDynamic<ScalarType> eigvect_comp = eigv1.col(e_sel) * eigv_ratio - eigv2.col(e_sel);
-        max_diff = std::max(max_diff, eigvect_comp.lpNorm<Eigen::Infinity>());
-    }
-
-    return max_diff;
-}
+// WARNING: this method probably does not work for complex eigenvectors
+// template <typename ScalarType>
+// double GetEigenvectsMaxDiff(const ChMatrixDynamic<ScalarType>& eigv1,
+//                            const ChMatrixDynamic<ScalarType>& eigv2,
+//                            double non_null_tol = 1e-6) {
+//    double max_diff = 0;
+//
+//    for (auto e_sel = 0; e_sel < eigv1.cols(); ++e_sel) {
+//        int non_null_id = -1;
+//        for (auto row_sel = 0; row_sel < eigv1.rows(); ++row_sel) {
+//            if (std::abs(eigv1(row_sel, e_sel)) > non_null_tol) {
+//                non_null_id = row_sel;
+//                break;
+//            }
+//        }
+//        ScalarType eigv_ratio = eigv2(non_null_id, e_sel) / eigv1(non_null_id, e_sel);
+//        ChVectorDynamic<ScalarType> eigvect_comp = eigv1.col(e_sel) * eigv_ratio - eigv2.col(e_sel);
+//        max_diff = std::max(max_diff, eigvect_comp.lpNorm<Eigen::Infinity>());
+//    }
+//
+//    return max_diff;
+//}
 
 void prepare_folders(std::string testname) {
     // Create output directory (if it does not already exist)
@@ -287,7 +288,6 @@ void ExecuteEigenSolverCallAB(EigenSolverType eigen_solver, std::string refname)
                                                  << eigvals_MATLAB << "\nCHRONO:\n"
                                                  << eigvals_CHRONO << std::endl;
 
-    int max_residual_CHRONO_idx = -1;
     double max_residual_CHRONO = eigen_solver.GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO);
 
     ASSERT_NEAR(max_residual_CHRONO, 0, tolerance) << "Residuals exceeding threshold" << std::endl;
@@ -334,7 +334,7 @@ void ExecuteEigenSolverCallKMCq(ChSymGenEigenvalueSolver& eigen_solver, std::str
     double scaling = ChGeneralizedEigenvalueSolver<double>::BuildUndampedSystem(M, K, Cq, A, B, scaleCq);
 
     // eigen_solver.sort_ritz_pairs = false;
-    int conv_eigs = eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+    eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
 
     double max_residual_CHRONO_AB = eigen_solver.GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO);
 
@@ -400,7 +400,7 @@ void ExecuteEigenSolverCallUnsymKMCq(std::string refname) {
     double scaling = ChGeneralizedEigenvalueSolver<std::complex<double>>::BuildUndampedSystem(M, K, Cq, A, B, scaleCq);
 
     // eigen_solver.sort_ritz_pairs = false;
-    int conv_eigs = eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+    eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
     double max_residual_CHRONO_AB = eigen_solver.GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO);
 
     eigvects_CHRONO.bottomRows(Cq.rows()) *= scaling;
@@ -463,7 +463,6 @@ void ExecuteEigenSolverCallKRMCq(std::string refname) {
     const bool scaleCq = true;
     ChSparseMatrix A, B;
     double scaling = eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
-    int max_residual_CHRONO_idx = -1;
 
     eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
 
@@ -637,7 +636,6 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
 
     modal::Solve<>(eigen_solver, A, B, eigvects_CHRONO, eigvals_CHRONO, eig_requests);
 
-    int max_residual_CHRONO_idx = -1;
     double max_residual_CHRONO_AB = eigen_solver.GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO);
 
     eigvects_CHRONO.bottomRows(Cq.rows()) *= scaling;
@@ -682,20 +680,20 @@ void ExecuteModalSolverUndamped() {
     ChVectorDynamic<double> freq_KMCq;
     modal_solver.Solve(K, M, Cq, eigvects_KMCq, eigvals_KMCq, freq_KMCq);
 
-    double res_CHRONO_KMCq = eigen_solver.GetMaxResidual(K, M, Cq, eigvects_KMCq, eigvals_KMCq);
-
     double eigvals_diff = GetEigenvaluesMaxDiff(eigvals_assembly, eigvals_KMCq);
 
-    double eigvects_diff = GetEigenvectsMaxDiff(eigvects_assembly, eigvects_KMCq);
+    double res_CHRONO_KMCq = eigen_solver.GetMaxResidual(K, M, Cq, eigvects_KMCq, eigvals_KMCq);
 
-    ASSERT_NEAR(res_CHRONO_KMCq, 0, tolerance)
-        << "Residuals: " << res_CHRONO_KMCq << " above threshold: " << tolerance << std::endl;
+    double res_CHRONO_assembly = eigen_solver.GetMaxResidual(K, M, Cq, eigvects_assembly, eigvals_assembly);
 
     ASSERT_NEAR(eigvals_diff, 0, tolerance)
         << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;
 
-    ASSERT_NEAR(eigvects_diff, 0, tolerance)
-        << "Eigvects difference: " << eigvects_diff << " above threshold: " << tolerance << std::endl;
+    ASSERT_NEAR(res_CHRONO_KMCq, 0, tolerance)
+        << "Residuals (KMCq mode): " << res_CHRONO_KMCq << " above threshold: " << tolerance << std::endl;
+
+    ASSERT_NEAR(res_CHRONO_assembly, 0, tolerance)
+        << "Residuals (assembly mode): " << res_CHRONO_assembly << " above threshold: " << tolerance << std::endl;
 }
 
 TEST(ChModalSolverUndamped, ChUnsymGenEigenvalueSolverKrylovSchur) {
@@ -735,18 +733,18 @@ TEST(ChModalSolverDamped, ChUnsymGenEigenvalueSolverKrylovSchur) {
     ChVectorDynamic<double> damping_ratios_KRMCq;
     modal_solver.Solve(K, R, M, Cq, eigvects_KRMCq, eigvals_KRMCq, freq_KRMCq, damping_ratios_KRMCq);
 
-    double res_CHRONO_KRMCq = eigen_solver->GetMaxResidual(K, R, M, Cq, eigvects_KRMCq, eigvals_KRMCq);
-
     double eigvals_diff = GetEigenvaluesMaxDiff(eigvals_assembly, eigvals_KRMCq);
 
-    double eigvects_diff = GetEigenvectsMaxDiff(eigvects_assembly, eigvects_KRMCq);
+    double res_CHRONO_KRMCq = eigen_solver->GetMaxResidual(K, R, M, Cq, eigvects_KRMCq, eigvals_KRMCq);
 
-    ASSERT_NEAR(res_CHRONO_KRMCq, 0, tolerance)
-        << "Residuals: " << res_CHRONO_KRMCq << " above threshold: " << tolerance << std::endl;
+    double res_CHRONO_assembly = eigen_solver->GetMaxResidual(K, R, M, Cq, eigvects_assembly, eigvals_assembly);
 
     ASSERT_NEAR(eigvals_diff, 0, tolerance)
         << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;
 
-    ASSERT_NEAR(eigvects_diff, 0, tolerance)
-        << "Eigvects difference: " << eigvects_diff << " above threshold: " << tolerance << std::endl;
+    ASSERT_NEAR(res_CHRONO_KRMCq, 0, tolerance)
+        << "Residuals (KRMCq mode): " << res_CHRONO_KRMCq << " above threshold: " << tolerance << std::endl;
+
+    ASSERT_NEAR(res_CHRONO_assembly, 0, tolerance)
+        << "Residuals (assembly mode): " << res_CHRONO_assembly << " above threshold: " << tolerance << std::endl;
 }
