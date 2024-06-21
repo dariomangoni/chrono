@@ -40,6 +40,11 @@ void ChApiModal CountNonZerosForEachRowTransposed(const ChSparseMatrix& Q_transp
 
 namespace modal {
 
+/// Helper function to solve any kind of generalized eigenvalue problem even with multiple requests.
+/// The eigenvectors are also filtered to avoid duplicates with the same frequency.
+/// This means that only one of the complex eigenvectors that come in conjugate pairs is stored.
+/// The eigrequest argument is a list of pairs, where the first element is the number of modes to be found,
+/// and the second element is the shift to apply for that specific search.
 template <typename EigSolverType>
 int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& A,
@@ -48,8 +53,8 @@ int Solve(EigSolverType& eig_solver,
           ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
           const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests);
 
-/// Base interface class for generalized eigenvalue solvers.
-/// Currently it implies that the derived eigensolvers are iterative.
+/// Base interface class for generalized eigenvalue solvers A*x = lambda*B*x.
+/// Currently it is implied that the derived eigensolvers are iterative.
 template <typename ScalarT>
 class ChGeneralizedEigenvalueSolver {
   public:
@@ -63,18 +68,6 @@ class ChGeneralizedEigenvalueSolver {
     int max_iterations = 500;             ///< upper limit for the number of iterations. If too low might not converge.
     bool verbose = false;                 ///< turn to true to see some diagnostic.
     mutable bool sort_ritz_pairs = true;  ///< sort the eigenvalues based on the smallest absolute value
-
-    /// Get cumulative time for matrix assembly.
-    double GetTimeMatrixAssembly() const { return m_timer_matrix_assembly(); }
-
-    /// Get cumulative time eigensolver setup.
-    double GetTimeEigenSetup() const { return m_timer_eigen_setup(); }
-
-    /// Get cumulative time eigensolver solution.
-    double GetTimeEigenSolver() const { return m_timer_eigen_solver(); }
-
-    /// Get cumulative time for post-solver solution postprocessing.
-    double GetTimeSolutionPostProcessing() const { return m_timer_solution_postprocessing(); }
 
     /// Sort the eigenvalues and eigenvectors in the order specified by the ordering function in-place.
     static void SortRitzPairs(
@@ -157,6 +150,18 @@ class ChGeneralizedEigenvalueSolver {
 
         return max_residual;
     }
+
+    /// Get cumulative time for matrix assembly.
+    double GetTimeMatrixAssembly() const { return m_timer_matrix_assembly(); }
+
+    /// Get cumulative time for the eigensolver setup.
+    double GetTimeEigenSetup() const { return m_timer_eigen_setup(); }
+
+    /// Get cumulative time for the eigensolver solution.
+    double GetTimeEigenSolver() const { return m_timer_eigen_solver(); }
+
+    /// Get cumulative time for post-solver solution postprocessing.
+    double GetTimeSolutionPostProcessing() const { return m_timer_solution_postprocessing(); }
 
     /// Build the quadratic eigenvalue problem matrix for the undamped case.
     /// The optional scaling of the Cq matrix improves the conditioning of the eigenvalue problem.
@@ -290,6 +295,15 @@ class ChGeneralizedEigenvalueSolver {
         return scaling;
     }
 
+    /// Add unique ritz pairs to a wider set of ritz pairs.
+    /// The ('eigvals_source', 'eigvects_source') are going to be added to the ('eigvals_total', 'eigvects_total') set
+    /// only if the frequency of the modes are unique with respect to the ones already stored.
+    /// The 'freq_from_eigval_fun' function is used to extract the frequency from the eigenvalues.
+    /// 'found_eigs' is the number of eigenvalues already stored in the ('eigvals_total', 'eigvects_total') set.
+    /// Most of the times is equal to eigvects_total.cols(), but it might be less if some exceeding eigenvalues have
+    /// been found.
+    /// Similar consideration for 'num_eigvals_source'.
+    /// 'equal_freq_tolerance' is the tolerance used to consider two frequencies as equal.
     static void InsertUniqueRitzPairs(const ChVectorDynamic<ScalarType>& eigvals_source,
                                       const ChMatrixDynamic<ScalarType>& eigvects_source,
                                       ChVectorDynamic<ScalarType>& eigvals_total,
@@ -297,13 +311,18 @@ class ChGeneralizedEigenvalueSolver {
                                       std::function<double(ScalarType)> freq_from_eigval_fun,
                                       int& found_eigs,
                                       int num_eigvals_source,
-                                      double threshold = 1e-6) {
+                                      double equal_freq_tolerance = 1e-6) {
+        assert(num_eigvals_source <= eigvects_source.cols() &&
+               "num_eigvals_source must be either less or equal to the number of eigenpairs in the sources.");
+        assert(found_eigs <= eigvects_total.cols() &&
+               "found_eigs must be either less or equal to the number of total eigenpairs.");
+
         for (auto eigv = 0; eigv < num_eigvals_source; ++eigv) {
             // look if another eigenvalue with same frequency has already been found
             bool eig_is_unique = true;
             for (auto stored_eigv_idx = 0; stored_eigv_idx < found_eigs; stored_eigv_idx++) {
                 if (std::abs(freq_from_eigval_fun(eigvals_total[stored_eigv_idx]) -
-                             freq_from_eigval_fun(eigvals_source[eigv])) < threshold) {
+                             freq_from_eigval_fun(eigvals_source[eigv])) < equal_freq_tolerance) {
                     eig_is_unique = false;
                     break;
                 }
@@ -318,6 +337,7 @@ class ChGeneralizedEigenvalueSolver {
     }
 
   protected:
+    /// Returns the permutation matrix to sort the given elements based on the ordering function.
     static Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic> GetPermutationMatrix(
         int num_elements,
         std::function<bool(int, int)> ordering_fun) {

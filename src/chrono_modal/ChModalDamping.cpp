@@ -95,7 +95,6 @@ void ChModalDampingFactorAssembly::ComputeR(ChModalAssembly& assembly,
 
     assembly.GetSubassemblyMatrices(&K_reduced, nullptr, &M_reduced, &Cq_reduced);
 
-
     if (false) {
         std::ofstream fileM("dump_modalreduced_M.dat");
         fileM << std::setprecision(12) << std::scientific;
@@ -148,7 +147,6 @@ void ChModalDampingFactorAssembly::ComputeR(ChModalAssembly& assembly,
 
     ChUnsymGenEigenvalueSolver::GetNaturalFrequencies(eig_reduced, freq_reduced);
     ChUnsymGenEigenvalueSolver::GetDampingRatios(eig_reduced, damp_factors);
-    
 
     ChVectorDynamic<> zetas;
     ChVectorDynamic<> omegas = CH_2PI * freq_reduced;

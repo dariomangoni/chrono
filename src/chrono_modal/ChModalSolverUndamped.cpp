@@ -44,7 +44,7 @@ namespace chrono {
 
 namespace modal {
 
-void BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
+void BuildUndampedEigenProblemMatrices(ChAssembly& assembly,
                                           ChSystemDescriptor& temp_descriptor,
                                           ChSparseMatrix& A,
                                           ChSparseMatrix& B,

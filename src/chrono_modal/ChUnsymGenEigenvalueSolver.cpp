@@ -76,7 +76,7 @@ void CountNonZerosForEachRowTransposed(const ChSparseMatrix& Q_transp, Eigen::Ve
 
 ChUnsymGenEigenvalueSolverKrylovSchur::ChUnsymGenEigenvalueSolverKrylovSchur(
     std::shared_ptr<ChDirectSolverLScomplex> linear_solver)
-    :  m_linear_solver(linear_solver) {}
+    : m_linear_solver(linear_solver) {}
 
 int ChUnsymGenEigenvalueSolverKrylovSchur::Solve(const ChSparseMatrix& A,  ///< input A matrix
                                                  const ChSparseMatrix& B,  ///< input B matrix
@@ -108,17 +108,17 @@ int ChUnsymGenEigenvalueSolverKrylovSchur::Solve(const ChSparseMatrix& A,  ///< 
     bool isC, flag;
     int nconv, niter;
     ChKrylovSchurEig eigen_solver(
-        eigvects,       ///< output matrix with eigenvectors as columns, will be resized
-        eigvals,        ///< output vector with eigenvalues (real part not zero if some damping), will be resized
-        isC,            ///< 0 = k-th eigenvalue is real, 1= k-th and k-th+1 are complex conjugate pairs
-        flag,           ///< 0 = has converged, 1 = hasn't converged
-        nconv,          ///< number of converged eigenvalues
-        niter,          ///< number of used iterations
-        &Ax_function3,  ///< callback for A*v
-        v1,             ///< initial approx of eigenvector, or random
-        A.rows(),       ///< size of A
-        num_modes,      ///< number of needed eigenvalues
-        m,              ///< Krylov restart threshold (largest dimension of krylov subspace)
+        eigvects,        ///< output matrix with eigenvectors as columns, will be resized
+        eigvals,         ///< output vector with eigenvalues (real part not zero if some damping), will be resized
+        isC,             ///< 0 = k-th eigenvalue is real, 1= k-th and k-th+1 are complex conjugate pairs
+        flag,            ///< 0 = has converged, 1 = hasn't converged
+        nconv,           ///< number of converged eigenvalues
+        niter,           ///< number of used iterations
+        &Ax_function3,   ///< callback for A*v
+        v1,              ///< initial approx of eigenvector, or random
+        A.rows(),        ///< size of A
+        num_modes,       ///< number of needed eigenvalues
+        m,               ///< Krylov restart threshold (largest dimension of krylov subspace)
         max_iterations,  ///< max iteration number
         tolerance        ///< tolerance
     );

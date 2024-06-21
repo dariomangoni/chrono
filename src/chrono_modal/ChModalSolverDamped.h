@@ -31,81 +31,61 @@ class ChUnsymGenEigenvalueSolver;
 
 namespace modal {
 
-/// Class for computing eigenvalues/eigenvectors for the DAMPED constrained system.
-/// It dispatches the settings to some solver of ChUnsymGenEigenvalueSolver class.
-/// It handles multiple runs of the solver if one wants to find specific ranges of frequencies.
-/// Finally it guarantees that eigenvalues are sorted in the appropriate order of increasing eigenvalue modulus.
-/// (lambda^2*M + lambda*R + K)*x = 0 s.t. Cq*x = 0
-/// also (-w^2*M + i*w*R + K)*x = 0,  with complex w (where w.length() = undamped nat.freq)
+/// Modal solver for damped systems of the form (-w^2*M + i*w*R + K)*x = 0  s.t. Cq*x = 0.
+/// with complex w (where w.length() = undamped nat.freq)
 class ChApiModal ChModalSolverDamped : public ChModalSolver {
   public:
-    /// Constructor for the case of N lower modes.
-    /// Ex.
-    ///  ChModalSolverDamped(7);
-    /// finds first 7 lowest damped modes, using default settings (i.e. the ChUnsymGenEigenvalueSolverNullspaceDirect
-    /// solver). Ex.
-    ///  ChModalSolverDamped(5, 1e-5, 500, 1e-10, false, ChUnsymGenEigenvalueSolverKrylovSchur());
-    /// finds first 5 lowest damped modes using the ChUnsymGenEigenvalueSolverKrylovSchur() solver.
-    ChModalSolverDamped(
-        int n_lower_modes,  ///< n of lower modes
-        double base_freq,   ///< frequency to whom the nodes are clustered. Use 1e-5 to get n lower modes. As
-                            ///< sigma in shift&invert, as: sigma = -pow(base_freq * CH_2PI, 2). Too small gives
-                            ///< ill conditioning (no convergence). Too large misses rigid body modes.
-        bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
-        bool verbose = false,  ///< turn to true to see some diagnostic
-        std::shared_ptr<ChUnsymGenEigenvalueSolver> solver = chrono_types::make_shared<
-            ChUnsymGenEigenvalueSolverKrylovSchur>()  /// solver to use (default: direct, null-space based)
-        )
+    /// Creates a modal solver for the damped case.
+    /// \a n_lower_modes number of lowest modes to be found.
+    /// \a base_freq frequency around which the modes will be found; higher values can help finding eigenvalues for
+    /// ill-conditioned problems.
+    /// \a scaleCq if true, the Cq matrix is scaled to improve conditioning.
+    /// \a verbose if true, additional information is printed during the solution process.
+    /// \a solver the inner eigensolver to be used.
+    ChModalSolverDamped(int n_lower_modes,
+                        double base_freq,
+                        bool scaleCq = true,
+                        bool verbose = false,
+                        std::shared_ptr<ChUnsymGenEigenvalueSolver> solver =
+                            chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>())
         : ChModalSolver(n_lower_modes, base_freq, scaleCq, verbose), m_solver(solver){};
 
-    /// Constructor for the case of multiple spans of frequency analysis
-    /// ex. ChModalSolverDamped({{10,1e-5,},{5,40}} , 500);
-    /// finds first 10 lower modes, then 5 modes closest to 40 Hz, etc., using
-    /// multiple runs of the solver. Closest mean that some could be higher than 40Hz,
-    /// others can be lower.
-    /// Another example: suppose you want the 5 lowest modes, then you also are
-    /// interested in 1 high frequency mode whose frequency is already know approximately,
-    /// ex. 205 Hz, then you can do ChGeneralizedEigenvalueSolverGeneric({{5,1e-5,},{1,205}}, ...).
-    /// Note about overlapping ranges: if n-th run finds frequencies up to X Hz, and the (n+1)-th run finds some
-    /// frequency with Y Hz where Y < X, then such Y mode(s) is discarded.
-    ChModalSolverDamped(
-        std::vector<ChFreqSpan> freq_spans,  ///< vector of {nmodes,freq}_i , will provide first nmodes_i starting at
-                                             ///< freq_i per each i vector entry
-        bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
-        bool verbose = false,  ///< turn to true to see some diagnostic
-        std::shared_ptr<ChUnsymGenEigenvalueSolver> solver = chrono_types::make_shared<
-            ChUnsymGenEigenvalueSolverKrylovSchur>()  /// solver to use (default: direct, null-space based)
-        )
+    /// Creates a modal solver for the damped case.
+    /// \a freq_spans pair of number of modes and frequency around which the modes will be found.
+    /// ill-conditioned problems.
+    /// \a scaleCq if true, the Cq matrix is scaled to improve conditioning.
+    /// \a verbose if true, additional information is printed during the solution process.
+    /// \a solver the inner eigensolver to be used.
+    ChModalSolverDamped(std::vector<ChFreqSpan> freq_spans,
+                        bool scaleCq = true,
+                        bool verbose = false,
+                        std::shared_ptr<ChUnsymGenEigenvalueSolver> solver =
+                            chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>())
         : ChModalSolver(freq_spans, scaleCq, verbose), m_solver(solver){};
 
     virtual ~ChModalSolverDamped(){};
 
-    /// Solve the constrained eigenvalue problem (-wsquare*M + K)*x = 0 s.t. Cq*x = 0
-    /// Return the number of found modes, where n is not necessarily n_lower_modes (or the sum of ChFreqSpan::nmodes if
-    /// multiple spans)
-    virtual int Solve(
-        const ChAssembly& assembly,  ///< input M matrix, n_v x n_v
-        ChMatrixDynamic<std::complex<double>>&
-            eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
-        ChVectorDynamic<std::complex<double>>& eigvals,  ///< output vector with n eigenvalues, will be resized.
-        ChVectorDynamic<double>& freq,  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
-        ChVectorDynamic<double>& damp_ratios  ///< output vector with n damping ratios, will be resized.
-    ) const;
+    /// Solve the constrained eigenvalue problem retrieving it from the ChAssembly.
+    /// Only the position part of the eigenvectors is returned, unless SetClipPositionCoords(false) is called.
+    virtual int Solve(const ChAssembly& assembly,
+                      ChMatrixDynamic<std::complex<double>>& eigvects,
+                      ChVectorDynamic<std::complex<double>>& eigvals,
+                      ChVectorDynamic<double>& freq,
+                      ChVectorDynamic<double>& damp_ratios) const;
 
-    virtual int Solve(
-        const ChSparseMatrix& K,
-        const ChSparseMatrix& R,
-        const ChSparseMatrix& M,
-        const ChSparseMatrix& Cq,
-        ChMatrixDynamic<std::complex<double>>&
-            eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
-        ChVectorDynamic<std::complex<double>>& eigvals,  ///< output vector with n eigenvalues, will be resized.
-        ChVectorDynamic<double>& freq,  ///< output vector with n frequencies [Hz], as f=w/(2*PI), will be resized.
-        ChVectorDynamic<double>& damp_ratios  ///< output vector with n damping ratios, will be resized.
-    ) const;
+    /// Solve the constrained eigenvalue problem setting it up from individual matrices.
+    /// Only the position part of the eigenvectors is returned, unless SetClipPositionCoords(false) is called.
+    virtual int Solve(const ChSparseMatrix& K,
+                      const ChSparseMatrix& R,
+                      const ChSparseMatrix& M,
+                      const ChSparseMatrix& Cq,
+                      ChMatrixDynamic<std::complex<double>>& eigvects,
+                      ChVectorDynamic<std::complex<double>>& eigvals,
+                      ChVectorDynamic<double>& freq,
+                      ChVectorDynamic<double>& damp_ratios) const;
 
+    /// Get the inner eigensolver.
     std::shared_ptr<ChUnsymGenEigenvalueSolver> GetEigenSolver() const { return m_solver; }
-
 
   protected:
     std::shared_ptr<ChUnsymGenEigenvalueSolver> m_solver;

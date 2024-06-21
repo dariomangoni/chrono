@@ -382,7 +382,7 @@ int main(int argc, char* argv[]) {
     ChVisualSystemIrrlicht vis;
     vis.AttachSystem(&sys);
     vis.SetWindowSize(1024, 768);
-    vis.SetWindowTitle("Modal reduction");
+    vis.SetWindowTitle("Modal Reduction");
     vis.Initialize();
     vis.AddLogo();
     vis.AddSkyBox();

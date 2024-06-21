@@ -26,10 +26,10 @@ namespace chrono {
 
 namespace modal {
 
-/// Class for computing eigenvalues/eigenvectors for the DAMPED constrained system.
-/// It dispatches the settings to some solver of ChUnsymGenEigenvalueSolver class.
-/// It handles multiple runs of the solver if one wants to find specific ranges of frequencies.
-/// Finally it guarantees that eigenvalues are sorted in the appropriate order of increasing eigenvalue modulus.
+/// Base class for modal solvers.
+/// Contrary to eigensolvers, these classes deals directly with Chrono data structures, creating the appropriate setup
+/// for running the inner eigensolver.
+/// Multiple requests spanning different frequency ranges can be specified.
 class ChApiModal ChModalSolver {
   public:
     struct ChFreqSpan {
@@ -37,42 +37,35 @@ class ChApiModal ChModalSolver {
         double freq;
     };
 
-    /// Constructor for the case of N lower modes.
-    /// Ex. ChModalSolver(7);
-    /// finds first 7 lowest damped modes, using default settings (i.e. the ChUnsymGenEigenvalueSolverNullspaceDirect
-    /// solver). Ex.
-    ///  ChModalSolver(5, 1e-5, 500, 1e-10, false, ChUnsymGenEigenvalueSolverKrylovSchur());
-    /// finds first 5 lowest damped modes using the ChUnsymGenEigenvalueSolverKrylovSchur() solver.
-    ChModalSolver(int n_lower_modes,  ///< n of lower modes
-                  double base_freq,   ///< frequency to whom the nodes are clustered. Use 1e-5 to get n lower modes. As
-                                      ///< sigma in shift&invert, as: sigma = -pow(base_freq * CH_2PI, 2). Too small
-                                      ///< gives ill conditioning (no convergence). Too large misses rigid body modes.
-                  bool scaleCq,
-                  bool verbose)
+    /// Creates a modal solver.
+    /// \a n_lower_modes number of lowest modes to be found.
+    /// \a base_freq frequency around which the modes will be found; higher values can help finding eigenvalues for
+    /// ill-conditioned problems.
+    /// \a scaleCq if true, the Cq matrix is scaled to improve conditioning.
+    /// \a verbose if true, additional information is printed during the solution process.
+    ChModalSolver(int n_lower_modes, double base_freq, bool scaleCq, bool verbose)
         : m_freq_spans({{n_lower_modes, base_freq}}),
           m_clip_position_coords(true),
           m_scaleCq(scaleCq),
           m_verbose(verbose){};
 
-    /// Constructor for the case of multiple spans of frequency analysis
-    /// ex. ChModalSolver({{10,1e-5,},{5,40}} , 500);
-    /// finds first 10 lower modes, then 5 modes closest to 40 Hz, etc., using
-    /// multiple runs of the solver. Closest mean that some could be higher than 40Hz,
-    /// others can be lower.
-    /// Another example: suppose you want the 5 lowest modes, then you also are
-    /// interested in 1 high frequency mode whose frequency is already know approximately,
-    /// ex. 205 Hz, then you can do ChGeneralizedEigenvalueSolverGeneric({{5,1e-5,},{1,205}}, ...).
-    /// Note about overlapping ranges: if n-th run finds frequencies up to X Hz, and the (n+1)-th run finds some
-    /// frequency with Y Hz where Y < X, then such Y mode(s) is discarded.
+    /// Creates a modal solver.
+    /// \a freq_spans pair of number of modes and frequency around which the modes will be found.
+    /// ill-conditioned problems.
+    /// \a scaleCq if true, the Cq matrix is scaled to improve conditioning.
+    /// \a verbose if true, additional information is printed during the solution process.
     ChModalSolver(std::vector<ChFreqSpan> freq_spans, bool scaleCq, bool verbose)
         : m_freq_spans(freq_spans), m_clip_position_coords(true), m_scaleCq(scaleCq), m_verbose(verbose){};
 
     virtual ~ChModalSolver(){};
 
+    /// Get the total number of requested modes.
     int GetNumRequestedModes() const;
 
+    /// Clip the eigenvectors to only the position coordinates.
     void SetClipPositionCoords(bool val) { m_clip_position_coords = val; }
 
+    /// Get the set of frequency spans for which modes are requested.
     const std::vector<ChFreqSpan>& GetFrequencySpans() const { return m_freq_spans; }
 
     /// Get cumulative time for matrix assembly.
@@ -89,12 +82,12 @@ class ChApiModal ChModalSolver {
     mutable ChTimer m_timer_eigen_solver;             ///< timer for eigensolver solution
     mutable ChTimer m_timer_solution_postprocessing;  ///< timer for conversion of eigensolver solution
 
-    std::vector<ChFreqSpan> m_freq_spans;
+    std::vector<ChFreqSpan> m_freq_spans;  ///< frequency spans for which modes are requested
 
     bool m_clip_position_coords =
-        true;  ///< store only the part of each eigenvector that refers to the position coordinates
-    bool m_scaleCq = true;
-    bool m_verbose = false;
+        true;                ///< store only the part of each eigenvector that refers to the position coordinates
+    bool m_scaleCq = true;   ///< if true, the Cq matrix is scaled to improve conditioning
+    bool m_verbose = false;  ///< if true, additional information is printed during the solution process
 };
 
 }  // end namespace modal

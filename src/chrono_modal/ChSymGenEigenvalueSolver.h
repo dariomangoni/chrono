@@ -30,65 +30,79 @@ class ChDirectSolverLS;
 
 namespace modal {
 
-/// Base interface class for iterative eigenvalue solvers for generalized problem A*x = lambda*B*x
+/// Base interface class for iterative eigenvalue solvers for generalized problem with real symmetric matrices.
+/// The interfaces assumes shift-and-invert methods.
 class ChApiModal ChSymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolver<double> {
   public:
     ChSymGenEigenvalueSolver() {}
     virtual ~ChSymGenEigenvalueSolver(){};
 
-    /// Solve the generalized eigenvalue problem A*x = lambda*B*x
-    virtual int Solve(
-        const ChSparseMatrix& A,
-        const ChSparseMatrix& B,
-        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
-        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized
-        int num_modes,
-        ScalarType shift) const = 0;
+    /// Solve the generalized eigenvalue problem A*eigvects = B*eigvects*diag(eigvals)
+    /// A and B are expected to be symmetric and real
+    /// 'eigvects' will be resized to [A.rows() x num_modes]
+    /// 'eigvals' will be resized to [num_modes]
+    /// the number of converged eigenvalues is returned.
+    virtual int Solve(const ChSparseMatrix& A,
+                      const ChSparseMatrix& B,
+                      ChMatrixDynamic<ScalarType>& eigvects,
+                      ChVectorDynamic<ScalarType>& eigvals,
+                      int num_modes,
+                      ScalarType shift) const = 0;
 
+    /// Retrieve the natural frequencies from an eigenvalues array.
     static void GetNaturalFrequencies(const ChVectorDynamic<ScalarType>& eigvals, ChVectorDynamic<double>& freq);
 
+    /// Retrieve the natural frequencies from an eigenvalue.
     static double GetNaturalFrequency(ScalarType eigval) { return sqrt(std::abs(eigval)) / CH_2PI; };
 
+    /// Get the optimal shift corresponding to a given frequency.
     static ScalarType GetOptimalShift(double freq) { return -std::pow(freq * CH_2PI, 2); }
-
 };
 
-/// Generalized eigenvalue solver implementing Krylov-Schur iterative method.
+/// Generalized iterative eigenvalue solver implementing Krylov-Schur shift-and-invert method for real symmetric
+/// matrices. Features:
 /// - generalized eigenvalue problem
 /// - symmetric real sparse matrices
-/// - shift-and-invert + real shift
+/// - shift-and-invert with real shift
 class ChApiModal ChSymGenEigenvalueSolverKrylovSchur : public ChSymGenEigenvalueSolver {
   public:
     ChSymGenEigenvalueSolverKrylovSchur() {}
     virtual ~ChSymGenEigenvalueSolverKrylovSchur(){};
 
-    /// Solve the eigenvalue problem
-    virtual int Solve(
-        const ChSparseMatrix& A,
-        const ChSparseMatrix& B,
-        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
-        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
-        int num_modes,
-        ScalarType shift) const override;
+    /// Solve the generalized eigenvalue problem A*eigvects = B*eigvects*diag(eigvals)
+    /// A and B are expected to be symmetric and real
+    /// 'eigvects' will be resized to [A.rows() x num_modes]
+    /// 'eigvals' will be resized to [num_modes]
+    /// the number of converged eigenvalues is returned.
+    virtual int Solve(const ChSparseMatrix& A,
+                      const ChSparseMatrix& B,
+                      ChMatrixDynamic<ScalarType>& eigvects,
+                      ChVectorDynamic<ScalarType>& eigvals,
+                      int num_modes,
+                      ScalarType shift) const override;
 };
 
-/// Generalized eigenvalue solver implementing Lanczos iterative method.
+/// Generalized iterative eigenvalue solver implementing Lanczos shift-and-invert method for real symmetric matrices.
+/// Features:
 /// - generalized eigenvalue problem
 /// - symmetric real sparse matrices
-/// - shift-and-invert + real shift
+/// - shift-and-invert with real shift
 class ChApiModal ChSymGenEigenvalueSolverLanczos : public ChSymGenEigenvalueSolver {
   public:
     ChSymGenEigenvalueSolverLanczos() {}
     virtual ~ChSymGenEigenvalueSolverLanczos(){};
 
-    /// Solve the eigenvalue problem
-    virtual int Solve(
-        const ChSparseMatrix& A,
-        const ChSparseMatrix& B,
-        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix n x n_v with eigenvectors as columns, will be resized
-        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with n eigenvalues, will be resized.
-        int num_modes,
-        ScalarType shift) const override;
+    /// Solve the generalized eigenvalue problem A*eigvects = B*eigvects*diag(eigvals)
+    /// A and B are expected to be symmetric and real
+    /// 'eigvects' will be resized to [A.rows() x num_modes]
+    /// 'eigvals' will be resized to [num_modes]
+    /// the number of converged eigenvalues is returned.
+    virtual int Solve(const ChSparseMatrix& A,
+                      const ChSparseMatrix& B,
+                      ChMatrixDynamic<ScalarType>& eigvects,
+                      ChVectorDynamic<ScalarType>& eigvals,
+                      int num_modes,
+                      ScalarType shift) const override;
 };
 
 }  // end namespace modal

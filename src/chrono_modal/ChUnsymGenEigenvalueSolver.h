@@ -32,13 +32,18 @@ class ChDirectSolverLS;
 
 namespace modal {
 
-/// Base interface class for generalized eigenvalue problems with real generic (i.e. potentially unsymmetric) matrices.
-/// It is currently assumed that all the derived classes implement shift-and-invert strategy with a complex shift.
+/// Base interface class for iterative eigenvalue solvers for generalized problem with real symmetric matrices.
+/// Assumes shift-and-invert methods.
 class ChApiModal ChUnsymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolver<std::complex<double>> {
   public:
     ChUnsymGenEigenvalueSolver() {}
     virtual ~ChUnsymGenEigenvalueSolver(){};
 
+    /// Solve the generalized eigenvalue problem A*eigvects = B*eigvects*diag(eigvals)
+    /// A and B are real; potentially unsymmetric
+    /// 'eigvects' will be resized to [A.rows() x num_modes]
+    /// 'eigvals' will be resized to [num_modes]
+    /// the number of converged eigenvalues is returned.
     virtual int Solve(
         const ChSparseMatrix& A,                ///< input A matrix
         const ChSparseMatrix& B,                ///< input B matrix
@@ -59,14 +64,13 @@ class ChApiModal ChUnsymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolv
     static double GetNaturalFrequency(ScalarType eigval) { return std::abs(eigval) / CH_2PI; };
 
     static ScalarType GetOptimalShift(double frequency) { return frequency * CH_2PI; };
-
 };
 
-/// Solves the generalized eigenvalue problem with the Krylov-Schur iterative method.
+/// Generalized iterative eigenvalue solver implementing Krylov-Schur shift-and-invert method for real generic matrices.
 /// Features:
 /// - generalized eigenvalue problem
 /// - generic sparse matrices
-/// - shift-and-invert + complex shift
+/// - shift-and-invert with complex shift
 class ChApiModal ChUnsymGenEigenvalueSolverKrylovSchur : public ChUnsymGenEigenvalueSolver {
   public:
     /// Default: uses Eigen::SparseQR as factorization for the shift&invert,
@@ -76,17 +80,17 @@ class ChApiModal ChUnsymGenEigenvalueSolverKrylovSchur : public ChUnsymGenEigenv
 
     virtual ~ChUnsymGenEigenvalueSolverKrylovSchur(){};
 
-    /// Solve the quadratic eigenvalue problem (lambda^2*M + lambda*R + K)*x = 0 s.t. Cq*x = 0
-    /// If n_modes=0, return all eigenvalues, otherwise only the first lower n_modes.
-    virtual int Solve(
-        const ChSparseMatrix& A,                ///< input A matrix
-        const ChSparseMatrix& B,                ///< input B matrix
-        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix with eigenvectors as columns, will be resized
-        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with eigenvalues (real part
-                                                ///< not zero if some damping), will be resized
-        int num_modes,    ///< optional: number of desired lower eigenvalues. If zero return all eigenvalues
-        ScalarType sigma  ///< optional: shift for the shift-and-invert strategy
-    ) const override;
+    /// Solve the generalized eigenvalue problem A*eigvects = B*eigvects*diag(eigvals)
+    /// A and B are real; potentially unsymmetric
+    /// 'eigvects' will be resized to [A.rows() x num_modes]
+    /// 'eigvals' will be resized to [num_modes]
+    /// the number of converged eigenvalues is returned.
+    virtual int Solve(const ChSparseMatrix& A,
+                      const ChSparseMatrix& B,
+                      ChMatrixDynamic<ScalarType>& eigvects,
+                      ChVectorDynamic<ScalarType>& eigvals,
+                      int num_modes,
+                      ScalarType sigma) const override;
 
   protected:
     std::shared_ptr<ChDirectSolverLScomplex> m_linear_solver;

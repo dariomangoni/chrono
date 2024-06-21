@@ -67,7 +67,7 @@ void BuildQuadraticEigenProblemMatrices(ChAssembly& assembly,
     temp_descriptor.PasteConstraintsJacobianMatrixTransposedInto(A, n_vars, 2 * n_vars);
 
     // Identity matrix
-    for (unsigned int id_sel = 0; id_sel < n_vars; ++id_sel) {
+    for (auto id_sel = 0; id_sel < n_vars; ++id_sel) {
         A.SetElement(id_sel, id_sel + n_vars, 1.0);
         B.SetElement(id_sel, id_sel, 1.0);
     }
@@ -123,8 +123,6 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
         scaling = -scaling / n_vars;
     }
 
-    // TODO: check scaling!
-
     // Cq scaling
     for (auto row_i = 2 * n_vars; row_i < 2 * n_vars + n_constr; row_i++) {
         for (auto nnz_i = A.outerIndexPtr()[row_i];
@@ -136,7 +134,7 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
     }
 
     // CqT scaling
-    for (unsigned int k = 0; k < n_vars; ++k) {
+    for (auto k = 0; k < n_vars; ++k) {
         for (ChSparseMatrix::InnerIterator it(A, n_vars + k); it; ++it) {
             if (it.col() >= 2 * n_vars) {
                 it.valueRef() *= -scaling;
