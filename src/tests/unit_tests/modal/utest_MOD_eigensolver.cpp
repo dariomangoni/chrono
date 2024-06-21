@@ -35,7 +35,7 @@
 #include "chrono_thirdparty/filesystem/path.h"
 #include <iomanip>
 
-#include <fast_matrix_market/app/Eigen.hpp>
+#include "fast_matrix_market/app/Eigen.hpp"
 
 #include "gtest/gtest.h"
 

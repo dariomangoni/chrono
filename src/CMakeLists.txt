@@ -624,12 +624,6 @@ include_directories(${OPENMP_INCLUDE_DIR})
 include_directories(${THRUST_INCLUDE_DIR})
 
 #------------------------------------------------------------
-# Make fast_matrix_market available to all modules
-#------------------------------------------------------------
-
-add_subdirectory(chrono_thirdparty/fast_matrix_market)
-
-#------------------------------------------------------------
 # Build submodules
 #------------------------------------------------------------
 
