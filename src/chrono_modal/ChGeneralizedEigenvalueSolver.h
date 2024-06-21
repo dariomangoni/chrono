@@ -77,7 +77,7 @@ class ChGeneralizedEigenvalueSolver {
     /// Get cumulative time for post-solver solution postprocessing.
     double GetTimeSolutionPostProcessing() const { return m_timer_solution_postprocessing(); }
 
-    /// Sort the eigenvalues and eigenvectors in the order specified by the ordering function.
+    /// Sort the eigenvalues and eigenvectors in the order specified by the ordering function in-place.
     static void SortRitzPairs(
         ChVectorDynamic<ScalarType>& eigvals,
         ChMatrixDynamic<ScalarType>& eigvects,
@@ -89,16 +89,21 @@ class ChGeneralizedEigenvalueSolver {
         auto perm = GetPermutationMatrix(
             eigvals.rows(), std::bind(ordering_fun, eigvals, std::placeholders::_1, std::placeholders::_2));
 
-        eigvects = eigvects * perm;
+        eigvects *= perm;
         eigvals = perm.transpose() * eigvals;
     }
 
-    static void BuildUndampedSystem(const ChSparseMatrix& M,
-                                    const ChSparseMatrix& K,
-                                    const ChSparseMatrix& Cq,
-                                    ChSparseMatrix& A,
-                                    ChSparseMatrix& B,
-                                    bool scaleCq) {
+    /// Build the quadratic eigenvalue problem matrix for the undamped case.
+    /// The optional scaling of the Cq matrix improves the conditioning of the eigenvalue problem.
+    /// If enabled, the user must take care of rescaling back the eigenvectors;
+    /// e.g. eigvects.bottomRows(Cq.rows()) *= scaling
+    /// The scaling value is returned by the function.
+    static double BuildUndampedSystem(const ChSparseMatrix& M,
+                                      const ChSparseMatrix& K,
+                                      const ChSparseMatrix& Cq,
+                                      ChSparseMatrix& A,
+                                      ChSparseMatrix& B,
+                                      bool scaleCq) {
         int n_vars = M.rows();
         int n_constr = Cq.rows();
 
@@ -141,15 +146,22 @@ class ChGeneralizedEigenvalueSolver {
         B.setZero();
         PlaceMatrix(B, M, 0, 0);
         B.makeCompressed();
+
+        return scaling;
     }
 
-    static void BuildDampedSystem(const ChSparseMatrix& M,
-                                  const ChSparseMatrix& R,
-                                  const ChSparseMatrix& K,
-                                  const ChSparseMatrix& Cq,
-                                  ChSparseMatrix& A,
-                                  ChSparseMatrix& B,
-                                  bool scaleCq) {
+    /// Build the quadratic eigenvalue problem matrix for the damped case.
+    /// The optional scaling of the Cq matrix improves the conditioning of the eigenvalue problem.
+    /// If enabled, the user must take care of rescaling back the eigenvectors;
+    /// e.g. eigvects.bottomRows(Cq.rows()) *= scaling
+    /// The scaling value is returned by the function.
+    static double BuildDampedSystem(const ChSparseMatrix& M,
+                                    const ChSparseMatrix& R,
+                                    const ChSparseMatrix& K,
+                                    const ChSparseMatrix& Cq,
+                                    ChSparseMatrix& A,
+                                    ChSparseMatrix& B,
+                                    bool scaleCq) {
         // Generate the A and B in state space
         int n_vars = M.rows();
         int n_constr = Cq.rows();
@@ -209,30 +221,32 @@ class ChGeneralizedEigenvalueSolver {
         PlaceMatrix(B, identity_n_vars, 0, 0);
         PlaceMatrix(B, M, n_vars, n_vars);
         B.makeCompressed();
+
+        return scaling;
     }
 
-    static void InsertUniqueRitzPairs(const ChVectorDynamic<ScalarType>& eigvals_singlespan,
-                                      const ChMatrixDynamic<ScalarType>& eigvects_singlespan,
-                                      ChVectorDynamic<ScalarType>& eigvals_full,
-                                      ChMatrixDynamic<ScalarType>& eigvects_full,
+    static void InsertUniqueRitzPairs(const ChVectorDynamic<ScalarType>& eigvals_source,
+                                      const ChMatrixDynamic<ScalarType>& eigvects_source,
+                                      ChVectorDynamic<ScalarType>& eigvals_total,
+                                      ChMatrixDynamic<ScalarType>& eigvects_total,
                                       std::function<double(ScalarType)> freq_from_eigval_fun,
                                       int& found_eigs,
-                                      int num_eigvals,
+                                      int num_eigvals_source,
                                       double threshold = 1e-6) {
-        for (auto eigv = 0; eigv < num_eigvals; ++eigv) {
+        for (auto eigv = 0; eigv < num_eigvals_source; ++eigv) {
             // look if another eigenvalue with same frequency has already been found
             bool eig_is_unique = true;
             for (auto stored_eigv_idx = 0; stored_eigv_idx < found_eigs; stored_eigv_idx++) {
-                if (std::abs(freq_from_eigval_fun(eigvals_full[stored_eigv_idx]) -
-                             freq_from_eigval_fun(eigvals_singlespan[eigv])) < threshold) {
+                if (std::abs(freq_from_eigval_fun(eigvals_total[stored_eigv_idx]) -
+                             freq_from_eigval_fun(eigvals_source[eigv])) < threshold) {
                     eig_is_unique = false;
                     break;
                 }
             }
             // if the eigenvalue is unique, store it
             if (eig_is_unique) {
-                eigvals_full[found_eigs] = eigvals_singlespan[eigv];
-                eigvects_full.col(found_eigs) = eigvects_singlespan.col(eigv);
+                eigvals_total[found_eigs] = eigvals_source[eigv];
+                eigvects_total.col(found_eigs) = eigvects_source.col(eigv);
                 found_eigs++;
             }
         }
@@ -304,7 +318,7 @@ int Solve(EigSolverType& eig_solver,
 
         eig_solver.m_timer_solution_postprocessing.start();
 
-        // these cases must not be handled by ternary if because otherwise the 
+        // these cases must not be handled by ternary if because otherwise the
         if (eigvects_clipping) {
             if (found_eigs == num_modes_total)
                 eigvects.conservativeResize(eigvects_clipping_length, Eigen::NoChange_t::NoChange);
@@ -312,7 +326,6 @@ int Solve(EigSolverType& eig_solver,
                 eigvects.conservativeResize(eigvects_clipping_length, found_eigs);
         } else if (found_eigs != num_modes_total)
             eigvects.conservativeResize(Eigen::NoChange_t::NoChange, found_eigs);
-
 
     } else {
         eigvects.resize(eigvects_clipping ? eigvects_clipping_length : A.rows(), num_modes_total);

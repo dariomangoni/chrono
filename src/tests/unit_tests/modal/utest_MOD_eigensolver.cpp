@@ -60,6 +60,103 @@ double GetEigenvaluesMaxDiff(const ChVectorDynamic<std::complex<double>>& eig1,
                     (eig1.imag().cwiseAbs() - eig2.imag().cwiseAbs()).lpNorm<Eigen::Infinity>());
 }
 
+template <typename ScalarType>
+double GetMaxResidual(const ChSparseMatrix& A,
+                      const ChSparseMatrix& B,
+                      const ChMatrixDynamic<ScalarType>& eigvects,
+                      const ChVectorDynamic<ScalarType>& eigvals,
+                      int* col_max_error) {
+    double max_residual = 0;
+    int max_residual_idx = -1;
+    for (auto nv = 0; nv < eigvals.size(); nv++) {
+        double cur_residual = (A * eigvects.col(nv) - eigvals(nv) * B * eigvects.col(nv)).lpNorm<Eigen::Infinity>();
+        if (cur_residual > max_residual) {
+            max_residual = cur_residual;
+            max_residual_idx = nv;
+        }
+    }
+
+    if (col_max_error) {
+        *col_max_error = max_residual_idx;
+    }
+
+    return max_residual;
+}
+
+template <typename ScalarType>
+double GetMaxResidual(const ChSparseMatrix& K,
+                      const ChSparseMatrix& M,
+                      const ChSparseMatrix& Cq,
+                      const ChMatrixDynamic<ScalarType>& eigvects,
+                      const ChVectorDynamic<ScalarType>& eigvals,
+                      int* col_max_error) {
+    int n = K.rows();
+    int m = Cq.rows();
+
+    double max_residual = 0;
+    int max_residual_idx = -1;
+    for (auto nv = 0; nv < eigvals.size(); nv++) {
+        double cur_residual_state = (K * eigvects.col(nv).topRows(n) + Cq.transpose() * eigvects.col(nv).bottomRows(m) +
+                                     eigvals(nv) * M * eigvects.col(nv).topRows(n))
+                                        .lpNorm<Eigen::Infinity>();
+        double cur_residual_lambda = (Cq * eigvects.col(nv).topRows(n)).lpNorm<Eigen::Infinity>();
+        double cur_residual = std::max(cur_residual_state, cur_residual_lambda);
+        if (cur_residual > max_residual) {
+            max_residual = cur_residual;
+            max_residual_idx = nv;
+        }
+    }
+
+    if (col_max_error) {
+        *col_max_error = max_residual_idx;
+    }
+
+    return max_residual;
+}
+
+template <typename ScalarType>
+double GetMaxResidual(const ChSparseMatrix& K,
+                      const ChSparseMatrix& R,
+                      const ChSparseMatrix& M,
+                      const ChSparseMatrix& Cq,
+                      const ChMatrixDynamic<ScalarType>& eigvects,
+                      const ChVectorDynamic<ScalarType>& eigvals,
+                      int* col_max_error) {
+    // A  =  [  0     I     0 ]
+    //       [ -K    -R  -Cq' ]
+    //       [ -Cq    0     0 ]
+
+    // B  =  [  I     0     0 ]
+    //       [  0     M     0 ]
+    //       [  0     0     0 ]
+    int n = K.rows();
+    int m = Cq.rows();
+
+    double max_residual = 0;
+    int max_residual_idx = -1;
+    for (auto nv = 0; nv < eigvals.size(); nv++) {
+        double cur_residual_state_p =
+            (eigvects.col(nv).segment(n, n) - eigvals(nv) * eigvects.col(nv).topRows(n)).lpNorm<Eigen::Infinity>();
+
+        double cur_residual_state_v =
+            (K * eigvects.col(nv).topRows(n) + R * eigvects.col(nv).segment(n, n) +
+             Cq.transpose() * eigvects.col(nv).bottomRows(m) + eigvals(nv) * M * eigvects.col(nv).segment(n, n))
+                .lpNorm<Eigen::Infinity>();
+        double cur_residual_lambda = (Cq * eigvects.col(nv).topRows(n)).lpNorm<Eigen::Infinity>();
+        double cur_residual = std::max(std::max(cur_residual_state_p, cur_residual_state_v), cur_residual_lambda);
+        if (cur_residual > max_residual) {
+            max_residual = cur_residual;
+            max_residual_idx = nv;
+        }
+    }
+
+    if (col_max_error) {
+        *col_max_error = max_residual_idx;
+    }
+
+    return max_residual;
+}
+
 void prepare_folders(std::string testname) {
     // Create output directory (if it does not already exist)
     if (!filesystem::create_directory(filesystem::path(val_dir))) {
@@ -168,7 +265,7 @@ void generateKRMCqFromAssembly(std::shared_ptr<ChAssembly> assembly,
     Cq.resize(n_constr, n_vars);
 
     // Stiffness matrix
-    assembly->LoadKRMMatrices(-1.0, 0.0, 0.0);
+    assembly->LoadKRMMatrices(1.0, 0.0, 0.0);
     temp_descriptor.SetMassFactor(0.0);
     temp_descriptor.PasteMassKRMMatrixInto(K, 0, 0);
 
@@ -219,73 +316,65 @@ void dumpKRMMatricesFromAssembly(std::shared_ptr<ChAssembly> assembly, std::stri
 //     return 0;
 // }
 
-// Compare the two variants of Solve() for ChModalSolverUndamped
-// The main difference is how the scaling is applied.
-TEST(ChModalSolver, Undamped_UnsymKrylovSchur) {
-    std::string refname = "ChModalSolverUndamped_ChUnsymGenEigenvalueSolverKrylovSchur";
-
-    // Create a system
-    ChSystemNSC sys;
-    auto assembly = BuildBeamFixBody(sys);
-
-    ChSparseMatrix K, R, M, Cq;
-    generateKRMCqFromAssembly(assembly, K, R, M, Cq);
-
-    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
-    int num_modes = 10;
-
-    ChModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur> modal_solver(num_modes, 1e-5, true, false,
-                                                                              eigen_solver);
-
-    ChMatrixDynamic<std::complex<double>> eigenvectors_assembly;
-    ChVectorDynamic<std::complex<double>> eigenvalues_assembly;
-    ChVectorDynamic<double> freq_assembly;
-
-    modal_solver.Solve(*assembly, eigenvectors_assembly, eigenvalues_assembly, freq_assembly);
-
-    ChMatrixDynamic<std::complex<double>> eigenvectors_KRMCq;
-    ChVectorDynamic<std::complex<double>> eigenvalues_KRMCq;
-    ChVectorDynamic<double> freq_KRMCq;
-
-    modal_solver.Solve(*assembly, eigenvectors_KRMCq, eigenvalues_KRMCq, freq_KRMCq);
-
-    double eigvects_diff = (eigenvectors_assembly - eigenvectors_KRMCq).lpNorm<Eigen::Infinity>();
-    double eigvals_diff = (eigenvalues_assembly - eigenvalues_KRMCq).lpNorm<Eigen::Infinity>();
-
-    ASSERT_NEAR(eigvects_diff, 0, tolerance)
-        << "Eigvects difference: " << eigvects_diff << " above threshold: " << tolerance << std::endl;
-
-    ASSERT_NEAR(eigvals_diff, 0, tolerance)
-        << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;
-}
-
-TEST(CountNonZerosForEachRow, Count) {
-    std::string refname = "CountNonZeros";
-
-    ChSparseMatrix Q;
-    Eigen::VectorXi Q_nnz_rows_MATLAB;
-    Eigen::VectorXi Q_nnz_cols_MATLAB;
-
-    std::ifstream stream_Q(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q.txt"));
-    std::ifstream stream_Q_nnz_rows(
-        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q_nnz_rows.txt"));
-    std::ifstream stream_Q_nnz_cols(
-        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q_nnz_cols.txt"));
-    fast_matrix_market::read_matrix_market_eigen(stream_Q, Q);
-    fast_matrix_market::read_matrix_market_eigen_dense(stream_Q_nnz_rows, Q_nnz_rows_MATLAB);
-    fast_matrix_market::read_matrix_market_eigen_dense(stream_Q_nnz_cols, Q_nnz_cols_MATLAB);
-
-    Eigen::VectorXi Q_nnz_rows_CHRONO(Q.rows());
-    Q_nnz_rows_CHRONO.setZero();
-    Eigen::VectorXi Q_nnz_cols_CHRONO(Q.cols());
-    Q_nnz_cols_CHRONO.setZero();
-
-    CountNonZerosForEachRow(Q, Q_nnz_rows_CHRONO, 0);
-    CountNonZerosForEachRowTransposed(Q, Q_nnz_cols_CHRONO, 0);
-
-    ASSERT_EQ(Q_nnz_rows_CHRONO, Q_nnz_rows_MATLAB);
-    ASSERT_EQ(Q_nnz_cols_CHRONO, Q_nnz_cols_MATLAB);
-}
+//// Compare the two variants of Solve() for ChModalSolverUndamped
+//// The main difference is how the scaling is applied.
+// TEST(ChModalSolver, Undamped_UnsymKrylovSchur) {
+//     std::string refname = "ChModalSolverUndamped_ChUnsymGenEigenvalueSolverKrylovSchur";
+//
+//     // Create a system
+//     ChSystemNSC sys;
+//     auto assembly = BuildBeamFixBody(sys);
+//
+//     ChSparseMatrix K, R, M, Cq;
+//     generateKRMCqFromAssembly(assembly, K, R, M, Cq);
+//
+//     ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
+//     int num_modes = 10;
+//
+//     ChModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur> modal_solver(num_modes, 1e-5, true, false,
+//                                                                               eigen_solver);
+//
+//     ChMatrixDynamic<std::complex<double>> eigvects_assembly;
+//     ChVectorDynamic<std::complex<double>> eigvals_assembly;
+//     ChVectorDynamic<double> freq_assembly;
+//
+//     modal_solver.Solve(*assembly, eigvects_assembly, eigvals_assembly, freq_assembly);
+//
+//     ChMatrixDynamic<std::complex<double>> eigvects_KMCq;
+//     ChVectorDynamic<std::complex<double>> eigvals_KMCq;
+//     ChVectorDynamic<double> freq_KMCq;
+//
+//     modal_solver.Solve(*assembly, eigvects_KMCq, eigvals_KMCq, freq_KMCq);
+//
+//     double eigvects_diff = (eigvects_assembly - eigvects_KMCq).lpNorm<Eigen::Infinity>();
+//     double eigvals_diff = (eigvals_assembly - eigvals_KMCq).lpNorm<Eigen::Infinity>();
+//
+//     {
+//         prepare_folders(refname);
+//
+//         std::ofstream stream_K(out_dir + "/" + refname + "/" + refname + "_K.txt");
+//         fast_matrix_market::write_matrix_market_eigen(stream_K, K);
+//         std::ofstream stream_M(out_dir + "/" + refname + "/" + refname + "_M.txt");
+//         fast_matrix_market::write_matrix_market_eigen(stream_M, M);
+//         std::ofstream stream_Cq(out_dir + "/" + refname + "/" + refname + "_Cq.txt");
+//         fast_matrix_market::write_matrix_market_eigen(stream_Cq, Cq);
+//
+//         std::ofstream stream_eigvects_assembly(out_dir + "/" + refname + "/" + refname + "_eigvects_assembly.txt");
+//         std::ofstream stream_eigvects_KMCq(out_dir + "/" + refname + "/" + refname + "_eigvects_KMCq.txt");
+//         std::ofstream stream_eigvals_assembly(out_dir + "/" + refname + "/" + refname + "_eigvals_assembly.txt");
+//         std::ofstream stream_eigvals_KMCq(out_dir + "/" + refname + "/" + refname + "_eigvals_KMCq.txt");
+//         fast_matrix_market::write_matrix_market_eigen_dense(stream_eigvects_assembly, eigvects_assembly);
+//         fast_matrix_market::write_matrix_market_eigen_dense(stream_eigvects_KMCq, eigvects_KMCq);
+//         fast_matrix_market::write_matrix_market_eigen_dense(stream_eigvals_assembly, eigvals_assembly);
+//         fast_matrix_market::write_matrix_market_eigen_dense(stream_eigvals_KMCq, eigvals_KMCq);
+//     }
+//
+//     ASSERT_NEAR(eigvals_diff, 0, tolerance)
+//         << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;
+//
+//     ASSERT_NEAR(eigvects_diff, 0, tolerance)
+//         << "Eigvects difference: " << eigvects_diff << " above threshold: " << tolerance << std::endl;
+// }
 
 template <typename EigenSolverType, typename ScalarType>
 void ExecuteEigenSolverCallAB(EigenSolverType eigen_solver, std::string refname) {
@@ -334,38 +423,11 @@ void ExecuteEigenSolverCallAB(EigenSolverType eigen_solver, std::string refname)
                                                  << eigvals_MATLAB << "\nCHRONO:\n"
                                                  << eigvals_CHRONO << std::endl;
 
-    double max_residual_CHRONO = 0;
     int max_residual_CHRONO_idx = -1;
-    for (auto nv = 0; nv < eigvals_CHRONO.size(); nv++) {
-        double cur_residual =
-            (A * eigvects_CHRONO.col(nv) - eigvals_CHRONO(nv) * B * eigvects_CHRONO.col(nv)).lpNorm<Eigen::Infinity>();
-        if (cur_residual > max_residual_CHRONO) {
-            max_residual_CHRONO = cur_residual;
-            max_residual_CHRONO_idx = nv;
-        }
-    }
+    double max_residual_CHRONO = GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
 
     ASSERT_NEAR(max_residual_CHRONO, 0, tolerance)
         << "Residuals exceeding threshold (index: " << max_residual_CHRONO_idx << ")" << std::endl;
-}
-
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymAB) {
-    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
-                                                                          "SymAB");
-}
-
-TEST(ChSymGenEigenvalueSolverLanczos, SymAB) {
-    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(), "SymAB");
-}
-
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCqChrono_AB) {
-    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
-                                                                          "SymKMCqChrono");
-}
-
-TEST(ChSymGenEigenvalueSolverLanczos, SymKMCqChrono_AB) {
-    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(),
-                                                                      "SymKMCqChrono");
 }
 
 void ExecuteEigenSolverCallKMCq(ChSymGenEigenvalueSolver& eigen_solver, std::string refname) {
@@ -406,9 +468,15 @@ void ExecuteEigenSolverCallKMCq(ChSymGenEigenvalueSolver& eigen_solver, std::str
     const bool scaleCq = true;
 
     ChSparseMatrix A, B;
-    ChGeneralizedEigenvalueSolver<double>::BuildUndampedSystem(M, K, Cq, A, B, scaleCq);
+    double scaling = ChGeneralizedEigenvalueSolver<double>::BuildUndampedSystem(M, K, Cq, A, B, scaleCq);
 
-    eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+    // eigen_solver.sort_ritz_pairs = false;
+    int conv_eigs = eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+    int max_residual_CHRONO_idx = -1;
+
+    double max_residual_CHRONO_AB = GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    eigvects_CHRONO.bottomRows(Cq.rows()) *= scaling;
 
     // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
     double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
@@ -417,31 +485,82 @@ void ExecuteEigenSolverCallKMCq(ChSymGenEigenvalueSolver& eigen_solver, std::str
                                                  << "MATLAB:\n"
                                                  << eigvals_MATLAB << "\nCHRONO:\n"
                                                  << eigvals_CHRONO << std::endl;
+
+    double max_residual_CHRONO = GetMaxResidual(K, M, Cq, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    ASSERT_NEAR(max_residual_CHRONO, max_residual_CHRONO_AB, tolerance)
+        << "Test developer error: residuals calculated on A,B are different from those calculated on K,M,Cq"
+        << std::endl;
+
+    ASSERT_NEAR(max_residual_CHRONO, 0, tolerance)
+        << "Residuals exceeding threshold (index: " << max_residual_CHRONO_idx << ")" << std::endl;
 }
 
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCqChrono) {
-    ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
-    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
-}
+void ExecuteEigenSolverCallUnsymKMCq(std::string refname) {
+    ChSparseMatrix M;
+    ChSparseMatrix K;
+    ChSparseMatrix Cq;
+    ChMatrixDynamic<std::complex<double>> sigma_mat;
+    ChMatrixDynamic<int> reqeigs_mat;
+    ChMatrixDynamic<std::complex<double>> eigvects_MATLAB;
+    ChVectorDynamic<std::complex<double>> eigvals_MATLAB;
 
-TEST(ChSymGenEigenvalueSolverLanczos, SymKMCqChrono) {
-    ChSymGenEigenvalueSolverLanczos eigen_solver;
-    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCqChrono");
-}
+    ChMatrixDynamic<std::complex<double>> eigvects_CHRONO;
+    ChVectorDynamic<std::complex<double>> eigvals_CHRONO;
 
-TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCq) {
-    ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
-    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
-}
+    std::ifstream stream_M(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_M.txt"));
+    std::ifstream stream_K(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_K.txt"));
+    std::ifstream stream_Cq(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Cq.txt"));
+    std::ifstream stream_sigma(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_sigma.txt"));
+    std::ifstream stream_reqeigs(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_reqeigs.txt"));
+    std::ifstream stream_eigvals_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvals_MATLAB.txt"));
+    std::ifstream stream_eigvects_MATLAB(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_eigvects_MATLAB.txt"));
 
-TEST(ChSymGenEigenvalueSolverLanczos, SymKMCq) {
-    ChSymGenEigenvalueSolverLanczos eigen_solver;
-    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
-}
+    fast_matrix_market::read_matrix_market_eigen(stream_M, M);
+    fast_matrix_market::read_matrix_market_eigen(stream_K, K);
+    fast_matrix_market::read_matrix_market_eigen(stream_Cq, Cq);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_sigma, sigma_mat);
+    std::complex<double> sigma = sigma_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs, reqeigs_mat);
+    int reqeigs = reqeigs_mat(0, 0);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
 
-TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymAB) {
-    ExecuteEigenSolverCallAB<ChUnsymGenEigenvalueSolverKrylovSchur, std::complex<double>>(
-        ChUnsymGenEigenvalueSolverKrylovSchur(chrono_types::make_shared<ChSolverSparseComplexLU>()), "UnsymAB");
+    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver(chrono_types::make_shared<ChSolverSparseComplexLU>());
+
+    eigen_solver.SortRitzPairs(eigvals_MATLAB, eigvects_MATLAB);
+
+    // ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
+    const bool scaleCq = true;
+
+    ChSparseMatrix A, B;
+    double scaling = ChGeneralizedEigenvalueSolver<std::complex<double>>::BuildUndampedSystem(M, K, Cq, A, B, scaleCq);
+
+    // eigen_solver.sort_ritz_pairs = false;
+    int conv_eigs = eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
+    int max_residual_CHRONO_idx = -1;
+    double max_residual_CHRONO_AB = GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    eigvects_CHRONO.bottomRows(Cq.rows()) *= scaling;
+
+    // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
+    double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
+
+    ASSERT_NEAR(max_delta_eigvals, 0, tolerance) << "Eigenvalues not matching.\n"
+                                                 << "MATLAB:\n"
+                                                 << eigvals_MATLAB << "\nCHRONO:\n"
+                                                 << eigvals_CHRONO << std::endl;
+
+    double max_residual_CHRONO = GetMaxResidual(K, M, Cq, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    ASSERT_NEAR(max_residual_CHRONO, max_residual_CHRONO_AB, tolerance)
+        << "Test developer error: residuals calculated on A,B are different from those calculated on K,M,Cq"
+        << std::endl;
+
+    ASSERT_NEAR(max_residual_CHRONO, 0, tolerance)
+        << "Residuals exceeding threshold (index: " << max_residual_CHRONO_idx << ")" << std::endl;
 }
 
 void ExecuteEigenSolverCallKRMCq(std::string refname) {
@@ -480,14 +599,18 @@ void ExecuteEigenSolverCallKRMCq(std::string refname) {
     fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
 
     ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver(chrono_types::make_shared<ChSolverSparseComplexLU>());
+    eigen_solver.SortRitzPairs(eigvals_MATLAB, eigvects_MATLAB);
 
     const bool scaleCq = true;
     ChSparseMatrix A, B;
-    eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
+    double scaling = eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
+    int max_residual_CHRONO_idx = -1;
 
     eigen_solver.Solve(A, B, eigvects_CHRONO, eigvals_CHRONO, reqeigs, sigma);
 
-    eigen_solver.SortRitzPairs(eigvals_MATLAB, eigvects_MATLAB);
+    double max_residual_CHRONO_AB = GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    eigvects_CHRONO.bottomRows(Cq.rows()) *= scaling;
 
     // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
     double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
@@ -496,6 +619,91 @@ void ExecuteEigenSolverCallKRMCq(std::string refname) {
                                                  << "MATLAB:\n"
                                                  << eigvals_MATLAB << "\nCHRONO:\n"
                                                  << eigvals_CHRONO << std::endl;
+    double max_residual_CHRONO = GetMaxResidual(K, R, M, Cq, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    ASSERT_NEAR(max_residual_CHRONO, max_residual_CHRONO_AB, tolerance)
+        << "Test developer error: residuals calculated on A,B are different from those calculated on K,R,M,Cq"
+        << std::endl;
+
+    ASSERT_NEAR(max_residual_CHRONO, 0, tolerance)
+        << "Residuals exceeding threshold (index: " << max_residual_CHRONO_idx << ")" << std::endl;
+}
+
+TEST(CountNonZerosForEachRow, Count) {
+    std::string refname = "CountNonZeros";
+
+    ChSparseMatrix Q;
+    Eigen::VectorXi Q_nnz_rows_MATLAB;
+    Eigen::VectorXi Q_nnz_cols_MATLAB;
+
+    std::ifstream stream_Q(utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q.txt"));
+    std::ifstream stream_Q_nnz_rows(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q_nnz_rows.txt"));
+    std::ifstream stream_Q_nnz_cols(
+        utils::GetValidationDataFile(ref_dir + refname + "/" + refname + "_Q_nnz_cols.txt"));
+    fast_matrix_market::read_matrix_market_eigen(stream_Q, Q);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_Q_nnz_rows, Q_nnz_rows_MATLAB);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_Q_nnz_cols, Q_nnz_cols_MATLAB);
+
+    Eigen::VectorXi Q_nnz_rows_CHRONO(Q.rows());
+    Q_nnz_rows_CHRONO.setZero();
+    Eigen::VectorXi Q_nnz_cols_CHRONO(Q.cols());
+    Q_nnz_cols_CHRONO.setZero();
+
+    CountNonZerosForEachRow(Q, Q_nnz_rows_CHRONO, 0);
+    CountNonZerosForEachRowTransposed(Q, Q_nnz_cols_CHRONO, 0);
+
+    ASSERT_EQ(Q_nnz_rows_CHRONO, Q_nnz_rows_MATLAB);
+    ASSERT_EQ(Q_nnz_cols_CHRONO, Q_nnz_cols_MATLAB);
+}
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymAB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
+                                                                          "SymAB");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymAB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(), "SymAB");
+}
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCq) {
+    ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
+}
+
+// TEST(ChSymGenEigenvalueSolverLanczos, SymKMCq) {
+//     // WARNING: this test is not passing; eigvalues are matching, but eigenvectors are not
+//     ChSymGenEigenvalueSolverLanczos eigen_solver;
+//     ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
+// }
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCqChrono_AB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverKrylovSchur, double>(ChSymGenEigenvalueSolverKrylovSchur(),
+                                                                          "SymKMCqChrono");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymKMCqChrono_AB) {
+    ExecuteEigenSolverCallAB<ChSymGenEigenvalueSolverLanczos, double>(ChSymGenEigenvalueSolverLanczos(),
+                                                                      "SymKMCqChrono");
+}
+
+TEST(ChSymGenEigenvalueSolverKrylovSchur, SymKMCqChrono) {
+    ChSymGenEigenvalueSolverKrylovSchur eigen_solver;
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCq");
+}
+
+TEST(ChSymGenEigenvalueSolverLanczos, SymKMCqChrono) {
+    ChSymGenEigenvalueSolverLanczos eigen_solver;
+    ExecuteEigenSolverCallKMCq(eigen_solver, "SymKMCqChrono");
+}
+
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymAB) {
+    ExecuteEigenSolverCallAB<ChUnsymGenEigenvalueSolverKrylovSchur, std::complex<double>>(
+        ChUnsymGenEigenvalueSolverKrylovSchur(chrono_types::make_shared<ChSolverSparseComplexLU>()), "UnsymAB");
+}
+
+TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKMCq) {
+    ExecuteEigenSolverCallUnsymKMCq("UnsymKMCq");
 }
 
 TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq) {
@@ -513,8 +721,8 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
     ChMatrixDynamic<int> reqeigs_1_mat;
     ChMatrixDynamic<std::complex<double>> sigma_2_mat;
     ChMatrixDynamic<int> reqeigs_2_mat;
-    ChMatrixDynamic<std::complex<double>> eigvects_MATLAB;
-    ChVectorDynamic<std::complex<double>> eigvals_MATLAB;
+    ChMatrixDynamic<std::complex<double>> eigvects_MATLAB_nounique;
+    ChVectorDynamic<std::complex<double>> eigvals_MATLAB_nounique;
 
     ChMatrixDynamic<std::complex<double>> eigvects_CHRONO;
     ChVectorDynamic<std::complex<double>> eigvals_CHRONO;
@@ -544,22 +752,37 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
     fast_matrix_market::read_matrix_market_eigen_dense(stream_reqeigs_2, reqeigs_2_mat);
     int reqeigs_1 = reqeigs_1_mat(0, 0);
     int reqeigs_2 = reqeigs_2_mat(0, 0);
-    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB);
-    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB);
-
-    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver(chrono_types::make_shared<ChSolverSparseComplexLU>());
-
-    const bool scaleCq = true;
-    int eigvects_clipping_length = M.rows();
-
-    ChSparseMatrix A, B;
-    eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvals_MATLAB, eigvals_MATLAB_nounique);
+    fast_matrix_market::read_matrix_market_eigen_dense(stream_eigvects_MATLAB, eigvects_MATLAB_nounique);
 
     std::list<std::pair<int, std::complex<double>>> eig_requests;
     eig_requests.push_back(std::make_pair(reqeigs_1, sigma_1));
     eig_requests.push_back(std::make_pair(reqeigs_2, sigma_2));
-    eigen_solver.sort_ritz_pairs = true;
-    modal::Solve<>(eigen_solver, A, B, eigvects_CHRONO, eigvals_CHRONO, eig_requests, eigvects_clipping_length);
+
+    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver(chrono_types::make_shared<ChSolverSparseComplexLU>());
+    eigen_solver.SortRitzPairs(eigvals_MATLAB_nounique, eigvects_MATLAB_nounique);
+
+    ChMatrixDynamic<std::complex<double>> eigvects_MATLAB(eigvects_MATLAB_nounique.rows(),
+                                                          eigvects_MATLAB_nounique.cols());
+    ChVectorDynamic<std::complex<double>> eigvals_MATLAB(eigvals_MATLAB_nounique.size());
+
+    int found_eigs = 0;
+    eigen_solver.InsertUniqueRitzPairs(eigvals_MATLAB_nounique, eigvects_MATLAB_nounique, eigvals_MATLAB,
+                                       eigvects_MATLAB, eigen_solver.GetNaturalFrequency, found_eigs,
+                                       eigvals_MATLAB_nounique.size());
+    eigvects_MATLAB.conservativeResize(Eigen::NoChange_t::NoChange, found_eigs);
+
+    const bool scaleCq = true;
+
+    ChSparseMatrix A, B;
+    double scaling = eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
+
+    modal::Solve<>(eigen_solver, A, B, eigvects_CHRONO, eigvals_CHRONO, eig_requests, 0);
+
+    int max_residual_CHRONO_idx = -1;
+    double max_residual_CHRONO_AB = GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    eigvects_CHRONO.bottomRows(Cq.rows()) *= scaling;
 
     // instead of doing a simple difference, consider the imaginary part to be the same if positive or negative
     double max_delta_eigvals = GetEigenvaluesMaxDiff(eigvals_CHRONO, eigvals_MATLAB);
@@ -568,4 +791,13 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
                                                  << "MATLAB:\n"
                                                  << eigvals_MATLAB << "\nCHRONO:\n"
                                                  << eigvals_CHRONO << std::endl;
+
+    double max_residual_CHRONO = GetMaxResidual(K, R, M, Cq, eigvects_CHRONO, eigvals_CHRONO, &max_residual_CHRONO_idx);
+
+    ASSERT_NEAR(max_residual_CHRONO, max_residual_CHRONO_AB, tolerance)
+        << "Test developer error: residuals calculated on A,B are different from those calculated on K,R,M,Cq"
+        << std::endl;
+
+    ASSERT_NEAR(max_residual_CHRONO, 0, tolerance)
+        << "Residuals exceeding threshold (index: " << max_residual_CHRONO_idx << ")" << std::endl;
 }

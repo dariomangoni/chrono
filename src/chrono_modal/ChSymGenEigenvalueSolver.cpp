@@ -174,6 +174,11 @@ int ChSymGenEigenvalueSolverLanczos::Solve(const ChSparseMatrix& A,
     OpType op(getColMajorSparseMatrix(A), getColMajorSparseMatrix(B));
     BOpType Bop(getColMajorSparseMatrix(B));
 
+    // Eigen::SparseMatrix<double> A_colMajor = A;
+    // Eigen::SparseMatrix<double> B_colMajor = B;
+    // OpType op(A_colMajor, B_colMajor);
+    // BOpType Bop(B_colMajor);
+
     SymGEigsShiftSolver<OpType, BOpType, GEigsMode::ShiftInvert> eigen_solver(op, Bop, num_modes, m, shift);
 
     eigen_solver.init();
@@ -191,6 +196,9 @@ int ChSymGenEigenvalueSolverLanczos::Solve(const ChSparseMatrix& A,
         });
         eigvects = eigen_solver.eigenvectors() * perm;
         eigvals = perm.transpose() * eigen_solver.eigenvalues();
+    } else {
+        eigvects = eigen_solver.eigenvectors();
+        eigvals = eigen_solver.eigenvalues();
     }
 
     if (verbose) {

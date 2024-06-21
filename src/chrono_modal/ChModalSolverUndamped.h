@@ -28,10 +28,10 @@ namespace chrono {
 namespace modal {
 
 void ChApiModal BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
-                                          ChSystemDescriptor& temp_descriptor,
-                                          ChSparseMatrix& A,
-                                          ChSparseMatrix& B,
-                                          int n_vars);
+                                                     ChSystemDescriptor& temp_descriptor,
+                                                     ChSparseMatrix& A,
+                                                     ChSparseMatrix& B,
+                                                     int n_vars);
 
 /// Class for computing eigenvalues/eigenvectors for the undamped constrained system.
 /// It dispatches the settings to some solver of ChGeneralizedEigenvalueSolver class.
@@ -53,8 +53,8 @@ class ChModalSolverUndamped : public ChModalSolver {
         double base_freq = 1e-5,  ///< frequency to whom the nodes are clustered. Use 1e-5 to get n lower modes. As
                                   ///< sigma in shift&invert, as: sigma = -pow(base_freq * CH_2PI, 2). Too small gives
                                   ///< ill conditioning (no convergence). Too large misses rigid body modes
-        bool scaleCq = true,   ///< apply scaling to the Cq matrix to improve conditioning
-        bool verbose = false,  ///< turn to true to see some diagnostic
+        bool scaleCq = true,      ///< apply scaling to the Cq matrix to improve conditioning
+        bool verbose = false,     ///< turn to true to see some diagnostic
         const EigenvalueSolverType& solver = EigenvalueSolverType())
         : ChModalSolver(n_lower_modes, base_freq, scaleCq, verbose), m_solver(solver){};
 
@@ -97,7 +97,6 @@ class ChModalSolverUndamped : public ChModalSolver {
     ) const;
 
     const EigenvalueSolverType& GetEigenSolver() const { return m_solver; }
-
 
   protected:
     const EigenvalueSolverType& m_solver;
@@ -155,6 +154,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     m_timer_matrix_assembly.start();
 
     // Find scaling factor for Cq
+    // Be aware that A contains -K, not K
     double scaling = 1.0;
     if (m_scaleCq) {
         scaling = 0.0;
@@ -165,10 +165,10 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
                 }
             }
         }
-        scaling = scaling / n_vars;
+        scaling = -scaling / n_vars;
     }
 
-    // Cq scaling
+    // Cq scaling and sign change
     for (auto row_i = n_vars; row_i < n_vars + n_constr; row_i++) {
         for (auto nnz_i = A.outerIndexPtr()[row_i];
              nnz_i <
@@ -178,7 +178,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
         }
     }
 
-    // CqT scaling
+    // CqT scaling and sign change
     for (unsigned int k = 0; k < n_vars; ++k) {
         for (ChSparseMatrix::InnerIterator it(A, k); it; ++it) {
             if (it.col() >= n_vars) {

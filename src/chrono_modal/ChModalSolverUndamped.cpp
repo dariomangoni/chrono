@@ -58,7 +58,7 @@ void BuildGeneralizedEigenProblemMatrices(ChAssembly& assembly,
     //
 
     // Stiffness matrix
-    assembly.LoadKRMMatrices(+1.0, 0.0, 0.0);
+    assembly.LoadKRMMatrices(-1.0, 0.0, 0.0);
     temp_descriptor.SetMassFactor(0.0);
     temp_descriptor.PasteMassKRMMatrixInto(A, 0, 0);
 
