@@ -96,13 +96,10 @@ class ChGeneralizedEigenvalueSolver {
                                  const ChSparseMatrix& B,
                                  const ChMatrixDynamic<ScalarType>& eigvects,
                                  const ChVectorDynamic<ScalarType>& eigvals) {
-        int n = eigvects.rows();
-        int m = eigvects.cols();
-
         double max_residual = -1;
 
         ChVectorDynamic<ScalarType> residuals_col;
-        for (int i = 0; i < m; i++) {
+        for (int i = 0; i < eigvects.cols(); i++) {
             residuals_col = A * eigvects.col(i) - eigvals(i) * B * eigvects.col(i);
             double cur_residual = residuals_col.lpNorm<Eigen::Infinity>();
             max_residual = std::max(cur_residual, max_residual);

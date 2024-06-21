@@ -76,6 +76,8 @@ class KrylovSchurGEigsShiftInvert : public KrylovSchurGEigsBase<SymGEigsShiftInv
 
 void ChSymGenEigenvalueSolver::GetNaturalFrequencies(const ChVectorDynamic<ScalarType>& eigvals,
                                                      ChVectorDynamic<double>& freq) {
+    freq.resize(eigvals.size());
+
     for (auto i = 0; i < eigvals.size(); i++) {
         freq(i) = GetNaturalFrequency(eigvals(i));
     }

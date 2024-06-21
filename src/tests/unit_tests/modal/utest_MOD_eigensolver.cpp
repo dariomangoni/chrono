@@ -24,12 +24,11 @@
 
 #include "chrono/fea/ChMesh.h"
 
-#include "chrono/core/ChTimer.h"
-
 #include "chrono_modal/ChUnsymGenEigenvalueSolver.h"
 #include "chrono_modal/ChSymGenEigenvalueSolver.h"
 #include "chrono_modal/ChGeneralizedEigenvalueSolver.h"
 #include "chrono_modal/ChModalSolverUndamped.h"
+#include "chrono_modal/ChModalSolverDamped.h"
 
 #include "chrono/solver/ChDirectSolverLScomplex.h"
 
@@ -660,29 +659,26 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
     ASSERT_NEAR(max_residual_CHRONO, 0, tolerance) << "Residuals exceeding threshold" << std::endl;
 }
 
-TEST(ChModalSolver, Undamped_UnsymKrylovSchur) {
-    std::string refname = "ChModalSolverUndamped_ChUnsymGenEigenvalueSolverKrylovSchur";
-
-    // Create a system
+template <typename EigsolverType>
+void ExecuteModalSolverUndamped() {
     ChSystemNSC sys;
     auto assembly = BuildBeamFixBody(sys);
 
     ChSparseMatrix K, R, M, Cq;
     generateKRMCqFromAssembly(assembly, K, R, M, Cq);
 
-    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
+    EigsolverType eigen_solver;
     int num_modes = 10;
 
-    ChModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur> modal_solver(num_modes, 1e-5, true, false,
-                                                                              eigen_solver);
+    ChModalSolverUndamped<EigsolverType> modal_solver(num_modes, 1e-5, true, false, eigen_solver);
     modal_solver.SetClipPositionCoords(false);
-    ChMatrixDynamic<std::complex<double>> eigvects_assembly;
-    ChVectorDynamic<std::complex<double>> eigvals_assembly;
+    ChMatrixDynamic<typename EigsolverType::ScalarType> eigvects_assembly;
+    ChVectorDynamic<typename EigsolverType::ScalarType> eigvals_assembly;
     ChVectorDynamic<double> freq_assembly;
     modal_solver.Solve(*assembly, eigvects_assembly, eigvals_assembly, freq_assembly);
 
-    ChMatrixDynamic<std::complex<double>> eigvects_KMCq;
-    ChVectorDynamic<std::complex<double>> eigvals_KMCq;
+    ChMatrixDynamic<typename EigsolverType::ScalarType> eigvects_KMCq;
+    ChVectorDynamic<typename EigsolverType::ScalarType> eigvals_KMCq;
     ChVectorDynamic<double> freq_KMCq;
     modal_solver.Solve(K, M, Cq, eigvects_KMCq, eigvals_KMCq, freq_KMCq);
 
@@ -702,42 +698,51 @@ TEST(ChModalSolver, Undamped_UnsymKrylovSchur) {
         << "Eigvects difference: " << eigvects_diff << " above threshold: " << tolerance << std::endl;
 }
 
+TEST(ChModalSolverUndamped, ChUnsymGenEigenvalueSolverKrylovSchur) {
+    // WARNING: the test is not actually generating unsymmetric matrices!
+    ExecuteModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur>();
+}
 
+TEST(ChModalSolverUndamped, ChSymGenEigenvalueSolverKrylovSchur) {
+    ExecuteModalSolverUndamped<ChSymGenEigenvalueSolverKrylovSchur>();
+}
 
-TEST(ChModalSolver, Undamped_UnsymKrylovSchur) {
-    std::string refname = "ChModalSolverUndamped_ChUnsymGenEigenvalueSolverKrylovSchur";
+TEST(ChModalSolverUndamped, ChSymGenEigenvalueSolverLanczos) {
+    ExecuteModalSolverUndamped<ChSymGenEigenvalueSolverLanczos>();
+}
 
-    // Create a system
+TEST(ChModalSolverDamped, ChUnsymGenEigenvalueSolverKrylovSchur) {
     ChSystemNSC sys;
     auto assembly = BuildBeamFixBody(sys);
 
     ChSparseMatrix K, R, M, Cq;
     generateKRMCqFromAssembly(assembly, K, R, M, Cq);
 
-    ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
+    auto eigen_solver = chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>();
     int num_modes = 10;
 
-    ChModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur> modal_solver(num_modes, 1e-5, true, false,
-                                                                              eigen_solver);
+    ChModalSolverDamped modal_solver(num_modes, 1e-5, true, false, eigen_solver);
     modal_solver.SetClipPositionCoords(false);
-    ChMatrixDynamic<std::complex<double>> eigvects_assembly;
-    ChVectorDynamic<std::complex<double>> eigvals_assembly;
+    ChMatrixDynamic<typename ChUnsymGenEigenvalueSolverKrylovSchur::ScalarType> eigvects_assembly;
+    ChVectorDynamic<typename ChUnsymGenEigenvalueSolverKrylovSchur::ScalarType> eigvals_assembly;
     ChVectorDynamic<double> freq_assembly;
-    modal_solver.Solve(*assembly, eigvects_assembly, eigvals_assembly, freq_assembly);
+    ChVectorDynamic<double> damping_ratios_assembly;
+    modal_solver.Solve(*assembly, eigvects_assembly, eigvals_assembly, freq_assembly, damping_ratios_assembly);
 
-    ChMatrixDynamic<std::complex<double>> eigvects_KMCq;
-    ChVectorDynamic<std::complex<double>> eigvals_KMCq;
-    ChVectorDynamic<double> freq_KMCq;
-    modal_solver.Solve(K, M, Cq, eigvects_KMCq, eigvals_KMCq, freq_KMCq);
+    ChMatrixDynamic<typename ChUnsymGenEigenvalueSolverKrylovSchur::ScalarType> eigvects_KRMCq;
+    ChVectorDynamic<typename ChUnsymGenEigenvalueSolverKrylovSchur::ScalarType> eigvals_KRMCq;
+    ChVectorDynamic<double> freq_KRMCq;
+    ChVectorDynamic<double> damping_ratios_KRMCq;
+    modal_solver.Solve(K, R, M, Cq, eigvects_KRMCq, eigvals_KRMCq, freq_KRMCq, damping_ratios_KRMCq);
 
-    double res_CHRONO_KMCq = eigen_solver.GetMaxResidual(K, M, Cq, eigvects_KMCq, eigvals_KMCq);
+    double res_CHRONO_KRMCq = eigen_solver->GetMaxResidual(K, R, M, Cq, eigvects_KRMCq, eigvals_KRMCq);
 
-    double eigvals_diff = GetEigenvaluesMaxDiff(eigvals_assembly, eigvals_KMCq);
+    double eigvals_diff = GetEigenvaluesMaxDiff(eigvals_assembly, eigvals_KRMCq);
 
-    double eigvects_diff = GetEigenvectsMaxDiff(eigvects_assembly, eigvects_KMCq);
+    double eigvects_diff = GetEigenvectsMaxDiff(eigvects_assembly, eigvects_KRMCq);
 
-    ASSERT_NEAR(res_CHRONO_KMCq, 0, tolerance)
-        << "Residuals: " << res_CHRONO_KMCq << " above threshold: " << tolerance << std::endl;
+    ASSERT_NEAR(res_CHRONO_KRMCq, 0, tolerance)
+        << "Residuals: " << res_CHRONO_KRMCq << " above threshold: " << tolerance << std::endl;
 
     ASSERT_NEAR(eigvals_diff, 0, tolerance)
         << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;

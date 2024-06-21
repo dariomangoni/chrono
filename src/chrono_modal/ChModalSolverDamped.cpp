@@ -15,8 +15,6 @@
 #include <numeric>
 #include <iomanip>
 
-#include "chrono_modal/ChKrylovSchurEig.h"
-#include "chrono_modal/ChUnsymGenEigenvalueSolver.h"
 #include "chrono_modal/ChModalSolverDamped.h"
 #include "chrono/solver/ChDirectSolverLS.h"
 #include "chrono/solver/ChDirectSolverLScomplex.h"
@@ -27,17 +25,8 @@
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
-#include <Eigen/Eigenvalues>
 
-#include <Spectra/KrylovSchurGEigsSolver.h>
-#include <Spectra/SymGEigsSolver.h>
-#include <Spectra/SymGEigsShiftSolver.h>
-#include <Spectra/MatOp/SparseSymMatProd.h>
-#include <Spectra/MatOp/SparseGenMatProd.h>
-#include <Spectra/MatOp/SparseRegularInverse.h>
-#include <Spectra/GenEigsBase.h>
 
-using namespace Spectra;
 using namespace Eigen;
 
 namespace chrono {
@@ -81,7 +70,7 @@ void BuildQuadraticEigenProblemMatrices(ChAssembly& assembly,
     // Identity matrix
     for (unsigned int id_sel = 0; id_sel < n_vars; ++id_sel) {
         A.SetElement(id_sel, id_sel + n_vars, 1.0);
-        B.SetElement(id_sel + n_vars, id_sel, 1.0);
+        B.SetElement(id_sel, id_sel, 1.0);
     }
 }
 

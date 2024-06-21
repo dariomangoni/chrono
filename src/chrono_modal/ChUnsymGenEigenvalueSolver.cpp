@@ -31,27 +31,27 @@ namespace modal {
 
 void ChUnsymGenEigenvalueSolver::GetNaturalFrequencies(const ChVectorDynamic<ScalarType>& eigvals,
                                                        ChVectorDynamic<double>& natural_freq) {
-    natural_freq.resize(eigvals.rows());
+    natural_freq.resize(eigvals.size());
 
-    for (int i = 0; i < eigvals.rows(); ++i) {
+    for (int i = 0; i < eigvals.size(); ++i) {
         natural_freq(i) = GetNaturalFrequency(eigvals(i));
     }
 }
 
 void ChUnsymGenEigenvalueSolver::GetDampedFrequencies(const ChVectorDynamic<ScalarType>& eigvals,
                                                       ChVectorDynamic<double>& damped_freq) {
-    damped_freq.resize(eigvals.rows());
+    damped_freq.resize(eigvals.size());
 
-    for (int i = 0; i < eigvals.rows(); ++i) {
+    for (int i = 0; i < eigvals.size(); ++i) {
         damped_freq(i) = eigvals(i).imag() / CH_2PI;
     }
 }
 
 void ChUnsymGenEigenvalueSolver::GetDampingRatios(const ChVectorDynamic<ScalarType>& eigvals,
                                                   ChVectorDynamic<double>& damp_ratios) {
-    damp_ratios.resize(eigvals.rows());
+    damp_ratios.resize(eigvals.size());
 
-    for (int i = 0; i < eigvals.rows(); ++i) {
+    for (int i = 0; i < eigvals.size(); ++i) {
         damp_ratios(i) = -eigvals(i).real() / std::abs(eigvals(i));
     }
 }
