@@ -59,29 +59,6 @@ double GetEigenvaluesMaxDiff(const ChVectorDynamic<std::complex<double>>& eig1,
                     (eig1.imag().cwiseAbs() - eig2.imag().cwiseAbs()).lpNorm<Eigen::Infinity>());
 }
 
-// WARNING: this method probably does not work for complex eigenvectors
-// template <typename ScalarType>
-// double GetEigenvectsMaxDiff(const ChMatrixDynamic<ScalarType>& eigv1,
-//                            const ChMatrixDynamic<ScalarType>& eigv2,
-//                            double non_null_tol = 1e-6) {
-//    double max_diff = 0;
-//
-//    for (auto e_sel = 0; e_sel < eigv1.cols(); ++e_sel) {
-//        int non_null_id = -1;
-//        for (auto row_sel = 0; row_sel < eigv1.rows(); ++row_sel) {
-//            if (std::abs(eigv1(row_sel, e_sel)) > non_null_tol) {
-//                non_null_id = row_sel;
-//                break;
-//            }
-//        }
-//        ScalarType eigv_ratio = eigv2(non_null_id, e_sel) / eigv1(non_null_id, e_sel);
-//        ChVectorDynamic<ScalarType> eigvect_comp = eigv1.col(e_sel) * eigv_ratio - eigv2.col(e_sel);
-//        max_diff = std::max(max_diff, eigvect_comp.lpNorm<Eigen::Infinity>());
-//    }
-//
-//    return max_diff;
-//}
-
 void prepare_folders(std::string testname) {
     // Create output directory (if it does not already exist)
     if (!filesystem::create_directory(filesystem::path(val_dir))) {
@@ -665,7 +642,7 @@ void ExecuteModalSolverUndamped() {
     ChSparseMatrix K, R, M, Cq;
     generateKRMCqFromAssembly(assembly, K, R, M, Cq);
 
-    EigsolverType eigen_solver;
+    auto eigen_solver = chrono_types::make_shared<EigsolverType>();
     int num_modes = 10;
 
     ChModalSolverUndamped<EigsolverType> modal_solver(num_modes, 1e-5, true, false, eigen_solver);
@@ -682,9 +659,9 @@ void ExecuteModalSolverUndamped() {
 
     double eigvals_diff = GetEigenvaluesMaxDiff(eigvals_assembly, eigvals_KMCq);
 
-    double res_CHRONO_KMCq = eigen_solver.GetMaxResidual(K, M, Cq, eigvects_KMCq, eigvals_KMCq);
+    double res_CHRONO_KMCq = eigen_solver->GetMaxResidual(K, M, Cq, eigvects_KMCq, eigvals_KMCq);
 
-    double res_CHRONO_assembly = eigen_solver.GetMaxResidual(K, M, Cq, eigvects_assembly, eigvals_assembly);
+    double res_CHRONO_assembly = eigen_solver->GetMaxResidual(K, M, Cq, eigvects_assembly, eigvals_assembly);
 
     ASSERT_NEAR(eigvals_diff, 0, tolerance)
         << "Eigvals difference: " << eigvals_diff << " above threshold: " << tolerance << std::endl;

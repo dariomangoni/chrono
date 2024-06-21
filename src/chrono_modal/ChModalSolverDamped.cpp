@@ -32,20 +32,24 @@ namespace chrono {
 
 namespace modal {
 
-void BuildQuadraticEigenProblemMatrices(ChAssembly& assembly,
-                                        ChSystemDescriptor& temp_descriptor,
-                                        ChSparseMatrix& A,
-                                        ChSparseMatrix& B,
-                                        int n_vars) {
-    // A  =  [  0     I     0 ]
-    //       [ -K    -R  -Cq' ]
-    //       [ -Cq    0     0 ]
-    // WARNING: Cq and Cq' sign is not flipped yet: the user is expected to flip it during scaling (if any)
+/// Partially build the damped eigenvalue problem matrices A and B from a given ChAssembly.
+/// WARNING: Cq and Cq' signs are not flipped here: the user is expected to flip it during scaling (if any)
+/// The final shape of the matrices is:
+/// 
+/// A  =  [  0     I     0 ]
+///       [ -K    -R  -Cq' ]
+///       [ -Cq    0     0 ]
+///
+/// B  =  [  I     0     0 ]
+///       [  0     M     0 ]
+///       [  0     0     0 ]
+///
+void BuildDampedEigenProblemMatrices(ChAssembly& assembly,
+                                     ChSystemDescriptor& temp_descriptor,
+                                     ChSparseMatrix& A,
+                                     ChSparseMatrix& B,
+                                     int n_vars) {
 
-    // B  =  [  I     0     0 ]
-    //       [  0     M     0 ]
-    //       [  0     0     0 ]
-    //
     // Stiffness matrix
     assembly.LoadKRMMatrices(-1.0, 0.0, 0.0);
     temp_descriptor.SetMassFactor(0.0);
@@ -100,14 +104,14 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
     // Leverage the sparsity pattern learner to allocate the proper size
     ChSparsityPatternLearner A_spl(2 * n_vars + n_constr, 2 * n_vars + n_constr);
     ChSparsityPatternLearner B_spl(2 * n_vars + n_constr, 2 * n_vars + n_constr);
-    BuildQuadraticEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A_spl, B_spl, n_vars);
+    BuildDampedEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A_spl, B_spl, n_vars);
 
     // Build the actual matrices
     ChSparseMatrix A(2 * n_vars + n_constr, 2 * n_vars + n_constr);
     ChSparseMatrix B(2 * n_vars + n_constr, 2 * n_vars + n_constr);
     A_spl.Apply(A);
     B_spl.Apply(B);
-    BuildQuadraticEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A, B, n_vars);
+    BuildDampedEigenProblemMatrices(*assembly_nonconst, temp_descriptor, A, B, n_vars);
 
     // Scale constraints matrix
     double scaling = 1.0;

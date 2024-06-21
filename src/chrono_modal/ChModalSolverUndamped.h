@@ -54,7 +54,7 @@ class ChModalSolverUndamped : public ChModalSolver {
                           double base_freq = 1e-5,
                           bool scaleCq = true,
                           bool verbose = false,
-                          const EigenvalueSolverType& solver = EigenvalueSolverType())
+                          std::shared_ptr<EigenvalueSolverType> solver = chrono_types::make_shared<EigenvalueSolverType>())
         : ChModalSolver(n_lower_modes, base_freq, scaleCq, verbose), m_solver(solver){};
 
     /// Creates a modal solver for the undamped case.
@@ -66,7 +66,7 @@ class ChModalSolverUndamped : public ChModalSolver {
     ChModalSolverUndamped(std::vector<ChFreqSpan> freq_spans,
                           bool scaleCq = true,
                           bool verbose = false,
-                          const EigenvalueSolverType& solver = EigenvalueSolverType())
+                          std::shared_ptr<EigenvalueSolverType> solver = chrono_types::make_shared<EigenvalueSolverType>())
         : ChModalSolver(freq_spans, scaleCq, verbose), m_solver(solver){};
 
     virtual ~ChModalSolverUndamped(){};
@@ -88,10 +88,10 @@ class ChModalSolverUndamped : public ChModalSolver {
               ChVectorDynamic<double>& freq) const;
 
     /// Get the inner eigensolver.
-    const EigenvalueSolverType& GetEigenSolver() const { return m_solver; }
+    std::shared_ptr<EigenvalueSolverType> GetEigenSolver() const { return m_solver; }
 
   protected:
-    const EigenvalueSolverType& m_solver;
+    std::shared_ptr<EigenvalueSolverType> m_solver;
 };
 
 template <typename EigenvalueSolverType>
@@ -181,13 +181,13 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
 
     std::list<std::pair<int, ScalarType>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
-        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver.GetOptimalShift(m_freq_spans[i].freq)));
+        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver->GetOptimalShift(m_freq_spans[i].freq)));
     }
 
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
@@ -200,7 +200,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     m_timer_eigen_solver.stop();
 
     m_timer_solution_postprocessing.start();
-    m_solver.GetNaturalFrequencies(eigvals, freq);
+    m_solver->GetNaturalFrequencies(eigvals, freq);
     m_timer_solution_postprocessing.stop();
 
     if (descriptor_bkp) {
@@ -226,17 +226,17 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
 
     ChSparseMatrix A(n_vars + n_constr, n_vars + n_constr);
     ChSparseMatrix B(n_vars + n_constr, n_vars + n_constr);
-    double scaling = m_solver.BuildUndampedSystem(M, K, Cq, A, B, m_scaleCq);
+    double scaling = m_solver->BuildUndampedSystem(M, K, Cq, A, B, m_scaleCq);
 
     std::list<std::pair<int, ScalarType>> eig_requests;
     for (int i = 0; i < m_freq_spans.size(); i++) {
-        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver.GetOptimalShift(m_freq_spans[i].freq)));
+        eig_requests.push_back(std::make_pair(m_freq_spans[i].nmodes, m_solver->GetOptimalShift(m_freq_spans[i].freq)));
     }
 
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(m_solver, A, B, eigvects, eigvals, eig_requests);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
@@ -248,7 +248,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
     m_timer_eigen_solver.stop();
 
     m_timer_solution_postprocessing.start();
-    m_solver.GetNaturalFrequencies(eigvals, freq);
+    m_solver->GetNaturalFrequencies(eigvals, freq);
     m_timer_solution_postprocessing.stop();
 
     return found_eigs;

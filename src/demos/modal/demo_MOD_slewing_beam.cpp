@@ -231,7 +231,7 @@ void RunSlewingBeam(bool do_modal_reduction,
 
     // Do modal reduction for all modal assemblies
     if (do_modal_reduction) {
-        ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
+        auto eigen_solver = chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>();
 
         // The success of eigen solve is sensitive to the frequency shift (1e-4). If the eigen solver fails, try to
         // tune the shift value.

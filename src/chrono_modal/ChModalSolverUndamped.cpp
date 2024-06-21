@@ -35,27 +35,27 @@
 #include <Spectra/MatOp/SparseRegularInverse.h>
 #include <Spectra/GenEigsBase.h>
 
-#include <unsupported/Eigen/SparseExtra>  //TODO: remove after debug
-
 using namespace Spectra;
 using namespace Eigen;
 
 namespace chrono {
 
 namespace modal {
-
+/// Partially build the undamped eigenvalue problem matrices A and B from a given ChAssembly.
+/// WARNING: Cq and Cq' signs are not flipped here: the user is expected to flip it during scaling (if any).
+/// The finale shape should be:
+/// A  =  [ -K   -Cq' ]
+///       [ -Cq    0  ]
+///
+/// B  =  [  M     0  ]
+///       [  0     0  ]
+/// 
 void BuildUndampedEigenProblemMatrices(ChAssembly& assembly,
                                           ChSystemDescriptor& temp_descriptor,
                                           ChSparseMatrix& A,
                                           ChSparseMatrix& B,
                                           int n_vars) {
-    // A  =  [ -K   -Cq' ]
-    //       [ -Cq    0  ]
-    // WARNING: Cq and Cq' sign is not flipped yet: the user is expected to flip it during scaling (if any)
 
-    // B  =  [  M     0  ]
-    //       [  0     0  ]
-    //
 
     // Stiffness matrix
     assembly.LoadKRMMatrices(-1.0, 0.0, 0.0);

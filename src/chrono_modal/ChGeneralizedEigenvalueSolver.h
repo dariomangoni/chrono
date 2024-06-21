@@ -354,7 +354,7 @@ class ChGeneralizedEigenvalueSolver {
     mutable ChTimer m_timer_eigen_solver;             ///< timer for eigensolver solution
     mutable ChTimer m_timer_solution_postprocessing;  ///< timer for conversion of eigensolver solution
 
-    int m_min_subspace_size = 30;  // TODO: make it constant or tunable
+    const int m_min_subspace_size = 30;
 
     template <typename EigSolverType>
     friend int Solve(EigSolverType& eig_solver,

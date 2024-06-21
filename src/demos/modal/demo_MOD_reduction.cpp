@@ -278,9 +278,7 @@ void CreateCantilever(ChSystem& sys,
     // modal_assembly->WriteSubassemblyMatrices(true, true, true, true, out_dir + "/dump");
 
     if (do_modal_reduction) {
-        //// MODAL REDUCTION
-
-        ChUnsymGenEigenvalueSolverKrylovSchur eigen_solver;
+        auto eigen_solver = chrono_types::make_shared<ChUnsymGenEigenvalueSolverKrylovSchur>();
         ChModalSolverUndamped<ChUnsymGenEigenvalueSolverKrylovSchur> modal_solver(num_modes, 1e-5, true, false,
                                                                                   eigen_solver);
         ChModalDampingRayleigh modal_damping(damping_alpha, damping_beta);
