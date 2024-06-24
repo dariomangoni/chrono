@@ -76,8 +76,8 @@ class ChModalEventReceiver : public irr::IEventReceiver {
                 case irr::gui::EGET_CHECKBOX_CHANGED:
                     switch (id) {
                         case 9929: {
-                            bool disable_frequency = ((irr::gui::IGUICheckBox*)event.GUIEvent.Caller)->isChecked();
-                            m_modal_vsys->DisableFrequency(disable_frequency);
+                            bool fix_freq = ((irr::gui::IGUICheckBox*)event.GUIEvent.Caller)->isChecked();
+                            m_modal_vsys->SetFixedFrequency(fix_freq);
                         } break;
                     }
                     break;
@@ -129,11 +129,11 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     /// The frequency is multiplied by this factor.
     void SetSpeedFactor(double speed_factor);
 
-    /// Disable the frequency scaling of the mode shape animation.
+    /// Fix the frequency of the mode shape animation.
     /// The frequency is then fixed to 1 Hz.
     /// This is useful to visualize the mode shape without the frequency effect.
     /// The speed factor is still applied.
-    void DisableFrequency(bool val);
+    void SetFixedFrequency(bool val);
 
     /// Reset the initial state by retrieving the current state of the assembly.
     void ResetInitialState();
@@ -166,7 +166,7 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     ChState m_assembly_initial_state;  ///< initial state of the assembly
     double m_amplitude = 1.0;          ///< amplitude scaling of the mode shape animation
     double m_speed_factor = 1.0;       ///< speed factor of the mode shape animation
-    bool m_disable_frequency = false;  ///< flag to disable frequency scaling
+    bool m_fixed_frequency = false;    ///< fix the frequency of the animation
 
     /// Get the mode shape at a specified angle from an eigenvector (real eigvect).
     template <typename U = ScalarType>
@@ -189,7 +189,7 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     irr::gui::IGUIStaticText* g_selected_mode_info;
     irr::gui::IGUIEditBox* g_amplitude;
     irr::gui::IGUIEditBox* g_speed_factor;
-    irr::gui::IGUICheckBox* g_disable_frequency;
+    irr::gui::IGUICheckBox* g_fixed_frequency;
     ChModalEventReceiver<ScalarType>* m_receiver;
 };
 
@@ -227,11 +227,10 @@ void ChModalVisualSystemIrrlicht<ScalarType>::Initialize() {
     g_speed_factor = guienv->addEditBox(L"", irr::core::rect<irr::s32>(100, 25, 140, 25 + 15), true, g_tab2, 9928);
     SetSpeedFactor(m_speed_factor);
 
-    guienv->addStaticText(L"Disable frequency", irr::core::rect<irr::s32>(10, 40, 100, 25 + 15 + 15), false, false,
-                          g_tab2);
-    g_disable_frequency = guienv->addCheckBox(
-        m_disable_frequency, irr::core::rect<irr::s32>(100, 40, 120, 25 + 15 + 15), g_tab2, 9929, L"Disable frequency");
-    DisableFrequency(m_disable_frequency);
+    guienv->addStaticText(L"Fix frequency", irr::core::rect<irr::s32>(10, 40, 100, 25 + 15 + 15), false, false, g_tab2);
+    g_fixed_frequency = guienv->addCheckBox(m_fixed_frequency, irr::core::rect<irr::s32>(100, 40, 120, 25 + 15 + 15),
+                                              g_tab2, 9929, L"Fix frequency");
+    SetFixedFrequency(m_fixed_frequency);
 
     guienv->addStaticText(L"Mode", irr::core::rect<irr::s32>(10, 65, 100, 50 + 15 + 15), false, false, g_tab2);
     g_selected_mode =
@@ -258,8 +257,8 @@ inline void ChModalVisualSystemIrrlicht<ScalarType>::BeginScene(bool backBuffer,
     if (m_timer.GetTimeMilliseconds() == 0.0)
         m_timer.start();
 
-    double angle = m_speed_factor * CH_2PI * (m_disable_frequency ? 1.0 : m_freq->coeff(m_selected_mode)) *
-                   m_timer.GetTimeSeconds();
+    double angle =
+        m_speed_factor * CH_2PI * (m_fixed_frequency ? 1.0 : m_freq->coeff(m_selected_mode)) * m_timer.GetTimeSeconds();
 
     ChState assembly_state_new;
     ChStateDelta assembly_state_delta;
@@ -340,9 +339,9 @@ void ChModalVisualSystemIrrlicht<ScalarType>::SetSpeedFactor(double speed_factor
 }
 
 template <typename ScalarType>
-void ChModalVisualSystemIrrlicht<ScalarType>::DisableFrequency(bool val) {
-    m_disable_frequency = val;
-    g_disable_frequency->setChecked(m_disable_frequency);
+void ChModalVisualSystemIrrlicht<ScalarType>::SetFixedFrequency(bool val) {
+    m_fixed_frequency = val;
+    g_fixed_frequency->setChecked(m_fixed_frequency);
 }
 
 template <typename ScalarType>
