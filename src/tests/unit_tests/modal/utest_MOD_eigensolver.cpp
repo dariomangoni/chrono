@@ -611,7 +611,7 @@ TEST(ChUnsymGenEigenvalueSolverKrylovSchur, UnsymKRMCq_multifreq) {
     ChSparseMatrix A, B;
     double scaling = eigen_solver.BuildDampedSystem(M, R, K, Cq, A, B, scaleCq);
 
-    modal::Solve<>(eigen_solver, A, B, eigvects_CHRONO, eigvals_CHRONO, eig_requests);
+    modal::Solve<>(eigen_solver, A, B, eigvects_CHRONO, eigvals_CHRONO, eig_requests, true, 0);
 
     double max_residual_CHRONO_AB = eigen_solver.GetMaxResidual(A, B, eigvects_CHRONO, eigvals_CHRONO);
 

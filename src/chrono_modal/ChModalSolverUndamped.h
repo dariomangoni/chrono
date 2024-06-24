@@ -50,11 +50,12 @@ class ChModalSolverUndamped : public ChModalSolver {
     /// \a scaleCq if true, the Cq matrix is scaled to improve conditioning.
     /// \a verbose if true, additional information is printed during the solution process.
     /// \a solver the inner eigensolver to be used.
-    ChModalSolverUndamped(int n_lower_modes,
-                          double base_freq = 1e-5,
-                          bool scaleCq = true,
-                          bool verbose = false,
-                          std::shared_ptr<EigenvalueSolverType> solver = chrono_types::make_shared<EigenvalueSolverType>())
+    ChModalSolverUndamped(
+        int n_lower_modes,
+        double base_freq = 1e-5,
+        bool scaleCq = true,
+        bool verbose = false,
+        std::shared_ptr<EigenvalueSolverType> solver = chrono_types::make_shared<EigenvalueSolverType>())
         : ChModalSolver(n_lower_modes, base_freq, scaleCq, verbose), m_solver(solver){};
 
     /// Creates a modal solver for the undamped case.
@@ -63,10 +64,11 @@ class ChModalSolverUndamped : public ChModalSolver {
     /// \a scaleCq if true, the Cq matrix is scaled to improve conditioning.
     /// \a verbose if true, additional information is printed during the solution process.
     /// \a solver the inner eigensolver to be used.
-    ChModalSolverUndamped(std::vector<ChFreqSpan> freq_spans,
-                          bool scaleCq = true,
-                          bool verbose = false,
-                          std::shared_ptr<EigenvalueSolverType> solver = chrono_types::make_shared<EigenvalueSolverType>())
+    ChModalSolverUndamped(
+        std::vector<ChFreqSpan> freq_spans,
+        bool scaleCq = true,
+        bool verbose = false,
+        std::shared_ptr<EigenvalueSolverType> solver = chrono_types::make_shared<EigenvalueSolverType>())
         : ChModalSolver(freq_spans, scaleCq, verbose), m_solver(solver){};
 
     virtual ~ChModalSolverUndamped(){};
@@ -187,13 +189,11 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, n_vars);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
-    if (m_clip_position_coords) {
-        eigvects = eigvects.topRows(n_vars);
-    } else {
+    if (!m_clip_position_coords) {
         eigvects.bottomRows(n_constr) *= scaling;
     }
 
@@ -236,13 +236,11 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, n_vars);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
-    if (m_clip_position_coords) {
-        eigvects = eigvects.topRows(n_vars);
-    } else {
+    if (!m_clip_position_coords) {
         eigvects.bottomRows(n_constr) *= scaling;
     }
     m_timer_eigen_solver.stop();

@@ -51,7 +51,9 @@ int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& B,
           ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
           ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
-          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests);
+          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
+          bool uniquify,
+          int eigvects_clipping_length);
 
 /// Base interface class for generalized eigenvalue solvers A*x = lambda*B*x.
 /// Currently it is implied that the derived eigensolvers are iterative.
@@ -362,7 +364,9 @@ class ChGeneralizedEigenvalueSolver {
                      ChSparseMatrix& B,
                      ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
                      ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
-                     const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests);
+                     const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
+                     bool uniquify,
+                     int eigvects_clipping_length);
 };
 
 template <typename EigSolverType>
@@ -371,7 +375,11 @@ int Solve(EigSolverType& eig_solver,
           ChSparseMatrix& B,
           ChMatrixDynamic<typename EigSolverType::ScalarType>& eigvects,
           ChVectorDynamic<typename EigSolverType::ScalarType>& eigvals,
-          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests) {
+          const std::list<std::pair<int, typename EigSolverType::ScalarType>>& eig_requests,
+          bool uniquify = true,
+          int eigvects_clipping_length = 0) {
+    bool eigvects_clipping = eigvects_clipping_length > 0;
+
     int num_modes_total = 0;
     for (const auto& eig_req : eig_requests) {
         num_modes_total += eig_req.first;
@@ -384,9 +392,13 @@ int Solve(EigSolverType& eig_solver,
     bool sort_ritz_pairs_bkp = eig_solver.sort_ritz_pairs;
     eig_solver.sort_ritz_pairs = false;
 
+    // TODO: double check the need of case eig_requests.size() == 1
     if (eig_requests.size() == 0)
         return 0;
-    else if (eig_requests.size() == 1) {
+    else if (eig_requests.size() == 1 && uniquify) {
+        // if only one request we can skip allocating on eigvects|eitvals_singlespan but we can directly allocate on
+        // eigvects|eitvals; not sure about the real performance improvement
+
         eigvects.resize(A.rows(), num_modes_total);
 
         eig_solver.m_timer_eigen_solver.start();
@@ -398,12 +410,17 @@ int Solve(EigSolverType& eig_solver,
         eig_solver.m_timer_eigen_solver.stop();
 
         eig_solver.m_timer_solution_postprocessing.start();
-
-        if (found_eigs != num_modes_total)
+        // these cases must not be handled by ternary if (the NoChange will be wrongly casted to a normal number = 0)
+        if (eigvects_clipping) {
+            if (found_eigs == num_modes_total)
+                eigvects.conservativeResize(eigvects_clipping_length, Eigen::NoChange_t::NoChange);
+            else
+                eigvects.conservativeResize(eigvects_clipping_length, found_eigs);
+        } else if (found_eigs != num_modes_total)
             eigvects.conservativeResize(Eigen::NoChange_t::NoChange, found_eigs);
 
     } else {
-        eigvects.resize(A.rows(), num_modes_total);
+        eigvects.resize(eigvects_clipping ? eigvects_clipping_length : A.rows(), num_modes_total);
 
         // for each freq_spans finds the closest modes to i-th input frequency:
         for (const auto& eig_req : eig_requests) {
@@ -424,8 +441,10 @@ int Solve(EigSolverType& eig_solver,
 
             int min_converged_eigs = std::min(eig_req.first, converged_eigs);
 
-            eig_solver.InsertUniqueRitzPairs(eigvals_singlespan, eigvects_singlespan, eigvals, eigvects,
-                                             eig_solver.GetNaturalFrequency, found_eigs, min_converged_eigs);
+            eig_solver.InsertUniqueRitzPairs(
+                eigvals_singlespan,
+                eigvects_clipping ? eigvects_singlespan.topRows(eigvects_clipping_length) : eigvects_singlespan,
+                eigvals, eigvects, eig_solver.GetNaturalFrequency, found_eigs, min_converged_eigs);
 
             eig_solver.m_timer_solution_postprocessing.stop();
         }

@@ -35,7 +35,7 @@ namespace modal {
 /// Partially build the damped eigenvalue problem matrices A and B from a given ChAssembly.
 /// WARNING: Cq and Cq' signs are not flipped here: the user is expected to flip it during scaling (if any)
 /// The final shape of the matrices is:
-/// 
+///
 /// A  =  [  0     I     0 ]
 ///       [ -K    -R  -Cq' ]
 ///       [ -Cq    0     0 ]
@@ -49,7 +49,6 @@ void BuildDampedEigenProblemMatrices(ChAssembly& assembly,
                                      ChSparseMatrix& A,
                                      ChSparseMatrix& B,
                                      int n_vars) {
-
     // Stiffness matrix
     assembly.LoadKRMMatrices(-1.0, 0.0, 0.0);
     temp_descriptor.SetMassFactor(0.0);
@@ -157,13 +156,11 @@ int ChModalSolverDamped::Solve(const ChAssembly& assembly,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, n_vars);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
-    if (m_clip_position_coords) {
-        eigvects = eigvects.middleRows(n_vars, n_vars);
-    } else {
+    if (!m_clip_position_coords) {
         eigvects.bottomRows(n_constr) *= scaling;
     }
 
@@ -208,14 +205,12 @@ int ChModalSolverDamped::Solve(const ChSparseMatrix& K,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, n_vars);
     m_timer_eigen_solver.stop();
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
-    if (m_clip_position_coords) {
-        eigvects = eigvects.middleRows(n_vars, n_vars);
-    } else {
+    if (!m_clip_position_coords) {
         eigvects.bottomRows(n_constr) *= scaling;
     }
 
