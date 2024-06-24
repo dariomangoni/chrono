@@ -311,8 +311,9 @@ int main(int argc, char* argv[]) {
         L"Press 5: L-beam, fixed-fixed",
         irr::core::rect<irr::s32>(400, 80, 850, 200), false, true, 0);
 
-    const ChAssembly& assembly = sys.GetAssembly();
-    vis.AttachAssembly(assembly, eigvects, freq);
+    vis.ShowInfoPanel(true);
+
+    vis.AttachAssembly(sys.GetAssembly(), eigvects, freq);
 
     int previous_current_example_id = -1;
 
@@ -349,7 +350,7 @@ int main(int argc, char* argv[]) {
             sys.Update();
             vis.BindAll();
 
-            modal_solver.Solve(assembly, eigvects, eigvals, freq, damping_ratios);
+            modal_solver.Solve(sys.GetAssembly(), eigvects, eigvals, freq, damping_ratios);
             vis.ResetInitialState();
             vis.UpdateModes(eigvects, freq);
 

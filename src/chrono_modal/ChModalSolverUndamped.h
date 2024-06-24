@@ -189,7 +189,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChAssembly& assembl
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, n_vars);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, m_clip_position_coords ? n_vars : 0);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors
@@ -236,7 +236,7 @@ int ChModalSolverUndamped<EigenvalueSolverType>::Solve(const ChSparseMatrix& K,
     m_timer_matrix_assembly.stop();
 
     m_timer_eigen_solver.start();
-    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, n_vars);
+    int found_eigs = modal::Solve<>(*m_solver, A, B, eigvects, eigvals, eig_requests, true, m_clip_position_coords ? n_vars : 0);
 
     // the scaling does not affect the eigenvalues
     // but affects the constraint part of the eigenvectors

@@ -150,9 +150,11 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects, const ChVectorDynamic<double>& freq);
 
     /// Update the eigenvectors, frequencies, and damping ratios.
-    void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects,
-                     const ChVectorDynamic<double>& freq,
-                     const ChVectorDynamic<double>& damping_ratios);
+    template <typename U = ScalarType>
+    typename std::enable_if<std::is_same<U, std::complex<double>>::value, void>::type UpdateModes(
+        const ChMatrixDynamic<ScalarType>& eigvects,
+        const ChVectorDynamic<double>& freq,
+        const ChVectorDynamic<double>& damping_ratios);
 
   protected:
     ChAssembly* m_assembly = nullptr;
@@ -229,7 +231,7 @@ void ChModalVisualSystemIrrlicht<ScalarType>::Initialize() {
 
     guienv->addStaticText(L"Fix frequency", irr::core::rect<irr::s32>(10, 40, 100, 25 + 15 + 15), false, false, g_tab2);
     g_fixed_frequency = guienv->addCheckBox(m_fixed_frequency, irr::core::rect<irr::s32>(100, 40, 120, 25 + 15 + 15),
-                                              g_tab2, 9929, L"Fix frequency");
+                                            g_tab2, 9929, L"Fix frequency");
     SetFixedFrequency(m_fixed_frequency);
 
     guienv->addStaticText(L"Mode", irr::core::rect<irr::s32>(10, 65, 100, 50 + 15 + 15), false, false, g_tab2);
