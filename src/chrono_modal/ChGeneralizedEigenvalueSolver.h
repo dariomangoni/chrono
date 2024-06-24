@@ -395,7 +395,7 @@ int Solve(EigSolverType& eig_solver,
     // TODO: double check the need of case eig_requests.size() == 1
     if (eig_requests.size() == 0)
         return 0;
-    else if (eig_requests.size() == 1 && uniquify) {
+    else if (eig_requests.size() == 1 && !uniquify) {
         // if only one request we can skip allocating on eigvects|eitvals_singlespan but we can directly allocate on
         // eigvects|eitvals; not sure about the real performance improvement
 
@@ -440,11 +440,21 @@ int Solve(EigSolverType& eig_solver,
             eig_solver.m_timer_solution_postprocessing.start();
 
             int min_converged_eigs = std::min(eig_req.first, converged_eigs);
-
-            eig_solver.InsertUniqueRitzPairs(
-                eigvals_singlespan,
-                eigvects_clipping ? eigvects_singlespan.topRows(eigvects_clipping_length) : eigvects_singlespan,
-                eigvals, eigvects, eig_solver.GetNaturalFrequency, found_eigs, min_converged_eigs);
+            if (uniquify)
+                eig_solver.InsertUniqueRitzPairs(
+                    eigvals_singlespan,
+                    eigvects_clipping ? eigvects_singlespan.topRows(eigvects_clipping_length) : eigvects_singlespan,
+                    eigvals, eigvects, eig_solver.GetNaturalFrequency, found_eigs, min_converged_eigs);
+            else {
+                for (auto eig = 0; eig < min_converged_eigs; eig++) {
+                    eigvals[found_eigs] = eigvals_singlespan[eig];
+                    if (eigvects_clipping)
+                        eigvects.col(found_eigs) = eigvects_singlespan.col(eig).topRows(eigvects_clipping_length);
+                    else
+                        eigvects.col(found_eigs) = eigvects_singlespan.col(eig);
+                    found_eigs++;
+                }
+            }
 
             eig_solver.m_timer_solution_postprocessing.stop();
         }
