@@ -32,7 +32,7 @@ class ChDirectSolverLS;
 
 namespace modal {
 
-/// Base interface class for iterative eigenvalue solvers for generalized problem with real symmetric matrices.
+/// Base interface class for iterative eigenvalue solvers for generalized problem with real generic matrices.
 /// Assumes shift-and-invert methods.
 class ChApiModal ChUnsymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolver<std::complex<double>> {
   public:
@@ -44,15 +44,12 @@ class ChApiModal ChUnsymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolv
     /// 'eigvects' will be resized to [A.rows() x num_modes]
     /// 'eigvals' will be resized to [num_modes]
     /// the number of converged eigenvalues is returned.
-    virtual int Solve(
-        const ChSparseMatrix& A,                ///< input A matrix
-        const ChSparseMatrix& B,                ///< input B matrix
-        ChMatrixDynamic<ScalarType>& eigvects,  ///< output matrix with eigenvectors as columns, will be resized
-        ChVectorDynamic<ScalarType>& eigvals,   ///< output vector with eigenvalues (real part
-                                                ///< not zero if some damping), will be resized
-        int num_modes,    ///< optional: number of desired lower eigenvalues. If zero return all eigenvalues
-        ScalarType sigma  ///< optional: shift for the shift-and-invert strategy
-    ) const = 0;
+    virtual int Solve(const ChSparseMatrix& A,
+                      const ChSparseMatrix& B,
+                      ChMatrixDynamic<ScalarType>& eigvects,
+                      ChVectorDynamic<ScalarType>& eigvals,
+                      int num_modes,
+                      ScalarType sigma) const = 0;
 
     static void GetNaturalFrequencies(const ChVectorDynamic<ScalarType>& eigvals,
                                       ChVectorDynamic<double>& natural_freq);
@@ -69,7 +66,7 @@ class ChApiModal ChUnsymGenEigenvalueSolver : public ChGeneralizedEigenvalueSolv
 /// Generalized iterative eigenvalue solver implementing Krylov-Schur shift-and-invert method for real generic matrices.
 /// Features:
 /// - generalized eigenvalue problem
-/// - generic sparse matrices
+/// - generic (i.e. also unsymmetric) sparse matrices
 /// - shift-and-invert with complex shift
 class ChApiModal ChUnsymGenEigenvalueSolverKrylovSchur : public ChUnsymGenEigenvalueSolver {
   public:

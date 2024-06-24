@@ -73,6 +73,15 @@ class ChModalEventReceiver : public irr::IEventReceiver {
                     }
                     break;
 
+                case irr::gui::EGET_CHECKBOX_CHANGED:
+                    switch (id) {
+                        case 9929: {
+                            bool disable_frequency = ((irr::gui::IGUICheckBox*)event.GUIEvent.Caller)->isChecked();
+                            m_modal_vsys->DisableFrequency(disable_frequency);
+                        } break;
+                    }
+                    break;
+
                 default:
                     break;
             }
@@ -105,22 +114,42 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     /// Render the Irrlicht scene and additional visual elements.
     virtual void Render() override;
 
+    /// Set the mode to be visualized.
+    /// The mode is specified as a 1-based index.
     void SetMode(int mode);
 
+    /// Reset the timer used to generate the mode shape animation.
     void ResetTimer() { m_timer.reset(); }
 
+    /// Set the amplitude of the mode shape animation.
+    /// Eigenvectors are normalized and then multiplied by this amplitude.
     void SetAmplitude(double amplitude);
 
+    /// Set the speed factor of the mode shape animation.
+    /// The frequency is multiplied by this factor.
     void SetSpeedFactor(double speed_factor);
 
+    /// Disable the frequency scaling of the mode shape animation.
+    /// The frequency is then fixed to 1 Hz.
+    /// This is useful to visualize the mode shape without the frequency effect.
+    /// The speed factor is still applied.
+    void DisableFrequency(bool val);
+
+    /// Reset the initial state by retrieving the current state of the assembly.
     void ResetInitialState();
 
+    /// Attach the assembly to be visualized.
+    /// This function must be called before starting the simulation loop.
+    /// The eigenvectors and frequencies must be provided, typically through ChModalSolverUndamped or
+    /// ChModalSolverDamped.
     void AttachAssembly(const ChAssembly& assembly,
                         const ChMatrixDynamic<ScalarType>& eigvects,
                         const ChVectorDynamic<double>& freq);
 
+    /// Update the eigenvectors and frequencies.
     void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects, const ChVectorDynamic<double>& freq);
 
+    /// Update the eigenvectors, frequencies, and damping ratios.
     void UpdateModes(const ChMatrixDynamic<ScalarType>& eigvects,
                      const ChVectorDynamic<double>& freq,
                      const ChVectorDynamic<double>& damping_ratios);
@@ -131,13 +160,15 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     const ChVectorDynamic<double>* m_freq = nullptr;
     const ChVectorDynamic<double>* m_damping_ratios = nullptr;
 
-    mutable int m_selected_mode = 0;
-    ChTimer m_timer;
+    mutable int m_selected_mode = 0;  ///< currently selected mode
+    ChTimer m_timer;                  ///< timer for mode shape animation
 
-    ChState m_assembly_initial_state;
-    double m_amplitude = 1.0;
-    double m_speed_factor = 1.0;
+    ChState m_assembly_initial_state;  ///< initial state of the assembly
+    double m_amplitude = 1.0;          ///< amplitude scaling of the mode shape animation
+    double m_speed_factor = 1.0;       ///< speed factor of the mode shape animation
+    bool m_disable_frequency = false;  ///< flag to disable frequency scaling
 
+    /// Get the mode shape at a specified angle from an eigenvector (real eigvect).
     template <typename U = ScalarType>
     typename std::enable_if<std::is_same<U, double>::value, ChVectorDynamic<double>>::type GetModeShape(
         const ChVectorDynamic<double>& eigv,
@@ -145,6 +176,7 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
         return eigv.stableNormalized() * sin(angle);
     }
 
+    /// Get the mode shape at a specified angle from an eigenvector (complex eigvect).
     template <typename U = ScalarType>
     typename std::enable_if<std::is_same<U, std::complex<double>>::value, ChVectorDynamic<double>>::type GetModeShape(
         const ChVectorDynamic<std::complex<double>>& eigv,
@@ -157,6 +189,7 @@ class ChModalVisualSystemIrrlicht : public irrlicht::ChVisualSystemIrrlicht {
     irr::gui::IGUIStaticText* g_selected_mode_info;
     irr::gui::IGUIEditBox* g_amplitude;
     irr::gui::IGUIEditBox* g_speed_factor;
+    irr::gui::IGUICheckBox* g_disable_frequency;
     ChModalEventReceiver<ScalarType>* m_receiver;
 };
 
@@ -186,24 +219,29 @@ void ChModalVisualSystemIrrlicht<ScalarType>::Initialize() {
 
     auto g_tab2 = gui->AddTab(L"Modal");
 
-    // -- g_tab2
-
-    guienv->addStaticText(L"Amplitude", irr::core::rect<irr::s32>(10, 10, 80, 10 + 15), false, false, g_tab2);
-    g_amplitude = guienv->addEditBox(L"", irr::core::rect<irr::s32>(80, 10, 120, 10 + 15), true, g_tab2, 9927);
+    guienv->addStaticText(L"Amplitude", irr::core::rect<irr::s32>(10, 10, 100, 10 + 15), false, false, g_tab2);
+    g_amplitude = guienv->addEditBox(L"", irr::core::rect<irr::s32>(100, 10, 140, 10 + 15), true, g_tab2, 9927);
     SetAmplitude(m_amplitude);
-    guienv->addStaticText(L"SpeedFactor", irr::core::rect<irr::s32>(10, 25, 80, 25 + 15), false, false, g_tab2);
-    g_speed_factor = guienv->addEditBox(L"", irr::core::rect<irr::s32>(80, 25, 120, 25 + 15), true, g_tab2, 9928);
+
+    guienv->addStaticText(L"Speed Factor", irr::core::rect<irr::s32>(10, 25, 100, 25 + 15), false, false, g_tab2);
+    g_speed_factor = guienv->addEditBox(L"", irr::core::rect<irr::s32>(100, 25, 140, 25 + 15), true, g_tab2, 9928);
     SetSpeedFactor(m_speed_factor);
 
-    guienv->addStaticText(L"Mode", irr::core::rect<irr::s32>(10, 50, 100, 50 + 15), false, false, g_tab2);
+    guienv->addStaticText(L"Disable frequency", irr::core::rect<irr::s32>(10, 40, 100, 25 + 15 + 15), false, false,
+                          g_tab2);
+    g_disable_frequency = guienv->addCheckBox(
+        m_disable_frequency, irr::core::rect<irr::s32>(100, 40, 120, 25 + 15 + 15), g_tab2, 9929, L"Disable frequency");
+    DisableFrequency(m_disable_frequency);
+
+    guienv->addStaticText(L"Mode", irr::core::rect<irr::s32>(10, 65, 100, 50 + 15 + 15), false, false, g_tab2);
     g_selected_mode =
-        GetGUIEnvironment()->addScrollBar(true, irr::core::rect<irr::s32>(10, 65, 200, 65 + 15), g_tab2, 9926);
+        GetGUIEnvironment()->addScrollBar(true, irr::core::rect<irr::s32>(10, 80, 200, 65 + 15 + 15), g_tab2, 9926);
     g_selected_mode->setMin(1);
     g_selected_mode->setMax(1);
     g_selected_mode->setSmallStep(1);
     g_selected_mode->setLargeStep(10);
     g_selected_mode_info = GetGUIEnvironment()->addStaticText(
-        L"", irr::core::rect<irr::s32>(10, 65 + 15, 200, 65 + 15 + 45), false, false, g_tab2);
+        L"", irr::core::rect<irr::s32>(10, 65 + 15 + 15, 200, 65 + 15 + 45 + 15), false, false, g_tab2);
 
     g_selected_mode->setEnabled(true);
     g_selected_mode_info->setEnabled(true);
@@ -220,7 +258,8 @@ inline void ChModalVisualSystemIrrlicht<ScalarType>::BeginScene(bool backBuffer,
     if (m_timer.GetTimeMilliseconds() == 0.0)
         m_timer.start();
 
-    double angle = m_speed_factor * CH_2PI * m_freq->coeff(m_selected_mode) * m_timer.GetTimeSeconds();
+    double angle = m_speed_factor * CH_2PI * (m_disable_frequency ? 1.0 : m_freq->coeff(m_selected_mode)) *
+                   m_timer.GetTimeSeconds();
 
     ChState assembly_state_new;
     ChStateDelta assembly_state_delta;
@@ -273,7 +312,7 @@ void ChModalVisualSystemIrrlicht<ScalarType>::SetMode(int mode) {
 
     m_selected_mode = mode - 1;
 
-    g_selected_mode->setPos(m_selected_mode+1);
+    g_selected_mode->setPos(m_selected_mode + 1);
 
     char message[50];
     if (m_damping_ratios)
@@ -301,6 +340,12 @@ void ChModalVisualSystemIrrlicht<ScalarType>::SetSpeedFactor(double speed_factor
 }
 
 template <typename ScalarType>
+void ChModalVisualSystemIrrlicht<ScalarType>::DisableFrequency(bool val) {
+    m_disable_frequency = val;
+    g_disable_frequency->setChecked(m_disable_frequency);
+}
+
+template <typename ScalarType>
 void ChModalVisualSystemIrrlicht<ScalarType>::AttachAssembly(const ChAssembly& assembly,
                                                              const ChMatrixDynamic<ScalarType>& eigvects,
                                                              const ChVectorDynamic<double>& freq) {
@@ -316,8 +361,8 @@ void ChModalVisualSystemIrrlicht<ScalarType>::UpdateModes(const ChMatrixDynamic<
     m_freq = &freq;
     m_damping_ratios = nullptr;
 
-    g_selected_mode->setMin(1); // required to refit the scale
-    g_selected_mode->setMax(m_eigvects->cols()-1);
+    g_selected_mode->setMin(1);  // required to refit the scale
+    g_selected_mode->setMax(m_eigvects->cols() - 1);
     SetMode(1);
 }
 
@@ -328,7 +373,7 @@ void ChModalVisualSystemIrrlicht<ScalarType>::UpdateModes(const ChMatrixDynamic<
     m_damping_ratios = &damping_ratios;
     UpdateModes(eigvects, freq);
 
-    SetMode(1); // required to print the damping ratio
+    SetMode(1);  // required to print the damping ratio
 }
 
 // @} modal_vis
